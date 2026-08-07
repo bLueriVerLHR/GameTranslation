@@ -80,9 +80,9 @@ docs/table/
   `translation` / `development` / `audio` / `clean`。不同功能开不同分支，
   绝不在主分支上直接改。
 - **本地分支不推送**：feature 分支只在本地工作，不 push 到 GitHub。
-- **完成后 squash 成单一 commit 合并回主分支（main）**：
-  `git checkout main` → `git merge --squash <分支>` → `git commit` —
-  每次任务只产生一个 commit。
+- **完成后合并回主分支（main）**：
+  `git checkout main` → `git merge <分支>` — 允许多个 commit，无需 squash
+  成单一提交；每个功能/修复一个提交，按逻辑拆分即可。
 - **合并/推送前必须通过检查（mandatory）**：
   1. 敏感词扫描：
      `rg -n -i "<游戏名|密码|C:\\Users\\|露骨词>" --glob "!*.pyc" --glob "!docs/table/**" .`
@@ -91,7 +91,7 @@ docs/table/
   3. 文档一致性：README 目录树与新增文件同步、文档语言为中文；
   4. 只推送主分支（main）到 GitHub，提交者身份用 opencode
      （不用 owner 的 git 身份）。
-- 提交信息用中文/英文均可，但不得含游戏名与敏感词。
+- 提交信息主要用中文描述，但不得含游戏名与敏感词。
 
 ## 语言规则（mandatory）
 
@@ -100,7 +100,7 @@ docs/table/
   `\N[1]`、`名前`、`<SG説明`），以及注入给翻译 agent 的 prompt/词表
   内容。**禁止中文注释**。
 - **文档文件**（README、`docs/*.md`、AGENTS.md）：一律**中文**。
-- 提交信息中文/英文均可（不含游戏名与敏感词）。
+- 提交信息主要用中文描述（不含游戏名与敏感词）。
 
 ## 转换目标
 

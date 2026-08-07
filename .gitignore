@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+*.7z
+*.csv
+.DS_Store
+
+# per-game translation assets stay local (glossary/tone/notes, incl. ero word table)
+docs/table/

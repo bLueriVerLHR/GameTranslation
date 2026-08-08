@@ -51,7 +51,11 @@ RULES = """## Rules (write-first contract, mandatory)
 - Many keys are MACHINE-TRANSLATION FRAGMENTS: a line may already contain Chinese;
   rewrite the WHOLE line so it becomes fully fluent Chinese, keeping the existing Chinese terms.
 - If a key has NO kana (already fully Chinese), output it unchanged.
-- Never translate plugin command args / script code.
+- JS 字面量键 (以单/双引号开头结尾的键, 以及含 '...' 代码的脚本键): 这是显示文本
+  (变量存储的台词 / 战斗日志行)。只翻译引号内的日文内容, 首尾引号、引号内的
+  \\n 转义、引号外的代码 (如 BattleManager._logWindow.addText(...);) 一律原样
+  保留, 与键逐字节一致 (引号数量、括号、分号都不能变)。
+- Never translate plugin command names / note tags / functional keys.
 - NO SPOILERS: never reveal foreshadowing/twists in the translation; keep suspense.
 - After writing, count control codes in your values vs the keys: they MUST match exactly - do not trust your feeling, count them.
 - Reply with ONE line only (counts), then done.

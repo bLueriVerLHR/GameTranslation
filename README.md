@@ -32,6 +32,9 @@ GameTranslation/
 │   ├── merge_translation.py      # 最终合并：chunks + prefilled + sweep 规则 -> translated.json
 │   ├── patch_contexts.py         # 向 context.md 注入语气段 + 写优先规则
 │   ├── bake_translation.py       # 精确匹配静态烘焙（data + 插件参数 + CJK 字体）
+│   ├── plugin_json_leaves.py     # 插件参数内嵌 JSON 的叶子级翻译：extract 收集
+│   │                             #   显示叶子（含深层 JSON 递归），rebuild 按叶子
+│   │                             #   重建整串参数供烘焙（大 JSON 参数专用）
 │   ├── plain_io.py               # 双文件块格式的共享转义/IO
 │   ├── plugins_io.py             # 容错 js/plugins.js 解析/序列化
 │   ├── extract_remaining_text.py # 残留假名提取器（补翻流程，故事顺序）

@@ -45,7 +45,7 @@
 ```powershell
 $tk  = "<本工具库路径>"                 # 如本仓库目录
 $src = "C:\path\to\game"                 # 原版游戏目录 — 绝不修改
-$out = "$env:LOCALAPPDATA\Temp\opencode\game_JoiPlay"   # Temp 工作目录（之后可删）
+$out = "$env:LOCALAPPDATA\Temp\opencode\game"   # Temp 工作目录（之后可删）
 
 python $tk\pipeline.py build   $src -o $out
 python $tk\pipeline.py decrypt $out          # 仅 RPGM + easy 加密；否则跳过
@@ -53,7 +53,7 @@ python $tk\pipeline.py audio   $out          # 探测 + 重编码；收益最大
 python $tk\pipeline.py clean   $out          # 垃圾文件 / 未用字体 / 未用图块
 python $tk\pipeline.py verify  $out --source $src   # PNG 签名、JSON、音频引用、标志位
 python $tk\pipeline.py serve   $out --test   # 关键文件 HTTP 冒烟测试
-python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game_JoiPlay.7z"
+python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
 ```
 
 `build`、`decrypt`、`audio` 在 asyncio + 线程池下并行（每步 `--workers N`，
@@ -69,16 +69,16 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game_JoiPlay.7z
 
 - **工作/解压文件放 Temp 目录 — 绝不放原位。** 流水线绝不在原版游戏目录
   里或旁边解压/构建。工作副本在 Temp 路径（如
-  `%LOCALAPPDATA%\Temp\opencode\<Game>_JoiPlay\`），压缩包做完即可删除。
+   `%LOCALAPPDATA%\Temp\opencode\<Game>\`），压缩包做完即可删除。
 - **成品放专门交付目录，与其他游戏一致。** 最终交付物 — JoiPlay 目录
-  `<Game>_JoiPlay\` 与压缩包 `<Game>_JoiPlay.7z` — 放同一个固定目录，
+  `<Game>\` 与压缩包 `<Game>.7z` — 放同一个固定目录，
   命名与其他转换过的游戏完全一致。原版游戏保持不动。
 - **高清 vs 低清（手机贴图限制）。** Android WebView/PixiJS 把 WebGL
   贴图限制在**每边 4096 像素**；任何超过 4096 的 PNG（通常是竖版立绘，
   如 2160x4237）在手机上渲染成**黑块**，PC 浏览器正常。约定：
-  - `<Game>_JoiPlay` / `<Game>_JoiPlay.7z` = 高清构建，图片不动（PC 与
+  - `<Game>` / `<Game>.7z` = 高清构建，图片不动（PC 与
     未来设备可用）。
-  - `<Game>_JoiPlay_LowRes` / `<Game>_JoiPlay_LowRes.7z` = **独立兄弟
+  - `<Game>_LowRes` / `<Game>_LowRes.7z` = **独立兄弟
     构建**，所有超过 4096 的 PNG 缩放到 ≤4096（保持宽高比 + alpha，
     PNG）。其余完全一致。
   - 只有确实存在超过 4096 的 PNG 时才做 LowRes（扫 IHDR 头字节 16-23，
@@ -265,13 +265,13 @@ python tools\unlock_gallery.py <built> --switches 45,1   # 覆盖检测
 ## 6. 打包（7z-zstd）— 最后一步
 
 ```powershell
-python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game_JoiPlay.7z"
+python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
 ```
 
 运行 `7z a -t7z -m0=zstd -mx=15 -mmt=on <archive> <folder>` 再 `7z t`
 确认 "Everything is Ok"。目标路径已有 `.7z` 时**先删** — `7z a` 是追加，
 压在旧包上会双倍（旧 + 新条目）。**试玩之后再运行。** 压缩包直接写进
-交付目录；把成品 `<Game>_JoiPlay\` 目录也移过去（Temp 工作目录即可删除）。
+交付目录；把成品 `<Game>\` 目录也移过去（Temp 工作目录即可删除）。
 
 ### 6a. 压缩前清理（mandatory）
 
@@ -372,7 +372,7 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game_JoiPlay.7z
   成 `rmmz_managers.js` 里的 `.ogg`。
 - `System.json`（或任何 JSON）里的 UTF-8 BOM 破坏 `JSON.parse`。
 - 原版游戏目录保持不动；只在 Temp 副本工作
-  （`%LOCALAPPDATA%\Temp\opencode\<Game>_JoiPlay\`）。
+  （`%LOCALAPPDATA%\Temp\opencode\<Game>\`）。
 - CG 图片珍贵 — `clean` 绝不碰 `img/pictures`。
 - 别过度修插件：只 patch JoiPlay 里真正坏的。
 - **翻译决策规则（问一次，然后行动）：**

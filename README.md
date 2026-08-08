@@ -58,7 +58,7 @@ GameTranslation/
 ```powershell
 $tk  = "<本工具库路径>"
 $src = "C:\path\to\game"
-$out = "$env:LOCALAPPDATA\Temp\opencode\game_JoiPlay"   # 工作目录（Temp，可删）
+$out = "$env:LOCALAPPDATA\Temp\opencode\game"   # 工作目录（Temp，可删）
 $g   = "<交付目录>"   # 成品放这里，和以往每个游戏一致
 
 python $tk\pipeline.py build   $src -o $out
@@ -67,7 +67,7 @@ python $tk\pipeline.py audio   $out
 python $tk\pipeline.py clean   $out
 python $tk\pipeline.py verify  $out --source $src   # 源感知的音频引用检查
 python $tk\pipeline.py serve   $out --test     # HTTP 冒烟测试
-python $tk\pipeline.py compress $out -o "$g\game_JoiPlay.7z"
+python $tk\pipeline.py compress $out -o "$g\game.7z"
 ```
 
 `decrypt` 默认只在 RPG Maker MZ/MV 且为 **easy** 加密（每个加密资源都带
@@ -79,8 +79,8 @@ python $tk\pipeline.py compress $out -o "$g\game_JoiPlay.7z"
 失败降级为警告——只有转换造成的丢失才判失败。
 
 目录约定：工作/解压副本一律放 **Temp** 目录（绝不放在源目录旁边），
-成品 JoiPlay 目录和 `.7z` 放专门的交付目录，命名 `<Game>_JoiPlay` /
-`<Game>_JoiPlay.7z`，与其他转换过的游戏一致。
+成品 JoiPlay 目录和 `.7z` 放专门的交付目录，命名 `<Game>` /
+`<Game>.7z`（变体后缀如 `<Game>_LowRes` 保留），与其他转换过的游戏一致。
 
 - `python pipeline.py --help` 查看全部选项。
 - `audio`、`clean`、`verify` 支持 `--sample N` / `--dry-run` / `--decode`

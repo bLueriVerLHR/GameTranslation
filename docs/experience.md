@@ -20,7 +20,8 @@
 - repacker 有时留垃圾：ASCII 广告文件（`data/setting.json`，非合法
   JSON — 删）、`.url` 快捷方式、`Tool/` 目录、根 `翻译文件.json`
   （zh_CN 翻译）、`赠品/`（礼物）目录（用户想**保留**在构建里）。
-- 目录命名 `<官方名>_JoiPlay`；剥掉**译者名**（有些 repacker 附加自己的
+- 目录命名 `<官方名>`（变体后缀如 `<官方名>_LowRes` 保留）；剥掉
+  **译者名**（有些 repacker 附加自己的
   名号），`System.json.gameTitle` 为空时设官方标题。
 
 ## 1. 流水线顺序 & 唯一要记住的

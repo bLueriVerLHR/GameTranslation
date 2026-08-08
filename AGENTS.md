@@ -323,9 +323,9 @@ Unity **2021.3.15f1 Mono**（非 IL2CPP），Addressables bundles。
 ## 目录约定
 
 - 工作/解压副本一律放 Temp 目录
-  （`%LOCALAPPDATA%\Temp\opencode\<Game>_JoiPlay\`），绝不放源目录旁边。
-- 成品放专门交付目录，命名 `<Game>_JoiPlay` / `<Game>_JoiPlay.7z`
-  （与其他转换过的游戏一致）。
+  （`%LOCALAPPDATA%\Temp\opencode\<Game>\`），绝不放源目录旁边。
+- 成品放专门交付目录，命名 `<Game>` / `<Game>.7z`（变体后缀如
+  `<Game>_LowRes` 保留），与其他转换过的游戏一致。
 - 绝不修改原版游戏目录。
 
 ## 打包规则 (mandatory, 压缩前必做)
@@ -365,8 +365,8 @@ Android WebView/PixiJS 把 WebGL 贴图限制在**每边 4096 像素**；PNG 超
 4096（通常是竖版立绘，如 2160x4237）在手机上会渲染成**黑块**，而 PC
 浏览器正常。
 
-- `<Game>_JoiPlay` = 高清构建，图片不动（原版游戏即高清母版）。
-- `<Game>_JoiPlay_LowRes` = 独立兄弟构建，把所有超过 4096 的 PNG 缩放到
+- `<Game>` = 高清构建，图片不动（原版游戏即高清母版）。
+- `<Game>_LowRes` = 独立兄弟构建，把所有超过 4096 的 PNG 缩放到
   ≤4096（保持宽高比 + alpha，PNG）；绝不覆盖高清目录。
 - 只有确实存在超过 4096 的 PNG 时才做 LowRes（扫 IHDR 头字节 16-23，
   无需完整解码）。记录：一款游戏 30 张 2160x4237 竖版立绘，2026-08 修复。

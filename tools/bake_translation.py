@@ -465,9 +465,16 @@ def main():
                     help="CJK ttf to bundle (MV: gamefont.css split; MZ: "
                          "swap the main @font-face src). Default: resolved "
                          "via CJK_FONT_PATH / docs/table/local_font_path.txt")
+    ap.add_argument("--jp-font", default="",
+                    help="Japanese fallback font for kana/JP punctuation "
+                         "(second line of docs/table/local_font_path.txt "
+                         "or JP_FONT_PATH; default: the game's original "
+                         "font)")
     args = ap.parse_args()
     if not args.cjk_font:
         args.cjk_font = config.find_cjk_font() or ""
+    if not args.jp_font:
+        args.jp_font = config.find_jp_font() or ""
 
     game_dir = os.path.abspath(args.game_dir)
     out_dir = os.path.abspath(args.out_dir)
@@ -532,7 +539,7 @@ def main():
     if cov is not None:
         log.info("baked coverage: %d hit / %d missed = %.1f%%",
                  STATS["hit"], STATS["miss"], 100 * cov)
-    apply_font_policy(out_dir, args.cjk_font)
+    apply_font_policy(out_dir, args.cjk_font, args.jp_font)
     if not args.no_kv:
         kv_path = os.path.join(out_dir, "translation_kv.json")
         with open(kv_path, "w", encoding="utf-8") as f:

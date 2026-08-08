@@ -334,7 +334,7 @@ def main():
                     if c.get("@code") == 102 and params and \
                             isinstance(params[0], list):
                         for x in params[0]:
-                            if isinstance(x, str) and x in collector.keys:
+                            if isinstance(x, str) and x in col.keys:
                                 ev_items["items"].append(
                                     {"kind": "choice", "key": x})
             ce_items.append(ev_items)

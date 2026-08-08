@@ -517,14 +517,14 @@ def detect_trs(game_dir):
     return cands[0]
 
 
-def add_mv_cjk_font(root, cjk_font_src):
+def add_mv_cjk_font(root, cjk_font_src, jp_font_src=None):
     """Bundle a CJK font + unicode-range split for MV games.
 
     MV games load `fonts/gamefont.css` (there is no css/game.css), and their
     original fonts usually cover kana only - simplified-Chinese translated
     text renders as boxes. Fix: copy a CJK ttf into fonts/ and split
-    gamefont.css by unicode-range so kana/ASCII keep the original font and
-    hanzi use the bundled CJK font.
+    gamefont.css by unicode-range so kana/ASCII keep the original font (or
+    the JP fallback when given) and hanzi use the bundled CJK font.
     """
     fonts_dir = os.path.join(root, "fonts")
     css_path = os.path.join(fonts_dir, "gamefont.css")
@@ -535,6 +535,10 @@ def add_mv_cjk_font(root, cjk_font_src):
         return
     cjk_name = os.path.basename(cjk_font_src)
     shutil.copy2(cjk_font_src, os.path.join(fonts_dir, cjk_name))
+    jp_name = ""
+    if jp_font_src and os.path.isfile(jp_font_src):
+        jp_name = os.path.basename(jp_font_src)
+        shutil.copy2(jp_font_src, os.path.join(fonts_dir, jp_name))
     css = open(css_path, encoding="utf-8").read()
     font_face = re.search(
         r"@font-face\s*\{[^}]*font-family\s*:\s*([^;}]+);[^}]*src:\s*url\(([^)]+)\);\s*\}",
@@ -544,28 +548,30 @@ def add_mv_cjk_font(root, cjk_font_src):
         return
     family = font_face.group(1).strip()
     orig_src = font_face.group(2)
-    if "unicode-range" in css:
+    if "unicode-range" in css and not jp_name:
         log("fonts/gamefont.css already has unicode-range split; font bundled")
         return
+    kana_src = 'url("%s")' % jp_name if jp_name else orig_src
     split = (
         "@font-face {\n"
         "    font-family: %s;\n"
-        "    src: url(%s);\n"
-        "    unicode-range: U+0020-00FF, U+3040-30FF;\n"
+        "    src: %s;\n"
+        "    unicode-range: U+3000-30FF, U+FF00-FFEF;\n"
         "}\n"
         "@font-face {\n"
         "    font-family: %s;\n"
-        "    src: url(\"%s\");\n"
-        "    unicode-range: U+3000-303F, U+4E00-9FFF, U+F900-FAFF,"
-        " U+FF00-FFEF, U+20000-2FA1F;\n"
+        '    src: url("%s");\n'
+        "    unicode-range: U+0000-00FF, U+2000-206F, U+4E00-9FFF,"
+        " U+F900-FAFF, U+20000-2FA1F;\n"
         "}\n"
-    ) % (family, orig_src, family, cjk_name)
+    ) % (family, kana_src, family, cjk_name)
     css = re.sub(
         r"@font-face\s*\{[^}]*font-family\s*:\s*[^;}]+;[^}]*src:\s*url\([^)]+\);\s*\}",
         split, css, count=1, flags=re.S)
     with open(css_path, "w", encoding="utf-8") as f:
         f.write(css)
-    log("bundled %s and split fonts/gamefont.css by unicode-range" % cjk_name)
+    log("bundled %s%s and split fonts/gamefont.css by unicode-range"
+        % (cjk_name, " + %s" % jp_name if jp_name else ""))
 
 
 def _strip_managed_font_rules(css):
@@ -598,13 +604,14 @@ def _existing_policy_orig_font(css):
     return m.group(1) if m else ""
 
 
-def _apply_mz_font_policy(root, cjk_font_src):
+def _apply_mz_font_policy(root, cjk_font_src, jp_font_src=None):
     """MZ: split family rmmz-mainfont in css/game.css by unicode-range -
-    kana + Japanese punctuation keep the game's ORIGINAL main font,
-    Chinese/latin use the bundled CJK font.  System.json
-    advanced.mainFontFilename is emptied so the engine never registers a
-    full-range FontFace for rmmz-mainfont and the CSS split stays the single
-    source of truth (no FontFace-vs-@font-face precedence ambiguity)."""
+    kana + Japanese punctuation use the JP fallback font (or the game's
+    ORIGINAL main font when no JP font is given), Chinese/latin use the
+    bundled CJK font.  System.json advanced.mainFontFilename is emptied so
+    the engine never registers a full-range FontFace for rmmz-mainfont and
+    the CSS split stays the single source of truth (no FontFace-vs-@font-face
+    precedence ambiguity)."""
     sys_path = os.path.join(root, "data", "System.json")
     css_path = os.path.join(root, "css", "game.css")
     if not os.path.exists(sys_path) or not os.path.exists(css_path):
@@ -621,21 +628,28 @@ def _apply_mz_font_policy(root, cjk_font_src):
         json.dump(sysdata, f, ensure_ascii=False, indent=2)
     cjk_name = os.path.basename(cjk_font_src)
     shutil.copy2(cjk_font_src, os.path.join(root, "fonts", cjk_name))
+    jp_name = ""
+    if jp_font_src and os.path.isfile(jp_font_src):
+        jp_name = os.path.basename(jp_font_src)
+        shutil.copy2(jp_font_src, os.path.join(root, "fonts", jp_name))
     css = _strip_managed_font_rules(css)
-    if orig_name and os.path.exists(os.path.join(root, "fonts", orig_name)):
-        orig_src = 'url("../fonts/%s")' % orig_name
-    else:
-        # game ships no (readable) original font: kana falls through to the
-        # CJK face below
-        orig_src = None
+    # kana face: preferred JP font, else the game's original font
+    kana_src = None
+    kana_label = "none"
+    if jp_name:
+        kana_src = 'url("../fonts/%s")' % jp_name
+        kana_label = jp_name
+    elif orig_name and os.path.exists(os.path.join(root, "fonts", orig_name)):
+        kana_src = 'url("../fonts/%s")' % orig_name
+        kana_label = orig_name
     blocks = ["/* Font policy (translate_rpgmz.py): bundled CJK font for "
-              "Chinese/latin,", "   the game's original font as the Japanese "
-              "fallback */"]
-    if orig_src:
+              "Chinese/latin,", "   the Japanese fallback for kana/JP "
+              "punctuation */"]
+    if kana_src:
         blocks += [
             "@font-face {",
             "    font-family: rmmz-mainfont;",
-            "    src: %s;" % orig_src,
+            "    src: %s;" % kana_src,
             "    unicode-range: U+3000-30FF, U+FF00-FFEF;",
             "}",
         ]
@@ -651,18 +665,19 @@ def _apply_mz_font_policy(root, cjk_font_src):
     ]
     with open(css_path, "w", encoding="utf-8") as f:
         f.write(css + "\n" + "\n".join(blocks) + "\n")
-    log("MZ font policy: bundled CJK font + original font (%s) for Japanese"
-        % (orig_name or "none"))
+    log("MZ font policy: bundled CJK font + Japanese fallback (%s)"
+        % kana_label)
 
 
-def apply_font_policy(root, cjk_font_src):
+def apply_font_policy(root, cjk_font_src, jp_font_src=None):
     """Standard font policy for translated builds (owner preference): Chinese
-    text -> the bundled CJK font, Japanese text -> the game's ORIGINAL font.
+    text -> the bundled CJK font, Japanese text -> the JP fallback font when
+    given, else the game's ORIGINAL font.
 
-    MV: unicode-range split in fonts/gamefont.css (kana keeps the original
+    MV: unicode-range split in fonts/gamefont.css (kana keeps the JP/original
     font, hanzi uses the CJK font) + a fallback block in css/game.css.
     MZ: rmmz-mainfont split in css/game.css (kana + JP punctuation keep the
-    game's original main font, hanzi/latin use the CJK font) and System.json
+    JP/original font, hanzi/latin use the CJK font) and System.json
     advanced.mainFontFilename emptied.
 
     No-op when no CJK font is available (the game keeps its own fonts)."""
@@ -670,9 +685,9 @@ def apply_font_policy(root, cjk_font_src):
         log("WARN: --cjk-font not given or missing; font policy skipped")
         return
     if os.path.exists(os.path.join(root, "js", "rmmz_managers.js")):
-        _apply_mz_font_policy(root, cjk_font_src)
+        _apply_mz_font_policy(root, cjk_font_src, jp_font_src)
     else:
-        add_mv_cjk_font(root, cjk_font_src)
+        add_mv_cjk_font(root, cjk_font_src, jp_font_src)
         add_cjk_font_fallback(root)
 
 
@@ -690,9 +705,16 @@ def main():
                          "MZ: swap the main @font-face src). Default: "
                          "resolved via CJK_FONT_PATH / "
                          "docs/table/local_font_path.txt")
+    ap.add_argument("--jp-font", default="",
+                    help="Japanese fallback font for kana/JP punctuation "
+                         "(second line of docs/table/local_font_path.txt "
+                         "or JP_FONT_PATH; default: the game's original "
+                         "font)")
     args = ap.parse_args()
     if not args.cjk_font:
         args.cjk_font = config.find_cjk_font() or ""
+    if not args.jp_font:
+        args.jp_font = config.find_jp_font() or ""
 
     game_dir = os.path.abspath(args.game_dir)
     out_dir = os.path.abspath(args.out_dir)
@@ -730,7 +752,7 @@ def main():
         log("loaded %d translation entries from %s" % (len(D), trs_path))
         translate_data(out_dir, D, index, args.plugins)
         translate_extern_csv(out_dir, D, index)
-        apply_font_policy(out_dir, args.cjk_font)
+        apply_font_policy(out_dir, args.cjk_font, args.jp_font)
     else:
         log("translation skipped")
 

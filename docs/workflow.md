@@ -400,20 +400,22 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game_JoiPlay.7z
 
 ### 标准字体策略（owner 偏好, 2026-08 定案）
 
-中文/拉丁 → 打包的中文字体（默认得意黑，`--cjk-font` 指定，缺省读
-`CJK_FONT_PATH` / 本地 `docs/table/local_font_path.txt`）；**日文 →
-游戏原始字体**（游戏自带的字体文件）。实现（`translate_rpgmz.py
-apply_font_policy`，幂等可重跑）：
+中文/拉丁 → 打包的中文字体（`--cjk-font` 指定，缺省读 `CJK_FONT_PATH`
+/ 本地 `docs/table/local_font_path.txt` 首行）；**日文 → 打包的日文
+fallback 字体**（`--jp-font` 指定，缺省读 `JP_FONT_PATH` /
+`local_font_path.txt` 第二行；未配置时回退到游戏原始字体）。字体偏好
+只存在本地 `docs/table/`（gitignored），仓库代码不含字体名。实现
+（`translate_rpgmz.py apply_font_policy`，幂等可重跑）：
 
 - **MZ**（有 `js/rmmz_managers.js`）：`System.json`
   `advanced.mainFontFilename` 置空（引擎不再注册全范围 FontFace，杜绝
   FontFace 与 CSS @font-face 优先级歧义），`css/game.css` 的
   `rmmz-mainfont` 按 unicode-range 拆两张脸 — `U+3000-30FF, U+FF00-FFEF`
-  （假名 + 日文标点）→ 游戏原字体；其余（汉字/拉丁）→ 中文字体。
+  （假名 + 日文标点）→ 日文 fallback 字体；其余（汉字/拉丁）→ 中文字体。
 - **MV**（无 `rmmz_managers.js`）：`fonts/gamefont.css` 按 unicode-range
-  拆分（假名/ASCII 保留原字体，汉字走中文字体）+ `css/game.css` 追加
-  GameFont 回退块。MV 的 GameFont/YaHei 块**绝不追加到 MZ**（会覆盖
-  rmmz-mainfont 族，全游戏渲染成系统雅黑 — 已踩过）。
+  拆分（假名/日文标点走日文 fallback 字体或原字体，汉字走中文字体）+
+  `css/game.css` 追加 GameFont 回退块。MV 的 GameFont/YaHei 块**绝不
+  追加到 MZ**（会覆盖 rmmz-mainfont 族，全游戏渲染成系统雅黑 — 已踩过）。
 - 无 `--cjk-font` 时策略整体跳过（游戏保持原字体）。
 
 ## 9. Unity 游戏（流水线之外）

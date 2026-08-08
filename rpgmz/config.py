@@ -83,18 +83,36 @@ def find_7z():
 #   3. None (caller keeps the plain fallback list)
 
 
-def find_cjk_font():
-    p = os.environ.get("CJK_FONT_PATH")
-    if p and os.path.isfile(p):
-        return p
+def _read_font_paths():
+    """Read the local font override file; returns (cjk_path, jp_path)."""
     local = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                          "..", "docs", "table", "local_font_path.txt")
+    paths = []
     try:
         with open(local, encoding="utf-8") as f:
             for line in f:
                 p = line.strip()
                 if p and os.path.isfile(p):
-                    return p
+                    paths.append(p)
     except OSError:
         pass
-    return None
+    return paths
+
+
+def find_cjk_font():
+    p = os.environ.get("CJK_FONT_PATH")
+    if p and os.path.isfile(p):
+        return p
+    paths = _read_font_paths()
+    return paths[0] if paths else None
+
+
+def find_jp_font():
+    """Japanese fallback font (second line of local_font_path.txt, or
+    JP_FONT_PATH env var). None when unset - callers keep the game's
+    original font for Japanese text."""
+    p = os.environ.get("JP_FONT_PATH")
+    if p and os.path.isfile(p):
+        return p
+    paths = _read_font_paths()
+    return paths[1] if len(paths) > 1 else None

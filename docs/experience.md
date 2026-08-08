@@ -20,7 +20,8 @@
 - repacker 有时留垃圾：ASCII 广告文件（`data/setting.json`，非合法
   JSON — 删）、`.url` 快捷方式、`Tool/` 目录、根 `翻译文件.json`
   （zh_CN 翻译）、`赠品/`（礼物）目录（用户想**保留**在构建里）。
-- 目录命名 `<官方名>`（变体后缀如 `<官方名>_LowRes` 保留）；剥掉
+- 目录命名 `<官方名>`（单一构建，无 `_LowRes` 变体 — 2026-08 起统一为
+  构建期缩放策略）；剥掉
   **译者名**（有些 repacker 附加自己的
   名号），`System.json.gameTitle` 为空时设官方标题。
 
@@ -423,7 +424,7 @@ false，因为 `$gameMap.isEventRunning()` 恒 true；地图解释器空闲
   9 个功能性插件字符串、1 个编辑器内部标签）。
 - MoviePicture 自动播放修复已应用（8 部电影随包）；FOSSIL/fix-load-failed
   `process` 路径是 NW.js-only 死分支，不动。无超过 4096 的 PNG → 不做
-  LowRes。
+  缩放（`tools/downscale_images.py`）。
 - **浏览器/JoiPlay 里 FOSSIL（MV→MZ 互操作）入口必须跳过 setup 块。**
   FOSSIL 的插件模式 setup（作为普通插件用原装 `js/main.js` 入口加载）
   XHR 加载 index.html 并调 `writeNewIndexFile` → `require("fs")` → 浏览器
@@ -476,7 +477,7 @@ false，因为 `$gameMap.isEventRunning()` 恒 true；地图解释器空闲
   不是污染。
 - **烘焙覆盖闸门验证：** 两款分别 83.8% / 89.8% 覆盖 — 补翻块小所以
   达标；`--min-coverage` 默认 0.5 没触发。
-- **交付：** 两款都无 >4096 PNG（无 LowRes），`translation_kv.json`
+- **交付：** 两款都无 >4096 PNG（无需缩放），`translation_kv.json`
   已随包归档，压缩包 `7z t` 完整性测试 OK。
 
 ### 12.1 压缩包与 repack 垃圾（两款各一坑）

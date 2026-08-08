@@ -25,6 +25,8 @@ GameTranslation/
 ├── tools/
 │   ├── build_translation.py   # 提取模板/上下文/种类/结构/人名/人名宏
 │   │                          #   + 插件参数文本（js/plugins.js）
+│   ├── downscale_images.py    # 把超过 4096 的 PNG 就地缩放到 ≤4096
+│   │                          #   （单一构建策略，替代旧 LowRes 变体）
 │   ├── gen_translation_shards.py # 切成双文件块：ja.txt + zh.txt + context.md
 │   │                             #   （自动选档：90KB 上下文预算，约 11k 字符/块）
 │   ├── gen_completion_shards.py  # 补翻流程分块（同布局、同尺寸）
@@ -80,7 +82,9 @@ python $tk\pipeline.py compress $out -o "$g\game.7z"
 
 目录约定：工作/解压副本一律放 **Temp** 目录（绝不放在源目录旁边），
 成品 JoiPlay 目录和 `.7z` 放专门的交付目录，命名 `<Game>` /
-`<Game>.7z`（变体后缀如 `<Game>_LowRes` 保留），与其他转换过的游戏一致。
+`<Game>.7z`，与其他转换过的游戏一致。**单一构建策略**：所有超过 4096
+像素的 PNG 在构建期直接缩放到 ≤4096（`tools/downscale_images.py`），
+保证 Android 上正常显示，不再分高清/低清两套。
 
 - `python pipeline.py --help` 查看全部选项。
 - `audio`、`clean`、`verify` 支持 `--sample N` / `--dry-run` / `--decode`
@@ -106,7 +110,7 @@ RPG Maker 静态翻译（提取 → 词表 → subagent 分块 → 精确匹配�
 
 ## 环境要求
 
-- Python 3.10+
+- Python 3.10+（`tools/downscale_images.py` 需要 Pillow）
 - ffmpeg/ffprobe（含 libvorbis；默认路径在 `%LOCALAPPDATA%\Temp\opencode\`）
   — 仅 **audio** 步骤使用
 - 7-Zip-Zstandard（默认 `C:\Program Files\7-Zip-Zstandard\7z.exe`）

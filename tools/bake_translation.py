@@ -43,10 +43,13 @@ import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import plain_io  # noqa: E402
 import plugins_io  # noqa: E402
+from rpgmz import config  # noqa: E402
 from translate_rpgmz import (  # noqa: E402
     add_cjk_font_fallback, clear_encryption_flags, decrypt_dir,
+    swap_mz_main_font,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(message)s")
@@ -407,7 +410,13 @@ def main():
                     help="bake anyway when coverage is below --min-coverage")
     ap.add_argument("--no-kv", action="store_true",
                     help="do not write translation_kv.json")
+    ap.add_argument("--cjk-font", default="",
+                    help="CJK ttf to bundle (MV: gamefont.css split; MZ: "
+                         "swap the main @font-face src). Default: resolved "
+                         "via CJK_FONT_PATH / docs/table/local_font_path.txt")
     args = ap.parse_args()
+    if not args.cjk_font:
+        args.cjk_font = config.find_cjk_font() or ""
 
     game_dir = os.path.abspath(args.game_dir)
     out_dir = os.path.abspath(args.out_dir)
@@ -473,6 +482,7 @@ def main():
         log.info("baked coverage: %d hit / %d missed = %.1f%%",
                  STATS["hit"], STATS["miss"], 100 * cov)
     add_cjk_font_fallback(out_dir)
+    swap_mz_main_font(out_dir, args.cjk_font)
     if not args.no_kv:
         kv_path = os.path.join(out_dir, "translation_kv.json")
         with open(kv_path, "w", encoding="utf-8") as f:

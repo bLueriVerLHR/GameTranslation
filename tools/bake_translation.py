@@ -48,8 +48,7 @@ import plain_io  # noqa: E402
 import plugins_io  # noqa: E402
 from rpgmz import config  # noqa: E402
 from translate_rpgmz import (  # noqa: E402
-    add_cjk_font_fallback, clear_encryption_flags, decrypt_dir,
-    swap_mz_main_font,
+    apply_font_policy, clear_encryption_flags, decrypt_dir,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(message)s")
@@ -533,8 +532,7 @@ def main():
     if cov is not None:
         log.info("baked coverage: %d hit / %d missed = %.1f%%",
                  STATS["hit"], STATS["miss"], 100 * cov)
-    add_cjk_font_fallback(out_dir)
-    swap_mz_main_font(out_dir, args.cjk_font)
+    apply_font_policy(out_dir, args.cjk_font)
     if not args.no_kv:
         kv_path = os.path.join(out_dir, "translation_kv.json")
         with open(kv_path, "w", encoding="utf-8") as f:

@@ -9,10 +9,19 @@ Keys are per-line / per-field EXACT strings, matching bake_translation.py's
 exact lookup (block keys are avoided on purpose: a block may contain already
 translated Chinese lines that must not be retranslated).
 
-Also extracts JA-bearing js/plugins.js plugin parameter strings (kind
-"plugin", --no-plugins to skip) and writes name_macros.json (\\N[x]/\\P[x]
-actor-name macros - control codes are substitution references, never
-translated; the referenced name is translated in the DB).
+Also extracts:
+- plugin-command arguments (357 arg dict values: DTextPicture text,
+  log-window lines, shop names...; the Japanese command NAME is functional
+  and never extracted),
+- 122 script operands (string literals stored in variables and shown via
+  \V[n] control codes),
+- 355/655 script lines whose quoted string literal contains kana
+  (BattleManager._logWindow.addText('...') style display lines),
+
+and JA-bearing js/plugins.js plugin parameter strings (kind "plugin",
+--no-plugins to skip) and writes name_macros.json (\\N[x] actor-name
+macros - control codes are substitution references, never translated; the
+referenced name is translated in the DB).
 """
 import argparse
 import collections
@@ -34,6 +43,10 @@ CTRL_ONLY = re.compile(r"^(?:\\[A-Za-z]+\[[^\]]*\]|:[a-z]+(?:\[[^\]]*\])?)+[\s\u
 # appears in already-translated Chinese lines (・ prefixed conditions) and
 # floods the template with false keys. Canonical form from docs/translation.md.
 KANA = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e]")
+# A script line (355/655, or a 122 script operand) qualifies as display text
+# only when kana appears INSIDE a quoted string literal - comments and
+# identifiers (// ダメージ計算, variable names) are never display text.
+QUOTED = re.compile(r"['\"`][^'\"`]*[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e][^'\"`]*['\"`]")
 NAME_LINE = re.compile(r"^(?:[\u3040-\u30ff\u4e00-\u9fff]|・)+[さんちゃん君様先生嬢ぽ]?$")
 DIRECTIVE = re.compile(r"^\s*(?:<|>|//|#|\[|`)|<[A-Za-z_@][^>]*>", re.S)
 # Plugin-tagged notes (e.g. AlchemySystem `<recipe> {"material": ...}`) are
@@ -100,6 +113,21 @@ def window_for(idx, tl, radius=WINDOW):
     return [t for _, t in tl[max(0, p - radius):p + radius + 1] if t is not None]
 
 
+def _dict_kana_values(obj):
+    """Kana-bearing string values in a plugin-command arg dict/list (nested).
+    Keys are never extracted - only values (they may be display text)."""
+    out = []
+    if isinstance(obj, dict):
+        for v in obj.values():
+            out.extend(_dict_kana_values(v))
+    elif isinstance(obj, list):
+        for v in obj:
+            out.extend(_dict_kana_values(v))
+    elif isinstance(obj, str) and KANA.search(obj):
+        out.append(obj)
+    return out
+
+
 def walk_commands(cmds, col, where):
     tl = talk_lines(cmds)
     for idx, cmd in enumerate(cmds):
@@ -124,15 +152,33 @@ def walk_commands(cmds, col, where):
                         col.add_name(params[4])
                     col.add(params[pidx], "event-text", where, window_for(idx, tl))
         elif code == 122:
-            # skip script operands (operandType == 4): params[4] is JS code,
-            # never display text
+            # script operands (operandType == 4) store DISPLAY strings in
+            # variables (shown later via \V[n]); include them as keys.  Only
+            # string-literal operands (leading quote) are extracted - other
+            # script expressions are functional.
             if len(params) > 3 and params[3] == 4:
-                pass
+                if len(params) > 4 and isinstance(params[4], str) and params[4] \
+                        and params[4][0] in "'\"" and QUOTED.search(params[4]):
+                    col.add(params[4], "script-var", where, window_for(idx, tl))
             else:
                 for pidx in (3, 4):
                     if pidx < len(params) and isinstance(params[pidx], str) \
                             and params[pidx]:
                         col.add(params[pidx], "event-text", where, window_for(idx, tl))
+        elif code in (355, 655):
+            # script lines whose quoted string literal contains kana are
+            # display text (e.g. BattleManager._logWindow.addText('...')).
+            if params and isinstance(params[0], str) and params[0] \
+                    and QUOTED.search(params[0]):
+                col.add(params[0], "script", where, window_for(idx, tl))
+        elif code == 357:
+            # plugin command arguments: kana-bearing string VALUES in the arg
+            # dict are display text (DTextPicture text, log-window lines,
+            # shop names...).  params[2] is the Japanese command NAME (a
+            # functional lookup key the plugin code matches) - never extracted.
+            if len(params) > 3 and isinstance(params[3], dict):
+                for v in _dict_kana_values(params[3]):
+                    col.add(v, "plugin-arg", where, window_for(idx, tl))
         elif code == 408:
             if params and isinstance(params[0], str) and params[0] \
                     and not DIRECTIVE.match(params[0]):
@@ -141,6 +187,14 @@ def walk_commands(cmds, col, where):
 
 def process_db(obj, col, where=""):
     if isinstance(obj, dict):
+        # battle-event command lists inside DB files (Troops.json pages):
+        # display strings there (355 addText lines, 401 messages...) must be
+        # extracted too, not just DB text fields.
+        lst = obj.get("list")
+        if isinstance(lst, list) and lst and isinstance(lst[0], dict) \
+                and "code" in lst[0]:
+            walk_commands(lst, col, where)
+            return
         for k, v in list(obj.items()):
             if k in DISPLAY_KEYS and isinstance(v, str):
                 col.add(v, "db-" + k, where, [])

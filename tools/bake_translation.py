@@ -59,6 +59,10 @@ log = logging.getLogger("bake")
 # punctuation that also appears in translated Chinese lines, never counted.
 KANA = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e]")
 
+# A script line (355/655, or a 122 script operand) is display text only when
+# kana appears INSIDE a quoted string literal (comments stay raw).
+QUOTED = re.compile(r"['\"`][^'\"`]*[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e][^'\"`]*['\"`]")
+
 # Coverage stats, filled by exact() during a translate_data pass.
 STATS = {"hit": 0, "miss": 0}
 
@@ -124,6 +128,11 @@ def _translate_note_refs(note, D, refs=None):
 
     def repl(m):
         tag, name = m.group(1), m.group(2)
+        if name.isdigit():
+            # numeric refs are TemplateEvent ID-based lookups, never matched
+            # against an event NAME - skip both translation and the dangling
+            # check (a numeric "name" can never resolve to a map event).
+            return m.group(0)
         if "\\" in name or "[" in name:
             # control-code refs are never translated: still record them so a
             # TRANSLATED event name of the same raw text is caught as dangling
@@ -201,16 +210,35 @@ def process_commands(cmds, D):
                     if v is not None:
                         params[idx] = v
         elif code == 122:
-            # skip script operands (operandType == 4): params[4] is JS code,
-            # never display text
+            # script operands (operandType == 4) store display strings in
+            # variables (shown later via \V[n]): exact-match the whole JS
+            # literal.  Non-literal script expressions are left alone.
             if len(params) > 3 and params[3] == 4:
-                pass
+                if len(params) > 4 and isinstance(params[4], str) and params[4] \
+                        and params[4][0] in "'\"" and QUOTED.search(params[4]):
+                    v = exact(params[4], D)
+                    if v is not None:
+                        params[4] = v
             else:
                 for idx in (3, 4):
                     if idx < len(params) and isinstance(params[idx], str):
                         v = exact(params[idx], D)
                         if v is not None:
                             params[idx] = v
+        elif code in (355, 655):
+            # script lines with kana inside a quoted literal are display text
+            # (e.g. BattleManager._logWindow.addText('...')): exact-match the
+            # whole line so the translated string stays valid JS.
+            if params and isinstance(params[0], str) and QUOTED.search(params[0]):
+                v = exact(params[0], D)
+                if v is not None:
+                    params[0] = v
+        elif code == 357:
+            # plugin command arguments: exact-match kana-bearing string VALUES
+            # in the arg dict (display text).  params[2] (Japanese command
+            # name) is a functional lookup key - never matched.
+            if len(params) > 3 and isinstance(params[3], dict):
+                _translate_arg_values(params[3], D)
         elif code == 408:
             if params and isinstance(params[0], str):
                 v = exact(params[0], D)
@@ -218,8 +246,32 @@ def process_commands(cmds, D):
                     params[0] = v
 
 
+def _translate_arg_values(obj, D):
+    """Exact-match string values (recursively) in a plugin-command arg dict."""
+    if isinstance(obj, dict):
+        for k in obj:
+            obj[k] = _translate_arg_values(obj[k], D)
+        return obj
+    if isinstance(obj, list):
+        for i in range(len(obj)):
+            obj[i] = _translate_arg_values(obj[i], D)
+        return obj
+    if isinstance(obj, str) and KANA.search(obj):
+        v = exact(obj, D)
+        if v is not None:
+            return v
+    return obj
+
+
 def process_db(obj, D):
     if isinstance(obj, dict):
+        # battle-event command lists inside DB files (Troops.json pages):
+        # process their display strings like any other event list.
+        lst = obj.get("list")
+        if isinstance(lst, list) and lst and isinstance(lst[0], dict) \
+                and "code" in lst[0]:
+            process_commands(lst, D)
+            return
         for k, v in list(obj.items()):
             if k in DISPLAY_KEYS and isinstance(v, str):
                 nv = exact(v, D)

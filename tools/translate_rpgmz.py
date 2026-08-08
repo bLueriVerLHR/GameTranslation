@@ -405,6 +405,13 @@ def add_cjk_font_fallback(root):
     css_path = os.path.join(root, "css", "game.css")
     if not os.path.exists(css_path):
         return
+    if os.path.exists(os.path.join(root, "js", "rmmz_managers.js")):
+        # MZ games load fonts through FontManager (family rmmz-mainfont from
+        # System.json advanced.mainFontFilename); the MV-style GameFont block
+        # below would override the MZ family with GameFont/Microsoft YaHei,
+        # making the whole game render in the system font.  MZ is handled by
+        # swap_mz_main_font() instead - never append this block.
+        return
     rule = (
         "\n/* CJK font fallback (added by translate_rpgmz.py) */\n"
         "#gameCanvas, .GameFont {\n"
@@ -575,6 +582,12 @@ def swap_mz_main_font(root, font_src):
         return
     css = open(css_path, encoding="utf-8").read()
     faces = re.findall(r"@font-face\s*\{[^}]*\}", css, re.S)
+    if any("rmmz-mainfont" in f and "unicode-range" in f for f in faces):
+        # A range-split rmmz-mainfont setup (kana -> original font, hanzi ->
+        # bundled CJK font) is intentional; rewriting the first face's src
+        # would collapse the split.  Leave the css alone.
+        log("MZ css already has a range-split rmmz-mainfont; css left as-is")
+        return
     target = None
     for f in faces:
         if "rmmz-mainfont" in f or "GameFont" in f:

@@ -186,6 +186,9 @@ build → decrypt → audio → clean → verify → serve → compress
   `add_cjk_font_fallback`（仅 MZ）没用，简体中文渲染方块。
   `add_mv_cjk_font(root, --cjk-font)` 打包 CJK ttf 并按 `unicode-range`
   拆 `gamefont.css`（假名/ASCII → 原字体，汉字 → 打包字体）。
+  **2026-08 后默认拆分为**：假名/日文标点 → `--jp-font`（缺省
+  `docs/table/local_font_path.txt` 第二行，未配置则回退游戏原字体），
+  汉字/拉丁 → `--cjk-font`（首行）。
 - **翻译后验证 CSV ID：** 地图 JSON 里每个 `\M[ID]` 必须在 CSV 的 名前
   列存在（排除既有缺失如 `\V[320`、`テスト`、单假名 — 源里本来就没有）。
 
@@ -444,3 +447,61 @@ false，因为 `$gameMap.isEventRunning()` 恒 true；地图解释器空闲
 - `gen_translation_shards.py`：auto 选档现在是默认
   （--target-chunks N / --context-budget-kb 90 二分搜索，上下文估算误差
   <3%）。
+
+## 12. 两款部分汉化 MV repack 的补翻批次（2026-08）
+
+两款 MV `www/` 部署、easy 加密、**部分汉化**的 repack（正文/DB 大部分
+已译，System UI/事件名/开关变量/少量对话残留日文）走完整流水线 +
+残留补翻。规模极小：每款仅 1 个 chunk（一款 453 键/7.8k 字符，另一款
+650 键/8k 字符）— 补翻剩余量可以用 1-2 个 subagent 一次完成，无需
+多轮。
+
+- **两款均已汉化但残留形态不同，补翻前先量。** 一款自带 MTool 字典
+  （1,032 键，354 命中残留模板 → 直接做 `--prefilled`，剩余 ~99 键
+  subagent 译）；另一款是公开汉化版，残留全在 UI/事件名/开关变量。
+  `extract_remaining_text.py` 是唯一可靠的量尺。
+- **NTR 题材术语统一（owner 定案，本地 ero 词表已记录）：** 主动送妻
+  类词 → **送妻**；被动被寝取类词 → **寝取**（或直接 NTR）。补翻 agent
+  会把这两个词整串留在译文里（视为专名），QC 假名残留检测会抓到 — 用
+  `--sweep` 或修复遍历统一，而不是依赖 agent。
+- **谜题暗号词豁免：** 一款的 DB description 里有一组假名暗号（变位词
+  谜题答案，如 5 个假名词），翻译会破坏谜题 — 记录到
+  `docs/table/<Game>/notes.md` 豁免清单，QC 接受残留。
+- **插件 note 功能性标签豁免：** `<モーション変更:guard>` 类
+  `<插件标签>` 是功能引用不是显示文本 — 保留，记入豁免清单。
+- **修复遍历：** 残留假名行里除豁免外全是题材术语串 — 机械替换两个
+  术语（送妻/寝取）后全部清零。double-backslash 告警要逐条看：插件参数
+  JSON 值里键本身含 `\\C[16]`（字面转义控制码），值保持一致就是正确，
+  不是污染。
+- **烘焙覆盖闸门验证：** 两款分别 83.8% / 89.8% 覆盖 — 补翻块小所以
+  达标；`--min-coverage` 默认 0.5 没触发。
+- **交付：** 两款都无 >4096 PNG（无 LowRes），`translation_kv.json`
+  已随包归档，压缩包 `7z t` 完整性测试 OK。
+
+### 12.1 压缩包与 repack 垃圾（两款各一坑）
+
+- **RAR5 AES 密码按推广文件识别：** 一款密码不在本地表，但包里带
+  推广 `.txt` — owner 指出该渠道固定密码，已补进
+  `docs/table/passwords.md`（此处不写具体值）。压缩包密码常与推广
+  文件名绑定，遇到陌生密码先看根目录推广文件问 owner。
+- **内嵌 `cn.rar` 不是汉化包：** 另一款包内嵌 `cn.rar`，名字像汉化包，
+  实际是推广包（内含"卸载类"exe 推广，密码同 FZGAME 渠道，见本地
+  密码表）。先 `7z l -p<pass>` 看内容再决定删不删 — 别被文件名误导。
+- **MTool 注入残留同上：** `与工具一同启动.bat`/`从游戏中移除工具文件.bat`/
+  `Tool/`/根 `<title>.json` 字典 — `build` 不拷贝根级文件，天然不进
+  JoiPlay 构建；但字典要留作 prefill 源（从源目录读，不拷进构建）。
+- **广告文件：** 根目录推广文本（机场类 `.txt`）、推广 `.url` 均在网页根
+  外，build 自动排除；渠道说明 `.txt` 一并留在源目录，不进构建即可，
+  无需手工删。
+
+### 12.2 长驻 serve 与 PowerShell 坑（补充 §8）
+
+- **`Start-Process -ArgumentList` 对含 `～`（全角波浪号）的路径失效：**
+  进程启动即退（无日志）。同一命令换成
+  `cmd /c start /b python <pipeline> serve "<path>" -p <port>` 正常。
+  另一款路径无此字符则 `Start-Process` 正常 — 症状不固定，启动失败后
+  先在前台跑一次看是否端口冲突，再换 `cmd /c start /b`。
+- **测试后服务器必须按端口杀干净：**
+  `Get-NetTCPConnection -State Listen | Where LocalPort -in 8101,8102`
+  再 `Stop-Process`，防复用端口残留服务器服务旧目录（§8 老坑重犯）。
+

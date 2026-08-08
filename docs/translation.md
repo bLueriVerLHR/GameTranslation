@@ -260,7 +260,8 @@ python tools\bake_translation.py <built_joiplay> <out_dir> --trs translated.json
   引用）逐一 WARN。
 - **translation_kv.json** 自动归档进 `out_dir`（烘焙字典，
   `--no-kv` 关闭）— 无需手工改名。
-- 向 `css/game.css` 追加 CJK 字体回退。
+- 应用**标准字体策略**（`--cjk-font` 中文字体 + `--jp-font` 日文
+  fallback；见 `docs/workflow.md`「标准字体策略」）。
 
 然后重跑 `verify --source <原版>`、`serve --test`、**新端口** HTTP 试玩
 （同端口 origin 共享 localStorage），再 `compress`。
@@ -461,7 +462,7 @@ EXACT 键**（与 `bake_translation.py` 查的完全一致）— 假名正则
 | zh.txt 含原始 `\C[27]`（单反斜杠） | 按转义规则字面反斜杠必须写 `\\`；修该行再合并 |
 | 输出缺某些键 | 1:1 行布局下缺键 = 行数不匹配（上条）。否则块被拆到多个 zh 文件 — 每块独立合并 |
 | 消息窗口文本溢出 | 值行数多于键 → 追加命令；少 → 补空行。翻译时保持行数相等 |
-| 中文显示方块 | 烘焙器向 `css/game.css` 追加 CJK 字体回退。仍不行就装 CJK 字体（微软雅黑 / Noto Sans CJK） |
+| 中文显示方块 | 烘焙器自动应用**标准字体策略**（`--cjk-font` 中文字体 + `--jp-font` 日文 fallback，缺省读 `docs/table/local_font_path.txt` 首/二行；见 `docs/workflow.md`）。仍不行就装 CJK 字体（微软雅黑 / Noto Sans CJK） |
 | 实际是文件名/标签的"残留假名" | `\fn[字体名]`、SE/BGM/ME `parameters[0].name`（codes 250/241/249）、地图 `bgm`/`bgs` 的 `name`、code 101 `parameters[0]` 头像文件名、note 插件标签参数 — 绝不翻译；假名检查前先剥离控制 token（见 §2b） |
 | 插件参数里的菜单文本没翻 | 只有 `build_translation.py` 没带 `--no-plugins` 且字符串含日文时才提取（kind `plugin`）；重跑提取、翻译、重烘焙。插件命令参数（codes `356`/`357`/`657`/`355`）里**引号外的功能性部分**绝不静态翻译，但显示值（357 参数 dict 值、122 脚本字符串字面量、355/655 引号内假名行、Troops 战斗事件）按 §2b 补翻 |
 | 插件按日文名查找的功能键被翻坏（如选择帮助命令名被译成中文后，事件注释里的日文标记失配 → 帮助文本消失） | 功能键（事件注释/note 与插件参数里的同名匹配串）必须**逐字豁免**：从字典里删掉该键，`plugin_json_leaves`/合并时走 `--exempt`；再烘焙 |

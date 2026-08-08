@@ -73,7 +73,7 @@ docs/table/
 - **该目录内容绝不写进仓库代码/文档/commit**；提交前自查扫描时排除
   `docs/table/**`（见上节）。
 
-## 开发流程（分支/提交/推送, mandatory）
+## 开发流程（分支/提交, mandatory）
 
 - **每次任务开新分支**，命名 `<罗马音代号>/<功能>`：代号取游戏/项目名的
   罗马音短名（约 5 个字母，如 SachiNTR → `sachi`），功能如
@@ -83,14 +83,15 @@ docs/table/
 - **完成后合并回主分支（main）**：
   `git checkout main` → `git merge <分支>` — 允许多个 commit，无需 squash
   成单一提交；每个功能/修复一个提交，按逻辑拆分即可。
-- **合并/推送前必须通过检查（mandatory）**：
+- **推送必须显式获准（mandatory）**：**绝不主动 push 到 GitHub** —
+  只有 owner 明确说"推送/push"时才推送，且只推主分支（main）；推送前
+  必须先通过下方检查。提交者身份用 opencode（不用 owner 的 git 身份）。
+- **合并前必须通过检查（mandatory）**：
   1. 敏感词扫描：
      `rg -n -i "<游戏名|密码|C:\\Users\\|露骨词>" --glob "!*.pyc" --glob "!docs/table/**" .`
      零命中；
   2. `python -m py_compile` 所有改动的 `.py`（工具可运行）；
-  3. 文档一致性：README 目录树与新增文件同步、文档语言为中文；
-  4. 只推送主分支（main）到 GitHub，提交者身份用 opencode
-     （不用 owner 的 git 身份）。
+  3. 文档一致性：README 目录树与新增文件同步、文档语言为中文。
 - 提交信息主要用中文描述，但不得含游戏名与敏感词。
 
 ## 语言规则（mandatory）

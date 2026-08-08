@@ -388,15 +388,33 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game_JoiPlay.7z
 - 流水线后应用翻译：`translate_rpgmz.py <built> <new>`（兼容静态字典）
   或 `bake_translation.py <built> <new> --trs translated.json --glossary
   glossary.json`（静态 subagent 工作流）会拷贝**已解密、已压缩**的构建、
-  把字典烘焙进 `data/*.json`、向 `css/game.css` 追加 CJK 字体回退 —
-  无需重跑 `build`/`audio`/`clean`。bake 现在：低于 `--min-coverage` 50%
-  拒绝（→ 改全量翻译，`--force` 覆盖）、自动剔除 identity 条目、
+  把字典烘焙进 `data/*.json`、应用**标准字体策略** — 无需重跑
+  `build`/`audio`/`clean`。bake 现在：低于 `--min-coverage` 50% 拒绝
+  （→ 改全量翻译，`--force` 覆盖）、自动剔除 identity 条目、
   自动检查 `<TE:>`/`<namePop:>` 引用对照事件名、自动在输出根归档
   `translation_kv.json`。然后重跑 `verify --source <原版>`、`serve
   --test`、**新端口** HTTP 试玩（同端口 origin 共享 localStorage）、
   再 `compress`（替换旧包）。注意：它用 `indent=2` 重写所有 `data/*.json`
   （无害），且需要手机上有 CJK 字体（回退列出系统字体；译文显示方块就
   打包一个）。
+
+### 标准字体策略（owner 偏好, 2026-08 定案）
+
+中文/拉丁 → 打包的中文字体（默认得意黑，`--cjk-font` 指定，缺省读
+`CJK_FONT_PATH` / 本地 `docs/table/local_font_path.txt`）；**日文 →
+游戏原始字体**（游戏自带的字体文件）。实现（`translate_rpgmz.py
+apply_font_policy`，幂等可重跑）：
+
+- **MZ**（有 `js/rmmz_managers.js`）：`System.json`
+  `advanced.mainFontFilename` 置空（引擎不再注册全范围 FontFace，杜绝
+  FontFace 与 CSS @font-face 优先级歧义），`css/game.css` 的
+  `rmmz-mainfont` 按 unicode-range 拆两张脸 — `U+3000-30FF, U+FF00-FFEF`
+  （假名 + 日文标点）→ 游戏原字体；其余（汉字/拉丁）→ 中文字体。
+- **MV**（无 `rmmz_managers.js`）：`fonts/gamefont.css` 按 unicode-range
+  拆分（假名/ASCII 保留原字体，汉字走中文字体）+ `css/game.css` 追加
+  GameFont 回退块。MV 的 GameFont/YaHei 块**绝不追加到 MZ**（会覆盖
+  rmmz-mainfont 族，全游戏渲染成系统雅黑 — 已踩过）。
+- 无 `--cjk-font` 时策略整体跳过（游戏保持原字体）。
 
 ## 9. Unity 游戏（流水线之外）
 

@@ -32,6 +32,12 @@ def load_json(path):
         return json.load(f)
 
 
+def save_json(path, data):
+    """Save JSON with a stable non-ASCII-safe formatting."""
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+
+
 def escape_line(s):
     out = []
     for ch in s:

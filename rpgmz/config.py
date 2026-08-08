@@ -74,3 +74,27 @@ def find_7z():
         return DEFAULT_SEVENZ
     p = shutil.which("7z")
     return p or "7z"
+
+
+# Preferred CJK font for translated builds. Machine paths never live in the
+# repo - resolve at runtime:
+#   1. env var CJK_FONT_PATH
+#   2. gitignored local override file docs/table/local_font_path.txt (first line)
+#   3. None (caller keeps the plain fallback list)
+
+
+def find_cjk_font():
+    p = os.environ.get("CJK_FONT_PATH")
+    if p and os.path.isfile(p):
+        return p
+    local = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "..", "docs", "table", "local_font_path.txt")
+    try:
+        with open(local, encoding="utf-8") as f:
+            for line in f:
+                p = line.strip()
+                if p and os.path.isfile(p):
+                    return p
+    except OSError:
+        pass
+    return None

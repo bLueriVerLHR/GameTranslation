@@ -35,6 +35,9 @@ import re
 import shutil
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmz import config  # noqa: E402
+
 RPGMV_HEADER = bytes.fromhex("5250474d560000000003010000000000")
 SPLIT = re.compile(r"(\\\.|\n)")
 # Control codes that must never be translated inside their brackets:
@@ -557,6 +560,44 @@ def add_mv_cjk_font(root, cjk_font_src):
     log("bundled %s and split fonts/gamefont.css by unicode-range" % cjk_name)
 
 
+def swap_mz_main_font(root, font_src):
+    """Point the MZ main font (@font-face family rmmz-mainfont, or the first
+    @font-face in css/game.css) at a bundled TTF: copy the file into fonts/
+    and rewrite the src url. Used to switch the whole UI to a chosen CJK font.
+    Keeps any existing unicode-range so a range-split setup (kana + hanzi)
+    still works.
+    """
+    css_path = os.path.join(root, "css", "game.css")
+    if not os.path.exists(css_path):
+        return
+    if not font_src or not os.path.isfile(font_src):
+        log("WARN: --cjk-font not given or missing; css/game.css left as-is")
+        return
+    css = open(css_path, encoding="utf-8").read()
+    faces = re.findall(r"@font-face\s*\{[^}]*\}", css, re.S)
+    target = None
+    for f in faces:
+        if "rmmz-mainfont" in f or "GameFont" in f:
+            target = f
+            break
+    if target is None and faces:
+        target = faces[0]
+    if target is None:
+        log("WARN: no @font-face in css/game.css; font bundled but css untouched")
+        return
+    name = os.path.basename(font_src)
+    shutil.copy2(font_src, os.path.join(root, "fonts", name))
+    new_face = re.sub(r"src:\s*url\([^)]+\)", 'src: url("../fonts/%s")' % name,
+                      target, count=1, flags=re.S)
+    if new_face == target:
+        log("WARN: could not rewrite src in @font-face; css untouched")
+        return
+    css = css.replace(target, new_face)
+    with open(css_path, "w", encoding="utf-8") as f:
+        f.write(css)
+    log("swapped MZ main font to %s" % name)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("game_dir", help="source game folder")
@@ -567,8 +608,13 @@ def main():
     ap.add_argument("--plugins", action="store_true",
                     help="also patch js/plugins.js (risky, default off)")
     ap.add_argument("--cjk-font", default="",
-                    help="CJK ttf to bundle for MV games (fonts/gamefont.css split)")
+                    help="CJK ttf to bundle (MV: fonts/gamefont.css split; "
+                         "MZ: swap the main @font-face src). Default: "
+                         "resolved via CJK_FONT_PATH / "
+                         "docs/table/local_font_path.txt")
     args = ap.parse_args()
+    if not args.cjk_font:
+        args.cjk_font = config.find_cjk_font() or ""
 
     game_dir = os.path.abspath(args.game_dir)
     out_dir = os.path.abspath(args.out_dir)
@@ -608,6 +654,7 @@ def main():
         translate_extern_csv(out_dir, D, index)
         add_cjk_font_fallback(out_dir)
         add_mv_cjk_font(out_dir, args.cjk_font)
+        swap_mz_main_font(out_dir, args.cjk_font)
     else:
         log("translation skipped")
 

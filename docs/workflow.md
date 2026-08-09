@@ -36,11 +36,19 @@
 - PowerShell 5.1（无 `?.`、无 `&&`；用 `;` / `if ($?)`）。
 - **本机环境配置**：交付目录（成品游戏 / 压缩包）、工具路径、venv 等
   本机专用信息写进本地私有配置 `docs/table/env_config.json`
-  （gitignored，不入库；记录当前平台 wsl）。**所有工具用 WSL 内部的
-  版本**：7z = 7-Zip-Zstandard Linux 版（`docs/table/3rd/`，负责解压入
-  WSL 与在 Games/Compress 间压缩），ffmpeg/rg/git 等在 PATH 中的自动
-  发现、不写路径；只有文件存储位置是机器相关的。工具安装/下载由 owner
-  执行（如 `pacman -S ...`、`3rd/` 内二进制）。
+  （gitignored，不入库；记录当前平台）。**所有工具用当前平台内部的
+  版本**：7z = 7-Zip-Zstandard（`docs/table/3rd/`，负责解压压缩包到系统
+  临时文件夹、在成品/压缩包目录间压缩），ffmpeg/rg/git 等在 PATH 中的
+  自动发现、不写路径；只有文件存储位置是机器相关的。工具安装/下载由
+  owner 执行（如系统包管理器、`3rd/` 内二进制）。
+- **工作流（2026-08 定案）**：源压缩包在存储侧（Windows），解压/处理/
+  压缩在当前平台内完成；只做必要的跨系统搬运：
+  1. 开工前先检查系统临时文件夹（`deliverables.temp`）：已有该游戏的工作
+     副本 → 直接基于它继续，不重复解压/复制；
+  2. 没有 → 从源压缩包（`deliverables.archives`）复制/解压到系统临时文件夹；
+  3. 在当前平台内处理（流水线/翻译等）；
+  4. 成品文件夹移动到成品目录（`deliverables.games`）；
+  5. 压缩包直接压缩写入压缩包目录（`deliverables.archives`）。
 
 ## 2. 一键流水线
 
@@ -74,11 +82,13 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
 
 ### 文件放哪（强制布局）
 
-- **工作/解压文件放 Temp 目录 — 绝不放原位。** 流水线绝不在原版游戏目录
-  里或旁边解压/构建。工作副本在 Temp 路径（如
-   `%LOCALAPPDATA%\Temp\opencode\<Game>\`），压缩包做完即可删除。
+- **工作/解压文件放系统临时文件夹 — 绝不放原位。** 流水线绝不在原版游戏
+  目录里或旁边解压/构建。工作副本在系统临时文件夹（如 Windows 的 `Temp`、
+  Linux 的 `/tmp`；本机具体路径见 `docs/table/env_config.json` 的
+  `deliverables.temp`），压缩包做完即可删除。
 - **成品放专门交付目录，与其他游戏一致。** 最终交付物 — JoiPlay 目录
-  `<Game>\` 与压缩包 `<Game>.7z` — 放同一个固定目录，
+  `<Game>\` 与压缩包 `<Game>.7z` — 放同一个固定目录（本机路径见
+  `docs/table/env_config.json` 的 `deliverables.games` / `deliverables.archives`），
   命名与其他转换过的游戏完全一致。原版游戏保持不动。
 - **手机贴图限制（单一构建策略，2026-08 定案）。** Android
   WebView/PixiJS 把 WebGL 贴图限制在**每边 4096 像素**；任何超过 4096
@@ -380,8 +390,8 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
 - 除非插件保证 `.ogg`，别删 `.m4a`；有些游戏把 `audioFileExt()` 硬编码
   成 `rmmz_managers.js` 里的 `.ogg`。
 - `System.json`（或任何 JSON）里的 UTF-8 BOM 破坏 `JSON.parse`。
-- 原版游戏目录保持不动；只在 Temp 副本工作
-  （`%LOCALAPPDATA%\Temp\opencode\<Game>\`）。
+- 原版游戏目录保持不动；只在系统临时文件夹的工作副本里操作（本机具体
+  路径见 `docs/table/env_config.json` 的 `deliverables.temp`）。
 - CG 图片珍贵 — `clean` 绝不碰 `img/pictures`。
 - 别过度修插件：只 patch JoiPlay 里真正坏的。
 - **翻译决策规则（问一次，然后行动）：**

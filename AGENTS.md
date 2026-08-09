@@ -322,10 +322,19 @@ Unity **2021.3.15f1 Mono**（非 IL2CPP），Addressables bundles。
 
 ## 目录约定
 
-- 工作/解压副本一律放 Temp 目录
-  （`%LOCALAPPDATA%\Temp\opencode\<Game>\`），绝不放源目录旁边。
+- 工作/解压副本一律放**系统临时文件夹**（如 Windows 的 `Temp`、Linux 的
+  `/tmp`；本机具体路径见本地私有配置 `docs/table/env_config.json` 的
+  `deliverables.temp`），绝不放源目录旁边。
 - 成品放专门交付目录，命名 `<Game>` / `<Game>.7z`，与其他转换过的游戏一致。
 - 绝不修改原版游戏目录。
+- **工作流（2026-08 定案）**：源压缩包在存储侧（Windows），处理在当前
+  平台（WSL）内完成；只做必要的跨系统搬运。
+  1. 开工前先检查**系统临时文件夹**（`deliverables.temp`）：已有该游戏的
+     工作副本 → 直接基于它继续，不重复解压/复制；
+  2. 没有 → 从源压缩包（`deliverables.archives`）复制/解压到系统临时文件夹；
+  3. 在当前平台内处理（流水线/翻译等，工具用当前平台内部的）；
+  4. 成品文件夹移动到成品目录（`deliverables.games`）；
+  5. 压缩包直接压缩写入压缩包目录（`deliverables.archives`）。
 - **本机环境信息（交付目录、工具路径、venv 等）一律写进本地私有配置
   `docs/table/env_config.json`**（gitignored，不入库）；代码按平台
   （wsl）解析，不硬编码本机路径。新增本机专用信息

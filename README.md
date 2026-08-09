@@ -118,13 +118,13 @@ RPG Maker 静态翻译（提取 → 词表 → subagent 分块 → 精确匹配�
 - Everything（`es` CLI，仅 Windows）用于跨盘即时文件名查找
 
 **本机环境配置（`docs/table/env_config.json`，gitignored 仅本地）：**
-交付目录（成品游戏 / 压缩包）与工具路径都写在这里，记录当前平台（wsl）。
-**所有工具用当前平台（WSL）内部的版本** — 7z 用 7-Zip-Zstandard 的
-Linux 版（项目内 `docs/table/3rd/`，解压压缩包进 WSL、成品在
-Games/Compress 间压缩），ffmpeg/rg/git 等在 PATH 中的自动发现，配置里
-不写路径；只有文件存储位置（交付目录）是机器相关的。解析顺序：环境变量
-→ env_config.json → 内置默认值 → PATH。系统工具安装/下载（
-`sudo pacman -S ...`、`3rd/` 内二进制）由 owner 执行。
+交付目录（成品游戏 / 压缩包 / 系统临时文件夹）与工具路径都写在这里，
+记录当前平台。**所有工具用当前平台内部的版本**：7z 用 7-Zip-Zstandard
+（项目内 `docs/table/3rd/`），ffmpeg/rg/git 等在 PATH 中的自动发现，配置
+里不写路径；只有文件存储位置是机器相关的。工作流：源压缩包在存储侧 →
+解压到系统临时文件夹 → 平台内处理 → 成品移到成品目录 → 压缩到压缩包
+目录（详见 `docs/workflow.md`）。解析顺序：环境变量 → env_config.json →
+内置默认值 → PATH。系统工具安装/下载由 owner 执行。
 
 ### WSL 快速开始 — RPG Maker
 
@@ -133,7 +133,7 @@ $tk = "<本工具库路径>"
 cfg() { python3 -c "import sys; sys.path.insert(0, '$tk'); from rpgmz import config; print(config.$1())"; }
 
 $src = "<原版游戏路径>"                       # 绝不修改原版
-$out = "$(cfg temp_dir)/game"                 # Temp 工作目录
+$out = "$(cfg temp_dir)/game"                 # 系统临时文件夹（工作副本）
 $g   = "$(cfg games_dir)"                     # 成品游戏目录
 $ga  = "$(cfg archives_dir)"                  # 成品压缩包目录
 

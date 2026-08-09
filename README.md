@@ -110,9 +110,38 @@ RPG Maker 静态翻译（提取 → 词表 → subagent 分块 → 精确匹配�
 
 ## 环境要求
 
-- Python 3.10+（`tools/downscale_images.py` 需要 Pillow）
-- ffmpeg/ffprobe（含 libvorbis；默认路径在 `%LOCALAPPDATA%\Temp\opencode\`）
-  — 仅 **audio** 步骤使用
-- 7-Zip-Zstandard（默认 `C:\Program Files\7-Zip-Zstandard\7z.exe`）
-- ripgrep（`rg`）用于构建内的快速内容搜索（如 `rg -n "process\." js/plugins/*.js`）
-- Everything（`es` CLI）用于跨盘即时文件名查找（如 `es "game name"`）
+- Python 3.10+（`tools/downscale_images.py` 需要 Pillow；项目自带本地虚拟
+  环境 `.venv/`，gitignored — 需要新包时在 venv 里安装，不污染系统环境）
+- ffmpeg/ffprobe（含 libvorbis）— 仅 **audio** 步骤使用
+- 7-Zip-Zstandard（压缩包用 `-m0=zstd`）
+- ripgrep（`rg`）用于构建内的快速内容搜索
+- Everything（`es` CLI，仅 Windows）用于跨盘即时文件名查找
+
+**本机环境配置（`docs/table/env_config.json`，gitignored 仅本地）：**
+交付目录（成品游戏 / 压缩包）与工具路径都写在这里，记录当前平台（wsl）。
+**所有工具用当前平台（WSL）内部的版本** — 7z 用 7-Zip-Zstandard 的
+Linux 版（项目内 `docs/table/3rd/`，解压压缩包进 WSL、成品在
+Games/Compress 间压缩），ffmpeg/rg/git 等在 PATH 中的自动发现，配置里
+不写路径；只有文件存储位置（交付目录）是机器相关的。解析顺序：环境变量
+→ env_config.json → 内置默认值 → PATH。系统工具安装/下载（
+`sudo pacman -S ...`、`3rd/` 内二进制）由 owner 执行。
+
+### WSL 快速开始 — RPG Maker
+
+```bash
+$tk = "<本工具库路径>"
+cfg() { python3 -c "import sys; sys.path.insert(0, '$tk'); from rpgmz import config; print(config.$1())"; }
+
+$src = "<原版游戏路径>"                       # 绝不修改原版
+$out = "$(cfg temp_dir)/game"                 # Temp 工作目录
+$g   = "$(cfg games_dir)"                     # 成品游戏目录
+$ga  = "$(cfg archives_dir)"                  # 成品压缩包目录
+
+python3 "$tk/pipeline.py" build   "$src" -o "$out"
+python3 "$tk/pipeline.py" decrypt "$out"          # 仅 RPGM + easy 加密；否则跳过
+python3 "$tk/pipeline.py" audio   "$out"
+python3 "$tk/pipeline.py" clean   "$out"
+python3 "$tk/pipeline.py" verify  "$out" --source "$src"
+python3 "$tk/pipeline.py" serve   "$out" --test
+python3 "$tk/pipeline.py" compress "$out" -o "$ga/game.7z"
+```

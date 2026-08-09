@@ -326,6 +326,11 @@ Unity **2021.3.15f1 Mono**（非 IL2CPP），Addressables bundles。
   （`%LOCALAPPDATA%\Temp\opencode\<Game>\`），绝不放源目录旁边。
 - 成品放专门交付目录，命名 `<Game>` / `<Game>.7z`，与其他转换过的游戏一致。
 - 绝不修改原版游戏目录。
+- **本机环境信息（交付目录、工具路径、venv 等）一律写进本地私有配置
+  `docs/table/env_config.json`**（gitignored，不入库）；代码按平台
+  （wsl）解析，不硬编码本机路径。新增本机专用信息
+  先加到这里。系统工具安装（如 `pacman -S ...`）由 owner 执行，agent 不
+  自行下载/提权。
 
 ## 打包规则 (mandatory, 压缩前必做)
 

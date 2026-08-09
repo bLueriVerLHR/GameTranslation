@@ -34,6 +34,13 @@
 - ripgrep（`rg`）在 PATH 上，用于快速内容搜索（如预扫插件）。
 - Everything（`es` CLI）在 PATH 上，用于跨盘即时文件名查找。
 - PowerShell 5.1（无 `?.`、无 `&&`；用 `;` / `if ($?)`）。
+- **本机环境配置**：交付目录（成品游戏 / 压缩包）、工具路径、venv 等
+  本机专用信息写进本地私有配置 `docs/table/env_config.json`
+  （gitignored，不入库；记录当前平台 wsl）。**所有工具用 WSL 内部的
+  版本**：7z = 7-Zip-Zstandard Linux 版（`docs/table/3rd/`，负责解压入
+  WSL 与在 Games/Compress 间压缩），ffmpeg/rg/git 等在 PATH 中的自动
+  发现、不写路径；只有文件存储位置是机器相关的。工具安装/下载由 owner
+  执行（如 `pacman -S ...`、`3rd/` 内二进制）。
 
 ## 2. 一键流水线
 

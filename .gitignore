@@ -5,5 +5,8 @@ __pycache__/
 *.csv
 .DS_Store
 
+# project-local python virtualenv (machine-specific)
+.venv/
+
 # per-game translation assets stay local (glossary/tone/notes, incl. adult word table)
 docs/table/

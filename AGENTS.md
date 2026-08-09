@@ -333,8 +333,12 @@ Unity **2021.3.15f1 Mono**（非 IL2CPP），Addressables bundles。
      工作副本 → 直接基于它继续，不重复解压/复制；
   2. 没有 → 从源压缩包（`deliverables.archives`）复制/解压到系统临时文件夹；
   3. 在当前平台内处理（流水线/翻译等，工具用当前平台内部的）；
-  4. 成品文件夹移动到成品目录（`deliverables.games`）；
-  5. 压缩包直接压缩写入压缩包目录（`deliverables.archives`）。
+  4. 收尾用 `pipeline.py deliver <成品目录>`：先在平台内把成品压缩成本地
+     7z（快文件系统），再把压缩包复制到压缩包目录（`deliverables.archives`，
+     覆盖旧包——通常就是源压缩包）；
+  5. 若成品目录（`deliverables.games`）已有同名旧文件夹，先删除，再从
+     压缩包目录的 7z 解压到成品目录。跨系统只搬运单个压缩包，避免大量
+     小文件走 9P。
 - **本机环境信息（交付目录、工具路径、venv 等）一律写进本地私有配置
   `docs/table/env_config.json`**（gitignored，不入库）；代码按平台
   （wsl）解析，不硬编码本机路径。新增本机专用信息
@@ -369,8 +373,9 @@ Unity **2021.3.15f1 Mono**（非 IL2CPP），Addressables bundles。
   `<namePop:name>` 与全游戏事件名,失配的 dangling ref 逐一 WARN
   (含带控制码而被跳过翻译的 ref — 若事件名被翻了而 ref 没翻必被抓)。
   无需再手工 `rg -o "<TE:[^>]+>" data/` 抽查(可作二次确认)。
-- 收尾顺序: `verify --source` → `serve --test` → 清理打包 → `compress`
-  (自动替换旧包 + 完整性测试)。
+- 收尾顺序: `verify --source` → `serve --test` → 清理打包 → `deliver`
+  (本地压缩 → 复制压缩包到压缩包目录覆盖旧包 → 删除成品目录旧文件夹 →
+  解压到成品目录;含压缩包完整性测试)。
 
 ## 手机贴图限制（强制单一构建，2026-08 定案）
 
@@ -535,4 +540,5 @@ prompt 里再加三条明令:
 ## 顺序
 
 `build` → (`decrypt` 仅 RPG Maker MZ/MV easy 加密时) → `audio` → `clean`
-→ `verify --source` → `serve --test` → 新端口 HTTP 试玩 → `compress` 最后。
+→ `verify --source` → `serve --test` → 新端口 HTTP 试玩 → `deliver` 最后
+(压缩 → 复制压缩包到压缩包目录 → 删除成品目录旧文件夹 → 解压到成品目录)。

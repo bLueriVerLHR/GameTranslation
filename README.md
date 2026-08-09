@@ -10,7 +10,7 @@ RPG Maker 游戏有打包成 **JoiPlay** 可玩的完整流程。本项目仅由
 
 ```
 GameTranslation/
-├── pipeline.py          # RPG Maker 命令行（build → decrypt → audio → clean → verify → serve/compress）
+├── pipeline.py          # RPG Maker 命令行（build → decrypt → audio → clean → verify → serve/compress/deliver）
 ├── rpgmz/               # RPG Maker 工具包
 │   ├── config.py        #   工具发现（ffmpeg/ffprobe/7z）+ 阈值
 │   ├── detect.py        #   引擎 / 网页根目录检测（MZ 根部署 vs MV www/）
@@ -21,6 +21,8 @@ GameTranslation/
 │   ├── clean.py         #   安全清理：img 垃圾、未用字体、未用图块
 │   ├── verify.py        #   PNG/JSON/标志位/音频引用/解码检查（--source 感知）
 │   ├── compress.py      #   7z-zstd 打包（替换旧包）+ 完整性测试
+│   ├── deliver.py       #   写回存储侧：本地压缩 → 复制压缩包到压缩包目录
+│   │                    #   （覆盖旧包）→ 删成品目录旧文件夹 → 解压到成品目录
 │   └── serve.py         #   HTTP 服务器 + 冒烟测试
 ├── tools/
 │   ├── build_translation.py   # 提取模板/上下文/种类/结构/人名/人名宏
@@ -70,6 +72,7 @@ python $tk\pipeline.py clean   $out
 python $tk\pipeline.py verify  $out --source $src   # 源感知的音频引用检查
 python $tk\pipeline.py serve   $out --test     # HTTP 冒烟测试
 python $tk\pipeline.py compress $out -o "$g\game.7z"
+python $tk\pipeline.py deliver $out            # 写回存储侧（压缩→压缩包目录→解压到成品目录）
 ```
 
 `decrypt` 默认只在 RPG Maker MZ/MV 且为 **easy** 加密（每个加密资源都带
@@ -82,8 +85,11 @@ python $tk\pipeline.py compress $out -o "$g\game.7z"
 
 目录约定：工作/解压副本一律放 **Temp** 目录（绝不放在源目录旁边），
 成品 JoiPlay 目录和 `.7z` 放专门的交付目录，命名 `<Game>` /
-`<Game>.7z`，与其他转换过的游戏一致。**单一构建策略**：所有超过 4096
-像素的 PNG 在构建期直接缩放到 ≤4096（`tools/downscale_images.py`），
+`<Game>.7z`，与其他转换过的游戏一致。**写回存储侧用 `deliver`**：先在
+平台内压缩成 7z，把压缩包复制到压缩包目录（覆盖旧包——通常就是源
+压缩包），删除成品目录里的同名旧文件夹，再从压缩包解压到成品目录——
+跨系统只搬运单个压缩包，避免大量小文件走 9P。**单一构建策略**：所有
+超过 4096 像素的 PNG 在构建期直接缩放到 ≤4096（`tools/downscale_images.py`），
 保证 Android 上正常显示，不再分高清/低清两套。
 
 - `python pipeline.py --help` 查看全部选项。
@@ -147,4 +153,5 @@ python3 "$tk/pipeline.py" clean   "$out"
 python3 "$tk/pipeline.py" verify  "$out" --source "$src"
 python3 "$tk/pipeline.py" serve   "$out" --test
 python3 "$tk/pipeline.py" compress "$out" -o "$ga/game.7z"
+python3 "$tk/pipeline.py" deliver "$out"      # 写回存储侧（压缩→压缩包目录→解压到成品目录）
 ```

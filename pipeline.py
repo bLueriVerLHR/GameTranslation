@@ -11,6 +11,8 @@ Pipeline steps (run in this order on a game folder):
   verify    check PNG signatures, JSON, audio refs, System flags, key files
   serve     run an HTTP server + smoke test (for browser/JoiPlay testing)
   compress  package the result as a 7z-zstd archive (tested last)
+  deliver   compress locally, copy the archive to the archives dir,
+            then extract it into the games dir (replaces the old copy step)
 
 Typical usage:
   python pipeline.py build  "path/to/game" -o out_dir
@@ -20,13 +22,14 @@ Typical usage:
   python pipeline.py verify  out_dir
   python pipeline.py serve   out_dir --test
   python pipeline.py compress out_dir -o out.7z
+  python pipeline.py deliver out_dir   # writes back to the storage side
 """
 import argparse
 import logging
 import os
 import sys
 
-from rpgmz import build, clean, compress, decrypt, detect, serve, verify
+from rpgmz import build, clean, compress, decrypt, deliver, detect, serve, verify
 from rpgmz import audio as audio_mod
 logging.basicConfig(
     level=logging.INFO,
@@ -101,6 +104,11 @@ def cmd_compress(args):
     compress.test_archive(archive)
 
 
+# ---------------------------------------------------------------- deliver
+def cmd_deliver(args):
+    deliver.deliver(args.game, level=args.level)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -154,6 +162,12 @@ def main(argv=None):
     p.add_argument("-o", "--out", default="", help="archive path (default: game folder + .7z)")
     p.add_argument("--level", type=int, default=15, help="zstd compression level (default 15)")
     p.set_defaults(func=cmd_compress)
+
+    p = sub.add_parser("deliver", help="write back to storage: compress, copy archive "
+                                       "to archives dir, extract into games dir")
+    p.add_argument("game", help="finished JoiPlay folder (web root, usually in temp)")
+    p.add_argument("--level", type=int, default=15, help="zstd compression level (default 15)")
+    p.set_defaults(func=cmd_deliver)
 
     args = ap.parse_args(argv)
     args.func(args)

@@ -47,13 +47,18 @@
      副本 → 直接基于它继续，不重复解压/复制；
   2. 没有 → 从源压缩包（`deliverables.archives`）复制/解压到系统临时文件夹；
   3. 在当前平台内处理（流水线/翻译等）；
-  4. 成品文件夹移动到成品目录（`deliverables.games`）；
-  5. 压缩包直接压缩写入压缩包目录（`deliverables.archives`）。
+  4. 收尾用 `pipeline.py deliver <成品目录>`：先在平台内压缩成本地 7z，
+     再把压缩包复制到压缩包目录（`deliverables.archives`，覆盖旧包——
+     通常就是源压缩包）；
+  5. 若成品目录（`deliverables.games`）已有同名旧文件夹，先删除，再从
+     压缩包目录的 7z 解压到成品目录。跨系统只搬运单个压缩包，避免大量
+     小文件走 9P。
 
 ## 2. 一键流水线
 
 整个转换是 `build → decrypt → audio → clean → verify`，然后**测** —
-`serve --test` — 最后才 `compress` 打包。`decrypt` 只在 RPG Maker MZ/MV
+`serve --test` — 最后 `deliver` 写回存储侧（本地压缩 → 压缩包复制到
+压缩包目录 → 解压到成品目录）。`decrypt` 只在 RPG Maker MZ/MV
 且 **easy** 加密时是默认步骤；复杂/自定义加密游戏上它不改任何东西
 （见 §4）。如果某步不会改变最终构建，跳过它。
 
@@ -69,6 +74,7 @@ python $tk\pipeline.py clean   $out          # 垃圾文件 / 未用字体 / 未
 python $tk\pipeline.py verify  $out --source $src   # PNG 签名、JSON、音频引用、标志位
 python $tk\pipeline.py serve   $out --test   # 关键文件 HTTP 冒烟测试
 python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
+python $tk\pipeline.py deliver $out          # 写回存储侧（见 §6a）
 ```
 
 `build`、`decrypt`、`audio` 在 asyncio + 线程池下并行（每步 `--workers N`，
@@ -87,9 +93,11 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
   Linux 的 `/tmp`；本机具体路径见 `docs/table/env_config.json` 的
   `deliverables.temp`），压缩包做完即可删除。
 - **成品放专门交付目录，与其他游戏一致。** 最终交付物 — JoiPlay 目录
-  `<Game>\` 与压缩包 `<Game>.7z` — 放同一个固定目录（本机路径见
-  `docs/table/env_config.json` 的 `deliverables.games` / `deliverables.archives`），
-  命名与其他转换过的游戏完全一致。原版游戏保持不动。
+  `<Game>\` 与压缩包 `<Game>.7z` — 放本机交付目录（本机路径见
+  `docs/table/env_config.json` 的 `deliverables.games` /
+  `deliverables.archives`），命名与其他转换过的游戏完全一致。写回用
+  `deliver`（§6）：压缩 → 压缩包复制到压缩包目录 → 删除成品目录旧
+  文件夹 → 解压到成品目录。原版游戏保持不动。
 - **手机贴图限制（单一构建策略，2026-08 定案）。** Android
   WebView/PixiJS 把 WebGL 贴图限制在**每边 4096 像素**；任何超过 4096
   的 PNG（通常是竖版立绘，如 2160x4237）在手机上渲染成**黑块**，PC
@@ -281,7 +289,7 @@ python tools\unlock_gallery.py <built> --switches 45,1   # 覆盖检测
 工具报告并什么都不做 — 别发明标志，保留原解锁机制。只在
 `verify` 之后的翻译/最终构建上运行。
 
-## 6. 打包（7z-zstd）— 最后一步
+## 6. 打包（7z-zstd）与写回存储侧 — 最后一步
 
 ```powershell
 python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
@@ -289,8 +297,25 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
 
 运行 `7z a -t7z -m0=zstd -mx=15 -mmt=on <archive> <folder>` 再 `7z t`
 确认 "Everything is Ok"。目标路径已有 `.7z` 时**先删** — `7z a` 是追加，
-压在旧包上会双倍（旧 + 新条目）。**试玩之后再运行。** 压缩包直接写进
-交付目录；把成品 `<Game>\` 目录也移过去（Temp 工作目录即可删除）。
+压在旧包上会双倍（旧 + 新条目）。**试玩之后再运行。**
+
+写回 Windows 存储侧（WSL 下跨文件系统递归拷贝大量小文件很慢）用
+`deliver` 一步完成：
+
+```powershell
+python $tk\pipeline.py deliver $out
+```
+
+它按 `env_config.json` 的交付目录执行（跨系统只搬运单个压缩包）：
+
+1. 在平台内（临时目录）把成品压缩成 `<Game>.7z`（本地文件系统，快）；
+2. 把压缩包**复制到压缩包目录**（`deliverables.archives`），覆盖旧包 —
+   通常就是源压缩包；
+3. 若成品目录（`deliverables.games`）已有同名 `<Game>\` 文件夹，**先删除**；
+4. 再从压缩包目录的 7z **解压到成品目录**（解压只读一个文件 +
+   顺序写小文件，比整棵树跨系统拷贝快得多）。
+
+完成后 Temp 工作目录即可删除。
 
 ### 6a. 压缩前清理（mandatory）
 
@@ -306,7 +331,8 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
   `translated.json` 或等价 {ja→zh} 字典）归档进游戏根目录
   **`translation_kv.json`**，后续修改/重译从同一 KV 起步。未翻译游戏
   不带此文件。
-- 然后 `compress`（替换旧包 + 完整性测试）。
+- 然后 `deliver`（本地压缩 → 复制压缩包到压缩包目录覆盖旧包 → 删除
+  成品目录旧文件夹 → 解压到成品目录；含完整性测试）。
 
 ## 7. 手机上运行
 
@@ -413,7 +439,7 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
   自动检查 `<TE:>`/`<namePop:>` 引用对照事件名、自动在输出根归档
   `translation_kv.json`。然后重跑 `verify --source <原版>`、`serve
   --test`、**新端口** HTTP 试玩（同端口 origin 共享 localStorage）、
-  再 `compress`（替换旧包）。注意：它用 `indent=2` 重写所有 `data/*.json`
+  再 `deliver`（写回存储侧：压缩 → 压缩包目录 → 成品目录）。注意：它用 `indent=2` 重写所有 `data/*.json`
   （无害），且需要手机上有 CJK 字体（回退列出系统字体；译文显示方块就
   打包一个）。
 

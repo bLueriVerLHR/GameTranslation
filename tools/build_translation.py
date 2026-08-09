@@ -125,21 +125,46 @@ def window_for(idx, tl, radius=WINDOW):
 # ---------------------------------------------------------------------------
 # Key collectors
 # ---------------------------------------------------------------------------
+# Location suffix separator: a key that appears in more than one place keeps
+# its first occurrence as the plain key (backward-compatible fallback) and
+# gets a "\x1f<loc>" variant key per further occurrence.  loc is a stable
+# traversal path rebuildable by bake_translation.py (file#container#cmd or
+# file#key-path), so each occurrence can carry its own context-aware
+# translation.  \x1f (UNIT SEPARATOR) cannot appear in game text.
+LOC_SEP = "\x1f"
+
+
+def loc_key(base, loc):
+    return base + LOC_SEP + loc
+
+
 class Collector(object):
     def __init__(self):
-        self.keys = set()            # all keys
+        self.keys = set()            # all keys (plain + located)
         self.kind_of = {}            # key -> kind
         self.context = {}            # key -> {"where": ..., "window": [...]}
         self.count = collections.Counter()
         self.name_cands = collections.Counter()
+        self._seen = {}              # base text -> occurrence count
 
-    def add(self, key, kind, where="", window=None):
+    def add(self, key, kind, where="", window=None, loc=""):
         if not key:
             return
-        self.keys.add(key)
-        self.kind_of.setdefault(key, kind)
-        self.context.setdefault(key, {"where": where, "window": window or []})
-        self.count[key] += 1
+        n = self._seen.get(key, 0) + 1
+        self._seen[key] = n
+        # Names / person references (short, no control codes, NAME_LINE-ish)
+        # are glossary-mapped, not context-sensitive text: keep a single
+        # plain key regardless of how many places reference them.
+        if n > 1 and loc and not (
+                len(key) <= 14 and not CTRL.search(key)
+                and NAME_LINE.match(key.strip())):
+            fk = loc_key(key, loc)
+        else:
+            fk = key
+        self.keys.add(fk)
+        self.kind_of.setdefault(fk, kind)
+        self.context.setdefault(fk, {"where": where, "window": window or []})
+        self.count[fk] += 1
 
     def add_name(self, s):
         if s and len(s) <= 14 and not CTRL.search(s) and NAME_LINE.match(s):
@@ -163,7 +188,7 @@ def build_name_macros(data_dir):
     return macros
 
 
-def iter_message_blocks(cmds, collector, kind="block", where=""):
+def iter_message_blocks(cmds, collector, kind="block", where="", loc=""):
     """Yield (block_key, [line, ...]) for runs of consecutive 401/405 cmds."""
     tl = talk_lines(cmds)
     i, n = 0, len(cmds)
@@ -180,7 +205,7 @@ def iter_message_blocks(cmds, collector, kind="block", where=""):
                          else "")
             j += 1
         key = "\n".join(lines)
-        collector.add(key, kind, where, window_for(i, tl))
+        collector.add(key, kind, where, window_for(i, tl), loc + "#c%d" % i)
         yield key, lines
         if len(lines) == 1 and key and not CTRL.search(key) \
                 and NAME_LINE.match(key.strip()) and len(key.strip()) <= 14:
@@ -190,17 +215,18 @@ def iter_message_blocks(cmds, collector, kind="block", where=""):
         i = j
 
 
-def process_commands(cmds, collector, where=""):
+def process_commands(cmds, collector, where="", loc=""):
     tl = talk_lines(cmds)
     for idx, cmd in enumerate(cmds):
         code = cmd.get("code")
         params = cmd.get("parameters")
         if not isinstance(params, list):
             continue
+        cloc = loc + "#c%d" % idx
         if code == 102 and params and isinstance(params[0], list):
             for x in params[0]:
                 if isinstance(x, str) and JA.search(x):
-                    collector.add(x, "choice", where, window_for(idx, tl))
+                    collector.add(x, "choice", where, window_for(idx, tl), cloc)
         elif code in EVENT_TEXT_IDX:
             for i2 in EVENT_TEXT_IDX[code]:
                 if i2 < len(params) and isinstance(params[i2], str) \
@@ -208,7 +234,7 @@ def process_commands(cmds, collector, where=""):
                     if code == 101 and len(params) >= 5:
                         collector.add_name(params[4])
                     collector.add(params[i2], "event-text", where,
-                                  window_for(idx, tl))
+                                  window_for(idx, tl), cloc)
         elif code == 122:
             # skip script operands (operandType == 4): params[4] is JS code
             if len(params) > 3 and params[3] == 4:
@@ -218,43 +244,46 @@ def process_commands(cmds, collector, where=""):
                     if i2 < len(params) and isinstance(params[i2], str) \
                             and params[i2]:
                         collector.add(params[i2], "event-text", where,
-                                      window_for(idx, tl))
+                                      window_for(idx, tl), cloc)
         elif code == 408:
             if params and isinstance(params[0], str) and params[0] \
                     and not DIRECTIVE.match(params[0]):
-                collector.add(params[0], "help", where, window_for(idx, tl))
+                collector.add(params[0], "help", where, window_for(idx, tl),
+                              cloc)
 
 
-def process_db(obj, collector, where=""):
+def process_db(obj, collector, where="", loc=""):
     if isinstance(obj, dict):
         for k, v in list(obj.items()):
+            kloc = loc + "#%s" % k
             if k in DISPLAY_KEYS and isinstance(v, str) and JA.search(v):
-                collector.add(v, "db-" + k, where, [])
+                collector.add(v, "db-" + k, where, [], kloc)
             elif k == "note" and isinstance(v, str) and JA.search(v):
-                collector.add(v, "note", where, [])
+                collector.add(v, "note", where, [], kloc)
             else:
-                process_db(v, collector, where)
+                process_db(v, collector, where, kloc)
     elif isinstance(obj, list):
-        for v in obj:
-            process_db(v, collector, where)
+        for i, v in enumerate(obj):
+            process_db(v, collector, where, loc + "[%d]" % i)
 
 
 def process_system(system, collector):
     for f in SYSTEM_TEXT_FIELDS + SYSTEM_TEXT_ARRAYS:
         if f in system:
-            collect_values(system[f], collector, "System.json")
+            collect_values(system[f], collector, "System.json",
+                           "System.json#%s" % f)
 
 
-def collect_values(obj, collector, where=""):
+def collect_values(obj, collector, where="", loc=""):
     if isinstance(obj, str):
         if JA.search(obj):
-            collector.add(obj, "system", where, [])
+            collector.add(obj, "system", where, [], loc)
     elif isinstance(obj, dict):
-        for v in obj.values():
-            collect_values(v, collector, where)
+        for k, v in obj.items():
+            collect_values(v, collector, where, loc + "#%s" % k)
     elif isinstance(obj, list):
-        for v in obj:
-            collect_values(v, collector, where)
+        for i, v in enumerate(obj):
+            collect_values(v, collector, where, loc + "[%d]" % i)
 
 
 def extract_plugin_text(game_dir, collector):
@@ -278,26 +307,29 @@ def extract_plugin_text(game_dir, collector):
 # ---------------------------------------------------------------------------
 # Scene tree
 # ---------------------------------------------------------------------------
-def build_tree(data, map_id, map_name, display_name, collector):
+def build_tree(data, map_id, map_name, display_name, collector, fname=""):
     """Return the ordered text items of a map/event file for structure.json."""
     items = []
-    for ev in ev_containers(data):
+    for evi, ev in enumerate(ev_containers(data)):
         ev_items = {"id": ev.get("id"), "name": ev.get("name"),
                     "items": []}
         where = "%s / EV%03d %s" % (map_name or "?", ev.get("id", 0),
                                     ev.get("name") or "")
+        eloc = "%s#ev%d" % (fname, evi)
         if ev.get("name"):
-            collector.add(ev["name"], "event-name", where, [])
+            collector.add(ev["name"], "event-name", where, [], eloc + "#name")
         lists = []
         if isinstance(ev.get("list"), list):
             lists.append(ev["list"])
         for pg in ev.get("pages") or []:
             if isinstance(pg, dict) and isinstance(pg.get("list"), list):
                 lists.append(pg["list"])
-        for lst in lists:
-            process_commands(lst, collector, where)
+        for li, lst in enumerate(lists):
+            ploc = eloc + "#pg%d" % li
+            process_commands(lst, collector, where, ploc)
             for block_key, lines in iter_message_blocks(lst, collector,
-                                                        where=where):
+                                                        where=where,
+                                                        loc=ploc):
                 ev_items["items"].append({"kind": "block", "key": block_key})
             for c in lst:
                 params = c.get("parameters") or []
@@ -355,22 +387,22 @@ def main():
                 map_id = int(m.group(1))
             disp = data.get("displayName") or "" if isinstance(data, dict) else ""
             if disp:
-                col.add(disp, "displayName", fname, [])
+                col.add(disp, "displayName", fname, [], fname + "#displayName")
             if map_id is not None:
                 tree.append({"id": map_id, "events": []})
                 cur = tree[-1]
                 cur["items"] = build_tree(data, map_id, map_names.get(map_id, fname),
-                                          disp, col)
+                                          disp, col, fname)
             elif fname == "CommonEvents.json":
                 tree.append({"id": -1, "events": []})
                 tree[-1]["items"] = build_tree(data, None, "CommonEvents",
-                                               disp, col)
+                                               disp, col, fname)
             else:
-                build_tree(data, None, fname, disp, col)
+                build_tree(data, None, fname, disp, col, fname)
         elif fname == "System.json":
             process_system(data, col)
         else:
-            process_db(data, col, fname)
+            process_db(data, col, fname, fname)
 
     if not args.no_plugins:
         n = extract_plugin_text(game_dir, col)

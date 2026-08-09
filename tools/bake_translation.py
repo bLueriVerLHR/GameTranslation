@@ -92,6 +92,24 @@ def ev_containers(data):
     return out
 
 
+LOC_SEP = "\x1f"
+
+
+def exact_loc(s, D, loc):
+    """Location-aware exact lookup: prefer the located key `s\x1f<loc>`
+    (context-specific translation for this occurrence), fall back to the
+    plain key `s` (shared translation, older dicts stay compatible)."""
+    if s is None:
+        return None
+    if loc:
+        v = D.get(s + LOC_SEP + loc)
+        if isinstance(v, str) and v:
+            if v != s:
+                STATS["hit"] += 1
+            return v
+    return exact(s, D)
+
+
 def exact(s, D):
     """Exact lookup; None means 'no translation for this string'.  Updates the
     coverage stats for kana-bearing display strings."""
@@ -146,8 +164,11 @@ def _translate_note_refs(note, D, refs=None):
     return _REF_RE.sub(repl, note)
 
 
-def process_commands(cmds, D):
-    """One pass over a command list: blocks first, then individual codes."""
+def process_commands(cmds, D, loc=""):
+    """One pass over a command list: blocks first, then individual codes.
+    loc = stable traversal path (file#evN#pgM) rebuilt to match the
+    build_translation.py location keys; every exact match prefers the
+    located key `s\x1f<loc>#c<idx>` and falls back to the plain key."""
     n = len(cmds)
     i = 0
     while i < n:
@@ -162,9 +183,9 @@ def process_commands(cmds, D):
             lines.append(params[0] if params and isinstance(params[0], str)
                          else "")
             j += 1
-        # block lookup
+        # block lookup (located first: the block's own command index)
         block = "\n".join(lines)
-        value = exact(block, D)
+        value = exact_loc(block, D, loc + "#c%d" % i)
         if value is not None:
             vlines = value.split("\n")
             # pad shorter translations with "" so no command keeps Japanese
@@ -182,30 +203,31 @@ def process_commands(cmds, D):
                 cmds.insert(j, tmpl)
                 j += 1
         else:
-            # per-line exact fallback
+            # per-line exact fallback (each line's own command index)
             for k in range(i, j):
                 params = cmds[k].get("parameters") or []
                 if params and isinstance(params[0], str):
-                    v = exact(params[0], D)
+                    v = exact_loc(params[0], D, loc + "#c%d" % k)
                     if v is not None:
                         params[0] = v
         i = j
 
-    for cmd in cmds:
+    for ci, cmd in enumerate(cmds):
         params = cmd.get("parameters")
         if not isinstance(params, list):
             continue
         code = cmd.get("code")
+        cloc = loc + "#c%d" % ci
         if code == 102 and params and isinstance(params[0], list):
             for idx, x in enumerate(params[0]):
                 if isinstance(x, str):
-                    v = exact(x, D)
+                    v = exact_loc(x, D, cloc)
                     if v is not None:
                         params[0][idx] = v
         elif code in EVENT_TEXT_IDX:
             for idx in EVENT_TEXT_IDX[code]:
                 if idx < len(params) and isinstance(params[idx], str):
-                    v = exact(params[idx], D)
+                    v = exact_loc(params[idx], D, cloc)
                     if v is not None:
                         params[idx] = v
         elif code == 122:
@@ -215,13 +237,13 @@ def process_commands(cmds, D):
             if len(params) > 3 and params[3] == 4:
                 if len(params) > 4 and isinstance(params[4], str) and params[4] \
                         and params[4][0] in "'\"" and QUOTED.search(params[4]):
-                    v = exact(params[4], D)
+                    v = exact_loc(params[4], D, cloc)
                     if v is not None:
                         params[4] = v
             else:
                 for idx in (3, 4):
                     if idx < len(params) and isinstance(params[idx], str):
-                        v = exact(params[idx], D)
+                        v = exact_loc(params[idx], D, cloc)
                         if v is not None:
                             params[idx] = v
         elif code in (355, 655):
@@ -229,7 +251,7 @@ def process_commands(cmds, D):
             # (e.g. BattleManager._logWindow.addText('...')): exact-match the
             # whole line so the translated string stays valid JS.
             if params and isinstance(params[0], str) and QUOTED.search(params[0]):
-                v = exact(params[0], D)
+                v = exact_loc(params[0], D, cloc)
                 if v is not None:
                     params[0] = v
         elif code == 357:
@@ -237,73 +259,76 @@ def process_commands(cmds, D):
             # in the arg dict (display text).  params[2] (Japanese command
             # name) is a functional lookup key - never matched.
             if len(params) > 3 and isinstance(params[3], dict):
-                _translate_arg_values(params[3], D)
+                _translate_arg_values(params[3], D, cloc)
         elif code == 408:
             if params and isinstance(params[0], str):
-                v = exact(params[0], D)
+                v = exact_loc(params[0], D, cloc)
                 if v is not None:
+                    params[0] = v
                     params[0] = v
 
 
-def _translate_arg_values(obj, D):
+def _translate_arg_values(obj, D, loc=""):
     """Exact-match string values (recursively) in a plugin-command arg dict."""
     if isinstance(obj, dict):
         for k in obj:
-            obj[k] = _translate_arg_values(obj[k], D)
+            obj[k] = _translate_arg_values(obj[k], D, loc + "#" + str(k))
         return obj
     if isinstance(obj, list):
         for i in range(len(obj)):
-            obj[i] = _translate_arg_values(obj[i], D)
+            obj[i] = _translate_arg_values(obj[i], D, loc + "[%d]" % i)
         return obj
     if isinstance(obj, str) and KANA.search(obj):
-        v = exact(obj, D)
+        v = exact_loc(obj, D, loc)
         if v is not None:
             return v
     return obj
 
 
-def process_db(obj, D):
+def process_db(obj, D, loc=""):
     if isinstance(obj, dict):
         # battle-event command lists inside DB files (Troops.json pages):
         # process their display strings like any other event list.
         lst = obj.get("list")
         if isinstance(lst, list) and lst and isinstance(lst[0], dict) \
                 and "code" in lst[0]:
-            process_commands(lst, D)
+            process_commands(lst, D, loc)
             return
         for k, v in list(obj.items()):
+            kloc = loc + "#" + str(k)
             if k in DISPLAY_KEYS and isinstance(v, str):
-                nv = exact(v, D)
+                nv = exact_loc(v, D, kloc)
                 if nv is not None:
                     obj[k] = nv
             elif k == "note" and isinstance(v, str):
-                nv = exact(v, D)
+                nv = exact_loc(v, D, kloc)
                 if nv is not None:
                     obj[k] = nv
             else:
-                process_db(v, D)
+                process_db(v, D, kloc)
     elif isinstance(obj, list):
-        for v in obj:
-            process_db(v, D)
+        for i, v in enumerate(obj):
+            process_db(v, D, loc + "[%d]" % i)
 
 
 def process_system(system, D):
     for f in SYSTEM_TEXT_FIELDS + SYSTEM_TEXT_ARRAYS:
         if f in system:
-            system[f] = translate_values(system[f], D)
+            system[f] = translate_values(system[f], D,
+                                         "System.json#" + f)
 
 
-def translate_values(obj, D):
+def translate_values(obj, D, loc=""):
     if isinstance(obj, str):
-        v = exact(obj, D)
+        v = exact_loc(obj, D, loc)
         return v if v is not None else obj
     if isinstance(obj, dict):
         for k in obj:
-            obj[k] = translate_values(obj[k], D)
+            obj[k] = translate_values(obj[k], D, loc + "#" + str(k))
         return obj
     if isinstance(obj, list):
         for i in range(len(obj)):
-            obj[i] = translate_values(obj[i], D)
+            obj[i] = translate_values(obj[i], D, loc + "[%d]" % i)
         return obj
     return obj
 
@@ -321,6 +346,9 @@ def translate_plugins(root, D, write=True):
         plugins = plugins_io.parse_plugins_js(text)
         n = 0
         for p in plugins:
+            pname = p.get("name")
+            if not isinstance(pname, str):
+                pname = "?"
             params = p.get("parameters")
             if not isinstance(params, (dict, list)):
                 continue
@@ -328,7 +356,8 @@ def translate_plugins(root, D, write=True):
                 else [(i, v) for i, v in enumerate(params)]
             for key, val in items:
                 if isinstance(val, str):
-                    v = exact(val, D)
+                    v = exact_loc(val, D,
+                                  "js/plugins.js#%s#%s" % (pname, key))
                     if v is not None:
                         params[key] = v
                         n += 1
@@ -375,12 +404,13 @@ def translate_data(root, D, write=True):
             if isinstance(data, dict):
                 dn = data.get("displayName")
                 if isinstance(dn, str):
-                    v = exact(dn, D)
+                    v = exact_loc(dn, D, fname + "#displayName")
                     if v is not None:
                         data["displayName"] = v
-            for ev in ev_containers(data):
+            for evi, ev in enumerate(ev_containers(data)):
+                eloc = "%s#ev%d" % (fname, evi)
                 if isinstance(ev.get("name"), str):
-                    v = exact(ev["name"], D)
+                    v = exact_loc(ev["name"], D, eloc + "#name")
                     if v is not None:
                         ev["name"] = v
                     event_names.add(ev["name"])
@@ -399,12 +429,13 @@ def translate_data(root, D, write=True):
                 for pg in ev.get("pages") or []:
                     if isinstance(pg, dict) and isinstance(pg.get("list"), list):
                         lists.append(pg["list"])
-                for lst in lists:
-                    process_commands(lst, D)
-        elif os.path.basename(path) == "System.json":
+                for li, lst in enumerate(lists):
+                    process_commands(lst, D, eloc + "#pg%d" % li)
+        fname = os.path.basename(path)
+        if fname == "System.json":
             process_system(data, D)
         else:
-            process_db(data, D)
+            process_db(data, D, fname)
         if write:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -422,15 +453,15 @@ def translate_data(root, D, write=True):
         if isinstance(scenario, dict):
             for k, v in list(scenario.items()):
                 if isinstance(v, list):
-                    process_commands(v, D)
+                    process_commands(v, D, "scenario#" + k)
                 elif isinstance(v, str):
-                    nv = exact(v, D)
+                    nv = exact_loc(v, D, "scenario#" + k)
                     if nv is not None:
                         scenario[k] = nv
         elif isinstance(scenario, list):
-            for chunk in scenario:
+            for i, chunk in enumerate(scenario):
                 if isinstance(chunk, list):
-                    process_commands(chunk, D)
+                    process_commands(chunk, D, "scenario[%d]" % i)
         if write:
             with open(scenario_path, "w", encoding="utf-8") as f:
                 json.dump(scenario, f, ensure_ascii=False, indent=2)

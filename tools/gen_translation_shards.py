@@ -96,6 +96,10 @@ RULES = """## Rules (write-first contract, mandatory)
   自定义码) 一律原样保留, 绝不翻译、绝不改动方括号里的内容 (人名宏对照见下方
   Name macros 表)。
 - 值必须是译文: 不得把日文原文写进值里 (值 == 键原文 = 不合格输出)。
+- 位置后缀: 键行末尾可能出现分隔符 (\x1f 不可见字符) 加位置标记 (如
+  Map001.json#ev0#pg0#c1)。整个键行(含后缀)是键, 译文只译分隔符之前的
+  日文正文, 不要把位置标记写进译文。同一日文原文在不同位置的键可能分别
+  出现, 按各自场景语境翻译 (场景记录在下方)。
 - 键内嵌的字面文本必须保留: 全角空格 \\u3000 缩进、句末标点都要保留原样。
 - Translate the Japanese (kana/kanji) in each key into natural, fluent Simplified Chinese.
 - If a key has NO kana (already fully Chinese), output it unchanged.

@@ -211,21 +211,60 @@ def find_git():
 # repo - resolve at runtime:
 #   1. env var CJK_FONT_PATH / JP_FONT_PATH
 #   2. gitignored local override file docs/table/local_font_path.txt (lines 1/2)
-#   3. None (caller keeps the plain fallback list)
+#   3. the bundled fonts dir docs/table/fonts/ (auto-discovered: a SC
+#      Simplified-Chinese font for CJK, a J Japanese font as the JP fallback)
+#   4. None (caller keeps the plain fallback list)
+
+# Fonts live in the gitignored local dir docs/table/fonts/ (owner-supplied
+# font files, not committed).  The auto-discovery below resolves them from
+# wherever the repo is checked out; fresh machines add fonts there or set
+# CJK_FONT_PATH / JP_FONT_PATH.
+FONTS_DIR = REPO_ROOT / "docs" / "table" / "fonts"
 
 
 def _read_font_paths():
-    """Read the local font override file; returns (cjk_path, jp_path)."""
+    """Read the local font override file; returns (cjk_path, jp_path).
+
+    A relative path resolves against docs/table/ (the file's own directory),
+    so the file can stay machine-independent (e.g. "fonts/GlowSansSC-...").
+    """
     local = REPO_ROOT / "docs" / "table" / "local_font_path.txt"
     paths = []
     try:
         for line in local.read_text(encoding="utf-8").splitlines():
             p = line.strip()
-            if p and os.path.isfile(p):
-                paths.append(p)
+            if not p:
+                continue
+            cand = Path(p)
+            if not cand.is_absolute():
+                cand = local.parent / p
+            if cand.is_file():
+                paths.append(str(cand))
     except OSError:
         pass
     return paths
+
+
+def _discover_font(pattern):
+    """Auto-discover a font file inside docs/table/fonts/ by filename
+    pattern (case-insensitive). Prefers a "-Regular" weight variant when
+    present, else the first match. Returns the path or None."""
+    if not FONTS_DIR.is_dir():
+        return None
+    first = None
+    try:
+        for f in sorted(FONTS_DIR.iterdir()):
+            if not f.is_file():
+                continue
+            name = f.name.lower()
+            if name.startswith(pattern):
+                if first is None:
+                    first = str(f)
+                if "-regular" in name:
+                    return str(f)
+    except OSError:
+        pass
+    return first
 
 
 def find_cjk_font():
@@ -233,7 +272,9 @@ def find_cjk_font():
     if p and os.path.isfile(p):
         return p
     paths = _read_font_paths()
-    return paths[0] if paths else None
+    if paths:
+        return paths[0]
+    return _discover_font("glowsanssc")
 
 
 def find_jp_font():
@@ -244,4 +285,6 @@ def find_jp_font():
     if p and os.path.isfile(p):
         return p
     paths = _read_font_paths()
-    return paths[1] if len(paths) > 1 else None
+    if len(paths) > 1:
+        return paths[1]
+    return _discover_font("glowsansj")

@@ -188,9 +188,9 @@ build → decrypt → audio → clean → verify → serve → compress
   `add_cjk_font_fallback`（仅 MZ）没用，简体中文渲染方块。
   `add_mv_cjk_font(root, --cjk-font)` 打包 CJK ttf 并按 `unicode-range`
   拆 `gamefont.css`（假名/ASCII → 原字体，汉字 → 打包字体）。
-  **2026-08 后默认拆分为**：假名/日文标点 → `--jp-font`（缺省
-  `docs/table/local_font_path.txt` 第二行，未配置则回退游戏原字体），
-  汉字/拉丁 → `--cjk-font`（首行）。
+  **2026-08 后默认拆分为**：假名/日文标点 → `--jp-font`（解析顺序：
+  `JP_FONT_PATH` → `docs/table/local_font_path.txt` 第二行 → 自动发现
+  `docs/table/fonts/`，未配置则回退游戏原字体），汉字/拉丁 → `--cjk-font`。
 - **翻译后验证 CSV ID：** 地图 JSON 里每个 `\M[ID]` 必须在 CSV 的 名前
   列存在（排除既有缺失如 `\V[320`、`テスト`、单假名 — 源里本来就没有）。
 

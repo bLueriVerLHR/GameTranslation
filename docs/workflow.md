@@ -419,10 +419,12 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
 
 ### 标准字体策略（owner 偏好, 2026-08 定案）
 
-中文/拉丁 → 打包的中文字体（`--cjk-font` 指定，缺省读 `CJK_FONT_PATH`
-/ 本地 `docs/table/local_font_path.txt` 首行）；**日文 → 打包的日文
-fallback 字体**（`--jp-font` 指定，缺省读 `JP_FONT_PATH` /
-`local_font_path.txt` 第二行；未配置时回退到游戏原始字体）。字体偏好
+中文/拉丁 → 打包的中文字体（`--cjk-font` 指定）；**日文 → 打包的日文
+fallback 字体**（`--jp-font` 指定；未配置时回退到游戏原始字体）。字体
+解析顺序（环境无关，2026-08 更新）：`CJK_FONT_PATH` / `JP_FONT_PATH`
+环境变量 → 本地 `docs/table/local_font_path.txt` 首/二行（支持相对
+`docs/table/` 的路径）→ **自动发现 `docs/table/fonts/`**（`GlowSansSC*`
+作中文、`GlowSansJ*` 作日文回退）→ 无字体时策略整体跳过。字体偏好
 只存在本地 `docs/table/`（gitignored），仓库代码不含字体名。实现
 （`translate_rpgmz.py apply_font_policy`，幂等可重跑）：
 

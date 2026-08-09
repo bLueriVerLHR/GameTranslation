@@ -145,7 +145,7 @@ def _referenced_tilesets(web_root):
 
 
 def _corpus_referenced_tilesets(web_root):
-    """Tileset stems mentioned anywhere in data/js/css (plugin/script loads).
+    r"""Tileset stems mentioned anywhere in data/js/css (plugin/script loads).
 
     Linear token scan (see _font_references): a greedy `[A-Za-z0-9_&%\-]+\.png`
     pattern backtracks quadratically on long alphanumeric runs."""

@@ -704,7 +704,8 @@ def main():
                     help="CJK ttf to bundle (MV: fonts/gamefont.css split; "
                          "MZ: swap the main @font-face src). Default: "
                          "resolved via CJK_FONT_PATH / "
-                         "docs/table/local_font_path.txt")
+                         "docs/table/local_font_path.txt / auto-discovery "
+                         "of docs/table/fonts/")
     ap.add_argument("--jp-font", default="",
                     help="Japanese fallback font for kana/JP punctuation "
                          "(second line of docs/table/local_font_path.txt "

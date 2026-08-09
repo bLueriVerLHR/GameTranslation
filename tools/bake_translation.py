@@ -495,12 +495,13 @@ def main():
     ap.add_argument("--cjk-font", default="",
                     help="CJK ttf to bundle (MV: gamefont.css split; MZ: "
                          "swap the main @font-face src). Default: resolved "
-                         "via CJK_FONT_PATH / docs/table/local_font_path.txt")
+                         "via CJK_FONT_PATH / docs/table/local_font_path.txt "
+                         "/ auto-discovery of docs/table/fonts/")
     ap.add_argument("--jp-font", default="",
                     help="Japanese fallback font for kana/JP punctuation "
-                         "(second line of docs/table/local_font_path.txt "
-                         "or JP_FONT_PATH; default: the game's original "
-                         "font)")
+                         "(second line of docs/table/local_font_path.txt, "
+                         "JP_FONT_PATH, or auto-discovery of docs/table/"
+                         "fonts/; default: the game's original font)")
     args = ap.parse_args()
     if not args.cjk_font:
         args.cjk_font = config.find_cjk_font() or ""

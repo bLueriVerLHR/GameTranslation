@@ -130,10 +130,17 @@ def game_dir(tmp_path):
 
 @pytest.fixture
 def fake_tools(monkeypatch):
-    """Point FFMPEG/FFPROBE/SEVENZ at the fake tool scripts."""
+    """Point FFMPEG/FFPROBE/SEVENZ at the fake tool scripts.
+
+    The scripts are invoked as subprocess executables, so ensure they are
+    executable even when the repo is checked out with mode bits stripped
+    (core.filemode=false / Windows-style checkouts).
+    """
     files = {"FFMPEG": "ffmpeg.py", "FFPROBE": "ffprobe.py", "SEVENZ": "7z.py"}
     for name, fn in files.items():
-        monkeypatch.setenv(name, os.path.join(FAKE_DIR, fn))
+        p = os.path.join(FAKE_DIR, fn)
+        os.chmod(p, os.stat(p).st_mode | 0o111)
+        monkeypatch.setenv(name, p)
     for var in ("FAKE_HIGH_BITRATE", "FAKE_SMALL_OUTPUT", "GT_WORKERS"):
         monkeypatch.delenv(var, raising=False)
     return FAKE_DIR

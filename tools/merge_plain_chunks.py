@@ -42,6 +42,41 @@ def ctrl_signature(s):
             for m in CTRL_NORM.finditer(s)]
 
 
+def kana_left_in(v):
+    """True when a value still carries translatable kana, after exempting
+    Wolf RPG specifics: <>-tagged functional labels (status-name refs),
+    BGM/asset paths, Woditor internal command lines, the kana-teaching UI
+    (single kana char followed by 汉字), and the kana middle dot ・."""
+    if KANA.search(CTRL_TOK.sub("", v)) is None:
+        return False
+    if re.search(r"<[^>]*[\u3040-\u30ff]", v):
+        return False
+    if re.search(r"BGM/|\.mp3|\.ogg|\.png|WoditorEv|MapData|CommonEvent", v):
+        return False
+    if re.search(r"feat\.", v):
+        return False  # music credits lines (artist names)
+    if re.search(r"[\u3040-\u30ff][漢字汉字]", v):
+        return False
+    # Standalone kana (input-method teaching UI: a single kana or
+    # kana-syllable row) - kept untranslated on purpose.
+    if re.fullmatch(r"[\u3040-\u30ff\uff71-\uff9e]{1,4}", v.strip()):
+        return False
+    # Kana inside parens used as ruby / name-puzzle readings
+    # (はなさない（永不放手） style): the reading itself must stay.
+    if re.search(r"（[^）]*[\u3040-\u30ff][^）]*）", v):
+        return False
+    # Honorific / self-reference suffixes kept as the character's speech
+    # quirk (俺ちゃん, ちゃん/さん/くん after a Chinese name).
+    if re.search(r"俺ちゃん|[\u3040-\u30ff]*(ちゃん|さん|くん|様)$", v):
+        return False
+    # Strip exempt tokens, then see if any kana remains.
+    body = re.sub(r"<[^>]*>", "", v)
+    body = re.sub(r"[\u3040-\u30ff][漢字汉字]", "", body)
+    body = body.replace("・", "")
+    body = CTRL_TOK.sub("", body)
+    return KANA.search(body) is not None
+
+
 def qc_pair(keys, vals, idx):
     """QC one chunk pair.  Returns (issues: [str], ok: bool)."""
     issues = []
@@ -56,12 +91,15 @@ def qc_pair(keys, vals, idx):
             continue
         if v.count("\n") != k.count("\n"):
             newline_diff += 1
-        if KANA.search(CTRL_TOK.sub("", v)):
+        if kana_left_in(v):
             kana_left += 1
         if sorted(CTRL_TOK.findall(k)) != sorted(CTRL_TOK.findall(v)) and \
                 sorted(ctrl_signature(k)) != sorted(ctrl_signature(v)):
             ctrl_diff += 1
-        if "\\\\" in v:
+        # Wolf RPG control codes are stored with a literal double
+        # backslash (\\s[9]); a value only counts as having a stray
+        # backslash when it has MORE backslashes than the key.
+        if v.count("\\") > k.count("\\"):
             dbl_backslash += 1
         if UNCERTAIN.search(v):
             uncertain += 1

@@ -8,7 +8,9 @@ prompt 契约已定稿，下面的数字都是实战验证过的。
 
 涵盖：MZ/MV 静态翻译（`data/*.json`）、部分烘焙后的残留假名补翻、
 插件参数文本、收尾（烘焙、QC、验证）。RPG Maker → JoiPlay 转换流水线本身
-见 `docs/workflow.md`。
+见 `docs/workflow.md`。Wolf RPG（ウディタ）翻译走同一条 chunk/subagent
+管线，但**提取/回写/编码完全不同**，见 `docs/wolfrpg.md`（含
+`tools/build_wolf_translation.py` 与 `tools/apply_translation_to_patch.py`）。
 
 所有命令在终端（PowerShell / CMD）运行。需要 **Python 3.8+**（`python`
 在 PATH 上）。

@@ -67,7 +67,8 @@ import plain_io  # noqa: E402
 
 GLOBAL_KINDS = {"db-name", "db-description", "db-message1", "db-message2",
                 "db-message3", "db-message4", "system", "note", "help",
-                "choice", "event-name", "displayName", "event-text", "plugin"}
+                "choice", "event-name", "displayName", "event-text", "plugin",
+                "db", "cdb"}
 
 CARRY_OVER = 8
 
@@ -198,6 +199,9 @@ def main():
     ap.add_argument("--target-chunks", type=int, default=0,
                     help="auto: pick --max-chars for about N story+global "
                          "chunks (0 = off)")
+    ap.add_argument("--global-per-chunk", type=int, default=600,
+                    help="cap GLOBAL/DB/UI chunks by key count (default 600; "
+                         "short keys, transcript lines dominate the context)")
     ap.add_argument("--context-budget-kb", type=int, default=90,
                     help="auto: keep every chunk's context.md under this many "
                          "KB (default 90; 90KB+ chunks are flaky)")
@@ -229,9 +233,20 @@ def main():
     map_keys = []      # (map_label, key)
     seen = set()
     for m in structure["maps"]:
-        label = "Map%03d" % m["id"]
+        if isinstance(m["id"], int):
+            label = "Map%03d" % m["id"]
+        else:
+            label = str(m["id"])
         keys = []
         for ev in m.get("items", []):
+            # MZ layout: event -> items; Wolf RPG layout: flat key items
+            if "key" in ev:
+                it = ev
+                k = it.get("key")
+                if k and k in tpl and k not in seen and k not in global_keys:
+                    keys.append(k)
+                    seen.add(k)
+                continue
             for it in ev.get("items", []):
                 k = it.get("key")
                 if k and k in tpl and k not in seen and k not in global_keys:
@@ -265,9 +280,12 @@ def main():
 
     num = args.start
     if global_keys:
+        # Global/DB/UI texts are short one-liners; cap them by KEY COUNT
+        # (transcript lines make long context files) so no chunk's context.md
+        # grows past the agent budget.
         num = _write_split(chunks_dir, num, {k: "" for k in global_keys},
                            "remaining global texts",
-                           args.per_chunk, args.max_chars, tone,
+                           args.global_per_chunk, 0, tone,
                            glossary, macros, ctx, args)
 
     # story chunks (a single map with more keys than the cap is split into

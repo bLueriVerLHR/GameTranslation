@@ -11,6 +11,8 @@ RPG Maker 游戏有打包成 **JoiPlay** 可玩的完整流程。本项目仅由
 ```
 GameTranslation/
 ├── pipeline.py          # RPG Maker 命令行（build → decrypt → audio → clean → verify → serve/compress/deliver）
+├── wolfrpg/             # Wolf RPG（ウディタ）工具包
+│   └── dxarchive.py     #   DXArchive v8 解包器（LZ/Huffman/KeyConv，从 UberWolf 移植）
 ├── rpgmz/               # RPG Maker 工具包
 │   ├── config.py        #   工具发现（ffmpeg/ffprobe/7z）+ 阈值
 │   ├── detect.py        #   引擎 / 网页根目录检测（MZ 根部署 vs MV www/）
@@ -27,6 +29,8 @@ GameTranslation/
 ├── tools/
 │   ├── build_translation.py   # 提取模板/上下文/种类/结构/人名/人名宏
 │   │                          #   + 插件参数文本（js/plugins.js）
+│   ├── build_wolf_translation.py # Wolf RPG：rewolf-trans 补丁 → 标准工作包
+│   ├── apply_translation_to_patch.py # Wolf RPG：translated.json → 补丁注入
 │   ├── downscale_images.py    # 把超过 4096 的 PNG 就地缩放到 ≤4096
 │   │                          #   （单一构建策略，替代旧 LowRes 变体）
 │   ├── gen_translation_shards.py # 切成双文件块：ja.txt + zh.txt + context.md
@@ -52,6 +56,7 @@ GameTranslation/
     ├── workflow.md      # RPG Maker 转换工作流（本指南）
     ├── translation.md   # 统一翻译工作流（全量 + 补翻，一套参数：10 并行、
     │                    #   auto 分块约 11k 字符/块）
+    ├── wolfrpg.md       # Wolf RPG 翻译指南（解包/提取/分块/编码/运行，含坑）
     ├── experience.md    # 会话经验日志（坑、失败模式）
     └── table/           # 本地名词表/翻译资料库（glossary/tone/notes + 词表）—
                          #   LOCAL ONLY, gitignored, 绝不推送（游戏名 + 成人词表留本地）

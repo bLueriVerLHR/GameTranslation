@@ -12,11 +12,11 @@ import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 
-from . import config
+from . import config, runtime
 
 log = logging.getLogger("rpgmz.build")
 
-DEFAULT_WORKERS = 6
+DEFAULT_WORKERS = 6  # legacy fallback; None = auto-tuned (see runtime.py)
 
 
 def _copy_file(src, dst):
@@ -46,11 +46,12 @@ async def _copy_many(web_root, dst, dirs, root_files, workers):
         await asyncio.gather(*(loop.run_in_executor(ex, j) for j in jobs))
 
 
-def build_joiplay(web_root, dst, keep_movies=True, workers=DEFAULT_WORKERS):
+def build_joiplay(web_root, dst, keep_movies=True, workers=None):
     """Copy `web_root` into `dst`, skipping NW.js runtime files and editor junk.
 
     Returns the destination path.
     """
+    workers = runtime.resolve_workers("copy", workers, path=web_root)
     os.makedirs(dst, exist_ok=True)
     dirs = list(config.WEB_DIRS)
     if not keep_movies:

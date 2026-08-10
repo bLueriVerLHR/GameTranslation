@@ -17,11 +17,11 @@ import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
-from . import config
+from . import config, runtime
 
 log = logging.getLogger("rpgmz.audio")
 
-DEFAULT_PROBE_WORKERS = 8
+DEFAULT_PROBE_WORKERS = 8   # legacy fallbacks; None = auto-tuned (runtime.py)
 DEFAULT_ENCODE_WORKERS = 4
 
 
@@ -107,12 +107,14 @@ def iter_audio_files(web_root):
                 yield os.path.join(dp, fn)
 
 
-def probe_all(web_root, workers=DEFAULT_PROBE_WORKERS, sample=None):
+def probe_all(web_root, workers=None, sample=None):
     """Return {rel_path: info}. If sample is an int, probe at most that many.
 
     Probes run on a thread pool, awaited via asyncio: ffprobe is I/O-heavy and
     releases the GIL, so parallelism scales with worker count.
+    `workers=None` auto-tunes from the machine (see runtime.py).
     """
+    workers = runtime.resolve_workers("probe", workers, path=web_root)
     ffprobe = config.find_ffprobe()
     files = list(iter_audio_files(web_root))
     if sample:
@@ -137,12 +139,14 @@ def probe_all(web_root, workers=DEFAULT_PROBE_WORKERS, sample=None):
     return results
 
 
-def reencode_all(web_root, infos, workers=DEFAULT_ENCODE_WORKERS):
+def reencode_all(web_root, infos, workers=None):
     """Transcode using pre-probed info. Returns dict of counts + bytes saved.
 
     ffmpeg runs are heavyweight subprocesses; a modest thread pool keeps the
     CPU/disk busy without thrashing, and asyncio awaits them all at once.
+    `workers=None` auto-tunes from the machine (see runtime.py).
     """
+    workers = runtime.resolve_workers("encode", workers, path=web_root)
     ffmpeg = config.find_ffmpeg()
     counts = {}
     saved = 0

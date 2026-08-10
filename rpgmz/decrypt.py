@@ -21,11 +21,11 @@ import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 
-from . import config
+from . import config, runtime
 
 log = logging.getLogger("rpgmz.decrypt")
 
-DEFAULT_WORKERS = 8
+DEFAULT_WORKERS = 8  # legacy fallback; None = auto-tuned (see runtime.py)
 
 
 def load_encryption_key(web_root):
@@ -164,17 +164,19 @@ def decrypt_data_encrypted(web_root, key):
     return decrypted, copied
 
 
-def decrypt_tree(web_root, key=None, workers=DEFAULT_WORKERS):
+def decrypt_tree(web_root, key=None, workers=None):
     """Decrypt encrypted assets under img/, audio/, movies/ and data_encrypted/.
 
     Handles MZ (`*.png_`, `*.ogg_`) and MV (`*.rpgmvp`, `*.rpgmvo`,
     `*.rpgmvm`) forms, renaming MV assets to their standard extension.
     `key` may be given explicitly (hex) when System.json hides the key
     (custom runtime-decryption, e.g. Aqua.js AES).
+    `workers=None` auto-tunes from the machine (see runtime.py).
 
     Returns (decrypted, skipped). `skipped` counts files that look encrypted
     but do NOT carry the RPGMV header - they are left as-is (complex game).
     """
+    workers = runtime.resolve_workers("decrypt", workers, path=web_root)
     if not key:
         key = load_encryption_key(web_root)
     if not key:
@@ -226,12 +228,13 @@ def clear_encryption_flags(web_root):
         log.info("cleared encryption flags in data/System.json")
 
 
-def decrypt_and_clear(web_root, key=None, workers=DEFAULT_WORKERS):
+def decrypt_and_clear(web_root, key=None, workers=None):
     """Decrypt assets and clear System.json encryption flags.
 
     Flags are cleared only when every encrypted asset was decrypted (easy
     case). On a complex game (any file left as-is), System.json is left
     untouched so the game's own runtime decryption keeps working.
+    `workers=None` auto-tunes from the machine (see runtime.py).
     """
     decrypted, skipped = decrypt_tree(web_root, key, workers=workers)
     if skipped:

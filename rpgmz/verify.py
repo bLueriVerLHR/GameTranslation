@@ -6,9 +6,11 @@ import json
 import logging
 import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 
 from . import config
 from . import audio as audio_mod
+from . import runtime
 
 log = logging.getLogger("rpgmz.verify")
 
@@ -17,30 +19,36 @@ BENIGN_DECODE = re_ignore = (
 )
 
 
-def verify_pngs(web_root):
-    bad = []
+def _iter_png_files(web_root):
     img_dir = os.path.join(web_root, "img")
     for dp, _dn, fns in os.walk(img_dir):
         for fn in fns:
-            if not fn.lower().endswith(".png"):
-                continue
-            p = os.path.join(dp, fn)
-            with open(p, "rb") as f:
-                sig = f.read(8)
-            if sig != b"\x89PNG\r\n\x1a\n":
-                bad.append(p)
+            if fn.lower().endswith(".png"):
+                yield os.path.join(dp, fn)
+
+
+def _check_png_signature(p):
+    with open(p, "rb") as f:
+        sig = f.read(8)
+    return p if sig != b"\x89PNG\r\n\x1a\n" else None
+
+
+def verify_pngs(web_root, workers=None):
+    """Check every img/**/*.png signature in parallel (I/O-bound reads).
+
+    `workers=None` auto-tunes from the machine (see runtime.py).
+    """
+    workers = runtime.resolve_workers("png", workers, path=web_root)
+    files = list(_iter_png_files(web_root))
+    bad = []
+    if files:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            bad = [b for b in ex.map(_check_png_signature, files) if b]
     if bad:
         log.error("bad PNG signatures: %d (first: %s)", len(bad), bad[:3])
     else:
-        log.info("PNG signatures OK (%d files)", _count_png(img_dir))
+        log.info("PNG signatures OK (%d files)", len(files))
     return bad
-
-
-def _count_png(root):
-    n = 0
-    for _dp, _dn, fns in os.walk(root):
-        n += sum(1 for f in fns if f.lower().endswith(".png"))
-    return n
 
 
 def verify_data_json(web_root):
@@ -159,8 +167,12 @@ def verify_audio_refs(web_root, source_dir=None):
     return missing
 
 
-def verify_decode(web_root, workers=4, sample=None):
-    """Full ffmpeg decode of every audio file. Returns list of real errors."""
+def verify_decode(web_root, workers=None, sample=None):
+    """Full ffmpeg decode of every audio file. Returns list of real errors.
+
+    `workers=None` auto-tunes from the machine (see runtime.py).
+    """
+    workers = runtime.resolve_workers("decode", workers, path=web_root)
     ffmpeg = config.find_ffmpeg()
     errors = []
     files = list(audio_mod.iter_audio_files(web_root))
@@ -178,7 +190,6 @@ def verify_decode(web_root, workers=4, sample=None):
                                         "Header missing", "Unable to"))]
         return p, " | ".join(bad) if bad else ""
 
-    from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=workers) as ex:
         for p, err in ex.map(work, files):
             if err:
@@ -200,18 +211,25 @@ def verify_key_files(web_root):
     return missing
 
 
-def verify_all(web_root, decode=False, sample=None, source_dir=None):
+def verify_all(web_root, decode=False, sample=None, source_dir=None, workers=None):
+    """Run every verification step; return a list of problem groups (empty = pass).
+
+    `workers=None` auto-tunes PNG signature and decode parallelism from the
+    machine (see runtime.py).
+    """
     issues = []
-    for fn in (verify_pngs, verify_data_json, verify_system_flags,
-               verify_key_files):
+    for fn in (verify_data_json, verify_system_flags, verify_key_files):
         res = fn(web_root)
         if res:
             issues.append(res)
+    res = verify_pngs(web_root, workers=workers)
+    if res:
+        issues.append(res)
     res = verify_audio_refs(web_root, source_dir=source_dir)
     if res:
         issues.append(res)
     if decode:
-        errs = verify_decode(web_root, sample=sample)
+        errs = verify_decode(web_root, workers=workers, sample=sample)
         if errs:
             issues.append(["%d decode errors" % len(errs)])
     if issues:

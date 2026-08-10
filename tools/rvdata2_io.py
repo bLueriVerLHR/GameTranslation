@@ -198,11 +198,11 @@ class Decoder(object):
             self.links.append(res)
             return res
         if c == "c":
-            res = {"__class__": self._read_symbol()}
+            res = {"__class__": self._read_raw()}
             self.links.append(res)
             return res
         if c == "m":
-            res = {"__module__": self._read_symbol()}
+            res = {"__module__": self._read_raw()}
             self.links.append(res)
             return res
         if c == "I":

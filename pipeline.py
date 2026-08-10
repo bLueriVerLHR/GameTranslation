@@ -31,6 +31,7 @@ import sys
 
 from rpgmz import build, clean, compress, decrypt, deliver, detect, serve, verify
 from rpgmz import audio as audio_mod
+from rpgmz import runtime
 logging.basicConfig(
     level=logging.INFO,
     format="%(filename)s:%(lineno)d %(levelname)-7s %(name)s: %(message)s",
@@ -83,7 +84,7 @@ def cmd_clean(args):
 def cmd_verify(args):
     wr = resolve_web_root(args.game)
     issues = verify.verify_all(wr, decode=args.decode, sample=args.sample,
-                               source_dir=args.source)
+                               source_dir=args.source, workers=args.workers)
     sys.exit(1 if issues else 0)
 
 
@@ -117,7 +118,8 @@ def main(argv=None):
     p = sub.add_parser("build", help="copy web files into a JoiPlay folder")
     p.add_argument("game", help="source game folder")
     p.add_argument("-o", "--out", required=True, help="destination JoiPlay folder")
-    p.add_argument("--workers", type=int, default=6, help="parallel copy workers")
+    p.add_argument("--workers", type=int, default=None,
+                   help="parallel copy workers (default: auto-tuned to the machine)")
     p.set_defaults(func=cmd_build)
 
     p = sub.add_parser("decrypt", help="decrypt assets + clear encryption flags")
@@ -125,7 +127,8 @@ def main(argv=None):
     p.add_argument("--key", default=None,
                    help="explicit hex encryptionKey override (when System.json is "
                         "runtime-decrypted and hides it)")
-    p.add_argument("--workers", type=int, default=8, help="parallel decrypt workers")
+    p.add_argument("--workers", type=int, default=None,
+                   help="parallel decrypt workers (default: auto-tuned to the machine)")
     p.set_defaults(func=cmd_decrypt)
 
     p = sub.add_parser("audio", help="probe + re-encode audio")
@@ -133,7 +136,8 @@ def main(argv=None):
     p.add_argument("--probe-only", action="store_true", help="only probe, no encode")
     p.add_argument("--report", default="", help="write probe CSV report")
     p.add_argument("--sample", type=int, default=0, help="probe/encode only first N files")
-    p.add_argument("--workers", type=int, default=4, help="parallel ffmpeg workers")
+    p.add_argument("--workers", type=int, default=None,
+                   help="parallel ffmpeg workers (default: auto-tuned to the machine)")
     p.set_defaults(func=cmd_audio)
 
     p = sub.add_parser("clean", help="remove junk/unused images and fonts")
@@ -148,6 +152,8 @@ def main(argv=None):
     p.add_argument("--source", default=None,
                    help="original game folder: audio refs missing there too are "
                         "warnings, not failures")
+    p.add_argument("--workers", type=int, default=None,
+                   help="parallel PNG/decode workers (default: auto-tuned to the machine)")
     p.set_defaults(func=cmd_verify)
 
     p = sub.add_parser("serve", help="HTTP server + smoke test (do NOT run on phone)")

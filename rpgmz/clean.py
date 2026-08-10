@@ -15,10 +15,19 @@ import json
 import logging
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 
-from . import config
+from . import config, runtime
 
 log = logging.getLogger("rpgmz.clean")
+
+
+def _read_text(path):
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as f:
+            return f.read()
+    except Exception:
+        return ""
 
 
 def _corpus_text(web_root):
@@ -26,8 +35,12 @@ def _corpus_text(web_root):
 
     Font references live in data/, js/, css/*.css and fonts/*.css (MV declares
     @font-face in fonts/gamefont.css), so css must be part of the corpus or a
-    real game font gets deleted as "unused"."""
-    parts = []
+    real game font gets deleted as "unused".
+
+    File reads run on a thread pool: a game corpus is thousands of small
+    files, and the scan is I/O-bound.
+    """
+    paths = []
     data_dir = os.path.join(web_root, "data")
     js_dir = os.path.join(web_root, "js")
     for base in (data_dir, js_dir,
@@ -37,12 +50,12 @@ def _corpus_text(web_root):
             continue
         for dp, _dn, fns in os.walk(base):
             for fn in fns:
-                p = os.path.join(dp, fn)
-                try:
-                    with open(p, encoding="utf-8-sig", errors="replace") as f:
-                        parts.append(f.read())
-                except Exception:
-                    pass
+                paths.append(os.path.join(dp, fn))
+    if not paths:
+        return ""
+    workers = runtime.resolve_workers("clean", None, path=web_root)
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        parts = list(ex.map(_read_text, paths))
     return "\n".join(parts)
 
 

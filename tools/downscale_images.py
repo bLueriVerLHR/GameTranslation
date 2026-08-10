@@ -22,6 +22,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmz import runtime  # noqa: E402
+
 log = logging.getLogger("downscale_images")
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -53,15 +56,17 @@ def downscale_one(path, limit):
 
 
 def scan(root, limit, workers, dry_run):
+    workers = runtime.resolve_workers("png", workers, path=root)
     pattern = os.path.join(root, "img", "**", "*.png")
-    files = [f for f in glob.glob(pattern, recursive=True) if png_size(f)]
-    oversized = [f for f in files if max(png_size(f)) > limit]
+    sizes = {f: png_size(f) for f in glob.glob(pattern, recursive=True)}
+    sizes = {f: s for f, s in sizes.items() if s}
+    oversized = [f for f, s in sizes.items() if max(s) > limit]
     log.info("%d PNGs total, %d exceed the %d px limit",
-             len(files), len(oversized), limit)
+             len(sizes), len(oversized), limit)
     if dry_run:
         for f in sorted(oversized):
             log.info("  would downscale %s (%dx%d)",
-                     os.path.relpath(f, root), *png_size(f))
+                     os.path.relpath(f, root), *sizes[f])
         return
     done = 0
     with ThreadPoolExecutor(max_workers=workers) as ex:
@@ -83,7 +88,8 @@ def main(argv=None):
     ap.add_argument("--limit", type=int, default=4096,
                     help="max pixels per side (default 4096)")
     ap.add_argument("--dry-run", action="store_true", help="report only, write nothing")
-    ap.add_argument("--workers", type=int, default=4, help="parallel workers")
+    ap.add_argument("--workers", type=int, default=None,
+                    help="parallel workers (default: auto-tuned to the machine)")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     root = os.path.abspath(args.web_root)

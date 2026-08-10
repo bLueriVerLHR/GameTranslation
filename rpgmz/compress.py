@@ -7,17 +7,20 @@ import logging
 import os
 import subprocess
 
-from . import config
+from . import config, runtime
 
 log = logging.getLogger("rpgmz.compress")
 
 
-def compress(folder, archive, level=15, threads=True):
+def compress(folder, archive, level=15, threads=None):
     """Create a zstd 7z archive of `folder`. Returns archive path.
 
     Any existing file at `archive` is deleted first: `7z a` APPENDS to an
     existing archive, so re-running on a stale `.7z` would double its size
     (old entries kept + new ones added).
+
+    `threads`: None = auto-tuned `-mmt=N` from the machine (runtime.py),
+    an int forces that many threads, False/0 disables multi-threading.
     """
     if not os.path.isdir(folder):
         raise FileNotFoundError("folder not found: %s" % folder)
@@ -30,8 +33,13 @@ def compress(folder, archive, level=15, threads=True):
         log.info("removed stale archive %s", archive)
     sevenz = config.find_7z()
     cmd = [sevenz, "a", "-t7z", "-m0=zstd", "-mx=%d" % level]
+    if threads is None:
+        threads = runtime.auto_workers("compress", path=folder)
     if threads:
-        cmd.append("-mmt=on")
+        if threads is True:
+            cmd.append("-mmt=on")
+        else:
+            cmd.append("-mmt=%d" % int(threads))
     cmd += [archive, folder]
     log.info("running: %s", " ".join(cmd))
     r = subprocess.run(cmd, capture_output=True, text=True)

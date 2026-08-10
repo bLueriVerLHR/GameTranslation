@@ -15,14 +15,15 @@ GameTranslation/
 │   └── dxarchive.py     #   DXArchive v8 解包器（LZ/Huffman/KeyConv，从 UberWolf 移植）
 ├── rpgmz/               # RPG Maker 工具包
 │   ├── config.py        #   工具发现（ffmpeg/ffprobe/7z）+ 阈值
+│   ├── runtime.py       #   环境感知调优：CPU/内存/磁盘类型探测 + 自动并行度
 │   ├── detect.py        #   引擎 / 网页根目录检测（MZ 根部署 vs MV www/）
 │   ├── build.py         #   拷贝网页文件，剥离 NW.js 运行时（asyncio + 并行拷贝）
 │   ├── decrypt.py       #   仅 easy 解密：带 RPGMV 头的资源解密；
 │   │                    #   复杂/自定义加密文件原样保留并保持标志位
 │   ├── audio.py         #   探测 + 重编码 Vorbis（asyncio + 线程池）
-│   ├── clean.py         #   安全清理：img 垃圾、未用字体、未用图块
-│   ├── verify.py        #   PNG/JSON/标志位/音频引用/解码检查（--source 感知）
-│   ├── compress.py      #   7z-zstd 打包（替换旧包）+ 完整性测试
+│   ├── clean.py         #   安全清理：img 垃圾、未用字体、未用图块（语料并行读取）
+│   ├── verify.py        #   PNG/JSON/标志位/音频引用/解码检查（--source 感知，PNG 并行）
+│   ├── compress.py      #   7z-zstd 打包（替换旧包，-mmt 自动线程）+ 完整性测试
 │   ├── deliver.py       #   写回存储侧：本地压缩 → 复制压缩包到压缩包目录
 │   │                    #   （覆盖旧包）→ 删成品目录旧文件夹 → 解压到成品目录
 │   └── serve.py         #   HTTP 服务器 + 冒烟测试
@@ -32,7 +33,7 @@ GameTranslation/
 │   ├── build_wolf_translation.py # Wolf RPG：rewolf-trans 补丁 → 标准工作包
 │   ├── apply_translation_to_patch.py # Wolf RPG：translated.json → 补丁注入
 │   ├── downscale_images.py    # 把超过 4096 的 PNG 就地缩放到 ≤4096
-│   │                          #   （单一构建策略，替代旧 LowRes 变体）
+│   │                          #   （单一构建策略，替代旧 LowRes 变体；自动并行）
 │   ├── gen_translation_shards.py # 切成双文件块：ja.txt + zh.txt + context.md
 │   │                             #   （自动选档：90KB 上下文预算，约 11k 字符/块）
 │   ├── gen_completion_shards.py  # 补翻流程分块（同布局、同尺寸）
@@ -52,6 +53,11 @@ GameTranslation/
 │   │                             #   BepInEx+Harmony 运行时 hook 插件、系列预填
 │   └── ...（旧版：translate_rpgmz、extract_text、plain_to_translated、
 │           qc_translation_chunks、CSV 流程工具 — 旧块格式）
+├── tests/                # 单元 + 集成测试（pytest，fake 工具，全流程无外部依赖）
+│   ├── conftest.py       #   合成游戏/假 ffmpeg/ffprobe/7z 注入
+│   ├── fake_tools/       #   测试用假工具脚本（FFMPEG/FFPROBE/SEVENZ 环境变量注入）
+│   ├── test_*.py         #   各模块单元测试 + pipeline 端到端集成测试
+│   └── test_integration.py  # build→decrypt→clean→verify→serve→compress→deliver
 └── docs/
     ├── workflow.md      # RPG Maker 转换工作流（本指南）
     ├── translation.md   # 统一翻译工作流（全量 + 补翻，一套参数：10 并行、
@@ -85,8 +91,13 @@ python $tk\pipeline.py deliver $out            # 写回存储侧（压缩→压�
 如果解密不会改变游戏在 JoiPlay 下的运行方式，就不运行。
 
 `build`/`decrypt`/`audio` 并行运行（asyncio + 线程池）；每步可用
-`--workers N` 调整。`verify --source <原版>` 把原版里本来就缺失的引用从
-失败降级为警告——只有转换造成的丢失才判失败。
+`--workers N` 调整。**默认自动调优**（`rpgmz/runtime.py`）：按当前机器的
+CPU 数、可用内存和磁盘类型（SSD/HDD）为每步选取最优并行度——IO 型步骤
+（build/decrypt/verify PNG）偏多线程，CPU 型步骤（音频编码、解码检查）
+按核数 + 内存上限收紧；可用 `GT_WORKERS=<n>`（全局）或
+`GT_WORKERS_<KIND>=<n>`（分步，如 `GT_WORKERS_ENCODE=2`）环境变量覆盖。
+`verify --source <原版>` 把原版里本来就缺失的引用从失败降级为警告——只有
+转换造成的丢失才判失败。
 
 目录约定：工作/解压副本一律放 **Temp** 目录（绝不放在源目录旁边），
 成品 JoiPlay 目录和 `.7z` 放专门的交付目录，命名 `<Game>` /
@@ -118,6 +129,26 @@ RPG Maker 静态翻译（提取 → 词表 → subagent 分块 → 精确匹配�
   每游戏子目录的 `glossary.json`（术语/人名表）+ `tone.md`（语气/风格）+
   `notes.md`（该游戏经验与坑），以及通用词表；分块时注入每个 chunk 的
   context.md 供 agent 遵循。该目录不入库、不推送（含成人词表，保持私有）。
+
+## 测试
+
+单元测试 + 综合测试位于 `tests/`（pytest，运行在项目 venv 里）：
+
+```bash
+.venv/bin/python -m pytest tests/          # 全部测试
+.venv/bin/python -m pytest tests/ -q       # 静默模式
+```
+
+- **单元测试**：config/runtime（自动并行度）、detect、decrypt（RPGMV 头
+  XOR）、verify、build、clean、audio（位率策略）、plain_io（双文件块转义）、
+  plugins_io、rvdata2（Ruby Marshal 解码）、merge_plain_chunks（QC 规则）、
+  downscale_images、dxarchive（LZ/Huffman 往返 + 合成 .wolf 全包解包）。
+- **集成测试**（`test_integration.py`）：在合成游戏上跑完整流水线
+  build → decrypt → clean → verify → serve 冒烟 → compress → deliver，
+  以及真实 CLI 子进程调用与退出码。
+- **全流程无外部依赖**：`tests/fake_tools/` 提供假 ffmpeg/ffprobe/7z
+  （通过 `FFMPEG`/`FFPROBE`/`SEVENZ` 环境变量注入，与真实工具同协议），
+  测试不依赖系统安装的工具；服务冒烟测试用真实 HTTP 端口。
 
 ## 环境要求
 

@@ -8,12 +8,14 @@
 | 目的 | 引擎 | 做法 |
 | --- | --- | --- |
 | **可玩构建（JoiPlay）** | HTML5 系（RPG Maker MZ/MV 网页版） | 剥离 NW.js、解密（仅 easy）、压缩音频、清理、验证、7z-zstd 打包 —— `pipeline.py` |
+| **可玩构建（JoiPlay）+ 翻译** | TyranoScript / TyranoBuilder（Electron 打包的 HTML5 视觉小说） | 解包 app.asar（npx @electron/asar）、剥 Electron 运行时、存档改 webstorage、mp3→ogg + 脚本引用同步重写、MTool 残留清理、验证 —— `tyrano/pipeline.py`；翻译走标准 chunk 流程写回 .ks |
 | **翻译 + 注入（不做 JoiPlay 转换）** | Unity / Wolf RPG / KiriKiri | 解包 → 提取 → 自译（统一 chunk/subagent 流程）→ 运行时 hook / 补丁注入 |
 
-第二条是当前主线：**清除 MTool 机翻，自己翻译，持续优化翻译能力**。
+翻译是当前主线：**清除 MTool 机翻，自己翻译，持续优化翻译能力**。
 Unity = MelonLoader/BepInEx 运行时 hook；Wolf RPG = rewolf-trans 补丁
-回写；KiriKiri = patch.xp3 覆盖 scenario。翻译能力按具体游戏打补丁优化，
-游戏特定特征（引擎+特征案例、体量、坑）一律记录在**本地
+回写；KiriKiri = patch.xp3 覆盖 scenario；TyranoScript = 标准 chunk
+流程写回 .ks（构建/翻译双路线，见 `docs/tyrano.md`）。翻译能力按具体
+游戏打补丁优化，游戏特定特征（引擎+特征案例、体量、坑）一律记录在**本地
 `docs/table/<Game>/notes.md`**（gitignored，不入库），**不写进仓库文档**。
 
 ```
@@ -26,6 +28,14 @@ GameTranslation/
 │   └── merge_font.py    #   中文字体 + 日文字体合并（中文方块修复）
 ├── wolfrpg/             # Wolf RPG（ウディタ）工具包
 │   └── dxarchive.py     #   DXArchive v8 解包器（LZ/Huffman/KeyConv，从 UberWolf 移植）
+├── tyrano/              # TyranoScript / TyranoBuilder 工具包
+│   ├── asar.py          #   Electron app.asar 解包（npx @electron/asar，不重复造轮子）
+│   ├── build.py         #   JoiPlay 构建：解包 asar、剥 Electron 运行时、存档改 webstorage
+│   ├── audio.py         #   mp3→ogg 重编码 + scenario .ks 音频引用同步重写
+│   ├── clean.py         #   MTool 残留 / 桌面运行时垃圾清理
+│   ├── verify.py        #   布局/存档后端/音频引用/PNG 4096 检查（--source 感知）
+│   ├── tyrano_extract.py #  TyranoBuilder .ks 解析（tb_start_text 块、speaker 行、text= 属性）
+│   └── pipeline.py      #   命令行：build → audio → clean → verify → serve → compress → deliver
 ├── unity/               # Unity 工具包（仅翻译 + 运行时注入，绝不用流水线）
 │   └── rmunite/         #   RPG Maker Unite（Unity Mono）翻译：提取、
 │                        #   BepInEx+Harmony 运行时 hook 插件、系列预填
@@ -51,6 +61,8 @@ GameTranslation/
 │   ├── apply_translation_to_patch.py # Wolf RPG：translated.json → 补丁注入
 │   ├── build_ks_translation.py # KiriKiri：.ks 提取 → 标准工作包（故事顺序）
 │   ├── apply_ks_translation.py # KiriKiri：translated.json → 补丁 .ks + patch.xp3
+│   ├── build_tyrano_translation.py # TyranoScript：.ks 提取 → 标准工作包（整行键）
+│   ├── apply_tyrano_translation.py # TyranoScript：translated.json → 写回 .ks
 │   ├── qc_ks_kana.py          # KiriKiri：假名残留 QC（补丁树/字典值）
 │   ├── downscale_images.py    # 把超过 4096 的 PNG 就地缩放到 ≤4096
 │   │                          #   （单一构建策略，替代旧 LowRes 变体；自动并行）
@@ -88,6 +100,7 @@ GameTranslation/
     │                    #   auto 分块约 11k 字符/块）
     ├── wolfrpg.md       # Wolf RPG 翻译指南（解包/提取/分块/编码/运行，含坑）
     ├── kirikiri.md      # KiriKiri 翻译指南（解包/提取/写回/patch.xp3/QC）
+    ├── tyrano.md        # TyranoScript/TyranoBuilder 指南（JoiPlay 构建 + 翻译）
     ├── experience.md    # 会话经验日志（坑、失败模式）
     ├── screenshot.md    # 截图验证流程（窗口级：指定 app 精确截图，配合
     │                    #   vision-analyzer 分析运行画面）
@@ -189,6 +202,8 @@ subagent 翻译 → `translated.json` → 注入。
 
 - Python 3.10+（`tools/downscale_images.py` 需要 Pillow；项目自带本地虚拟
   环境 `.venv/`，gitignored — 需要新包时在 venv 里安装，不污染系统环境）
+- Node.js + npx（**仅 TyranoScript 构建**：解包 `app.asar` 用
+  `npx @electron/asar`，见 `docs/tyrano.md`）
 - ffmpeg/ffprobe（含 libvorbis）— 仅 **audio** 步骤使用
 - 7-Zip-Zstandard（压缩包用 `-m0=zstd`）
 - ripgrep（`rg`）用于构建内的快速内容搜索

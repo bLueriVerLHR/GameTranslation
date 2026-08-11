@@ -181,7 +181,12 @@ docs/table/
 1. **HTML5 系游戏（RPG Maker MZ/MV 网页版）→ 可玩的 JoiPlay 构建**：
    剥离桌面运行时（NW.js）、解密（仅 easy）、压缩音频、清理、验证、
    7z-zstd 打包。做让游戏能在 Android 的 JoiPlay 里跑起来所需的最小工作。
-2. **Unity / Wolf RPG / KiriKiri 游戏 → 翻译 + 注入**（**不做 JoiPlay 转换**）：
+2. **TyranoScript / TyranoBuilder 游戏（Electron 打包的 HTML5 视觉小说）
+   → 可玩的 JoiPlay 构建 + 翻译**：解包 app.asar（用 `npx @electron/asar`，
+   不重复造轮子）、剥 Electron 运行时、存档改 webstorage、mp3→ogg +
+   scenario 引用同步重写、MTool 残留清理、验证（`tyrano/pipeline.py`，
+   完整指南 `docs/tyrano.md`）；翻译走统一 chunk 流程写回 .ks。
+3. **Unity / Wolf RPG / KiriKiri 游戏 → 翻译 + 注入**（**不做 JoiPlay 转换**）：
    解包 → 提取 → 翻译（**清除 MTool 机翻，自己翻译**）→ 运行时 hook /
    补丁注入。翻译能力按具体游戏持续优化，打补丁内容由 owner 逐款给出。
 
@@ -208,6 +213,8 @@ docs/table/
 
 - RPG Maker MZ/MV（HTML5）→ `pipeline.py`（JoiPlay 构建，见
   `docs/workflow.md`）
+- TyranoScript / TyranoBuilder（Electron 打包的 HTML5 视觉小说）→
+  `tyrano/pipeline.py`（JoiPlay 构建 + 翻译，见 `docs/tyrano.md`）
 - Unity（任何类型）→ 仅翻译 + 运行时注入，绝不用流水线（见下）
 - Wolf RPG（ウディタ）→ 仅翻译 + 解包/回写，绝不用流水线（见
   `docs/wolfrpg.md`）

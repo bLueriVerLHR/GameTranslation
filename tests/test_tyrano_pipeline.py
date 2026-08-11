@@ -177,6 +177,32 @@ class TestAudio:
         assert counts == {"converted": 1, "failed": 0, "total": 1}
         assert os.path.isfile(os.path.join(root, "data", "sound", "se1.ogg"))
 
+    def test_convert_rewrites_before_conversion(self, tmp_path, fake_tools):
+        """convert() must rewrite script refs BEFORE deleting mp3 files,
+        otherwise every ref becomes dangling (the mp3 no longer exists
+        when the rewrite checks it)."""
+        root = make_asar_game(str(tmp_path))
+        counts = ta.convert(root, workers=1)
+        assert counts["refs"] == 1
+        assert counts["converted"] == 1
+        assert counts["dangling"] == 0
+        text = open(os.path.join(root, "data", "scenario", "first.ks"),
+                    encoding="utf-8").read()
+        assert 'storage="se1.ogg"' in text and "se1.mp3" not in text
+
+    def test_rewrite_after_conversion_idempotent(self, tmp_path, fake_tools):
+        """A re-run of rewrite_script_refs after conversion still fixes
+        refs whose mp3 was converted away: the .ogg existence alone is
+        enough to rewrite."""
+        root = make_asar_game(str(tmp_path))
+        ta.convert(root, workers=1)
+        # simulate a second run over an already-converted build
+        files, refs, dangling = ta.rewrite_script_refs(root)
+        assert (files, refs, dangling) == (0, 0, 0)
+        text = open(os.path.join(root, "data", "scenario", "first.ks"),
+                    encoding="utf-8").read()
+        assert 'storage="se1.ogg"' in text
+
 
 class TestClean:
     def test_removes_mtool_residues(self, tmp_path):

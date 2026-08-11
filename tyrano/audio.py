@@ -84,11 +84,17 @@ def convert_all(web_root, workers=4, keep=False, sample=None):
 
 
 def _resolvable(web_root, ref):
-    """A mp3 ref is resolvable when an audio file exists at bgm/ref or
-    sound/ref (the two dirs the engine concatenates with playbgm/playse)."""
+    """A .mp3 ref is rewritable when its audio file exists at bgm/ref or
+    sound/ref (the dirs the engine concatenates with playbgm/playse), or
+    when the converted .ogg already exists (idempotent re-run after a
+    partial conversion)."""
     for base in AUDIO_DIRS:
         if os.path.isfile(os.path.join(web_root, base, ref)):
             return True
+        if ref.lower().endswith(".mp3"):
+            ogg = os.path.join(web_root, base, ref[:-4] + ".ogg")
+            if os.path.isfile(ogg):
+                return True
     return False
 
 
@@ -127,8 +133,11 @@ def rewrite_script_refs(web_root):
 
 
 def convert(web_root, workers=4, keep=False, sample=None):
-    counts = convert_all(web_root, workers=workers, keep=keep, sample=sample)
+    # Rewrite script refs FIRST: conversion removes the mp3 files, and the
+    # ref rewrite only touches refs whose source file exists (or whose ogg
+    # already exists).  Running conversion first would orphan every ref.
     files, refs, dangling = rewrite_script_refs(web_root)
+    counts = convert_all(web_root, workers=workers, keep=keep, sample=sample)
     counts["ref_files"] = files
     counts["refs"] = refs
     counts["dangling"] = dangling

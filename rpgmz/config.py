@@ -120,42 +120,41 @@ def to_wsl_path(path):
     return str(Path("/mnt") / pw.drive[0].lower() / Path(*pw.parts[1:]).as_posix())
 
 
-def win_7z():
-    """Windows-side 7z binary, for processing files stored on the Windows
-    side. Resolution: SEVENZ_WIN env -> env_config tools.win7z ->
-    DEFAULT_WIN_SEVENZ; None when the binary is not present."""
-    p = os.environ.get("SEVENZ_WIN")
+def _win_tool(name, env_var, default=""):
+    """Windows-side tool binary by name: <ENV_VAR> env ->
+    env_config tools.win32.<name> -> default; None when absent.  The win32
+    section is read explicitly because these tools serve Windows-side
+    files even when the current platform is WSL."""
+    p = os.environ.get(env_var)
     if not p:
-        p = _expand(_pick(_load_env_config().get("tools"), "win7z") or "")
+        p = _expand(_pick(_win32_section(_load_env_config().get("tools")),
+                          name) or "")
     if not p:
-        p = DEFAULT_WIN_SEVENZ
-    if os.path.isfile(to_wsl_path(p)):
+        p = default
+    if p and os.path.isfile(to_wsl_path(p)):
         return str(p)
     return None
+
+
+def win_7z():
+    """Windows-side 7z binary, for processing files stored on the Windows
+    side. Resolution: SEVENZ_WIN env -> env_config tools.win32.7z ->
+    DEFAULT_WIN_SEVENZ; None when the binary is not present."""
+    return _win_tool("7z", "SEVENZ_WIN", DEFAULT_WIN_SEVENZ)
 
 
 def win_ffmpeg():
     """Windows-side ffmpeg binary (WinGet install), for processing files
     stored on the Windows side. Resolution: WIN_FFMPEG env ->
-    env_config tools.win_ffmpeg; None when not configured/absent."""
-    p = os.environ.get("WIN_FFMPEG") or ""
-    if not p:
-        p = _expand(_pick(_load_env_config().get("tools"), "win_ffmpeg") or "")
-    if p and os.path.isfile(to_wsl_path(p)):
-        return str(p)
-    return None
+    env_config tools.win32.ffmpeg; None when not configured/absent."""
+    return _win_tool("ffmpeg", "WIN_FFMPEG")
 
 
 def win_rg():
     """Windows-side ripgrep binary (WinGet install), for searching files
     stored on the Windows side. Resolution: WIN_RG env ->
-    env_config tools.win_rg; None when not configured/absent."""
-    p = os.environ.get("WIN_RG") or ""
-    if not p:
-        p = _expand(_pick(_load_env_config().get("tools"), "win_rg") or "")
-    if p and os.path.isfile(to_wsl_path(p)):
-        return str(p)
-    return None
+    env_config tools.win32.rg; None when not configured/absent."""
+    return _win_tool("rg", "WIN_RG")
 
 
 def recorded_platform():
@@ -177,20 +176,47 @@ def _load_env_config():
 
 
 def _pick(section, name):
-    """Pick the value for the current platform from a config section.
-
-    Values are plain (current platform only); a name -> {platform: value}
-    mapping is also accepted for forward compatibility.
-    """
+    """Return a config value by name (plain values only)."""
     if not isinstance(section, dict):
         return None
-    entry = section.get(name)
-    if isinstance(entry, dict) and any(k in entry for k in ("wsl", "win32", "linux")):
-        for key in (platform_key(), "linux", "wsl", "win32"):
-            if entry.get(key):
-                return entry[key]
-        return None
-    return entry
+    return section.get(name)
+
+
+def _section_platform(section):
+    """Pick the current platform's sub-dict of a platform-first config
+    section ({wsl: {...}, win32: {...}}); a plain section (no platform
+    keys) is returned unchanged for backward compatibility."""
+    if not isinstance(section, dict):
+        return {}
+    if not any(k in section for k in ("wsl", "win32", "linux")):
+        return section
+    for key in (platform_key(), "linux", "wsl", "win32"):
+        if isinstance(section.get(key), dict):
+            return section[key]
+    return {}
+
+
+def _win32_section(section):
+    """The win32 sub-dict of a platform-first config section; Windows-only
+    tools live there and must be found regardless of the current platform."""
+    if not isinstance(section, dict):
+        return {}
+    sub = section.get("win32")
+    return sub if isinstance(sub, dict) else {}
+
+
+def _localize(path):
+    """Map a stored native path to the current platform's view.
+
+    A path is stored ONCE, in the form of the platform where the resource
+    physically lives (Windows-side resources as C:/.. or D:/.., WSL-side
+    resources as /tmp/..).  On WSL a Windows-form path is converted to its
+    /mnt/<drive>/.. view; on Windows a /mnt/.. path is converted back.
+    Paths already in the current platform's form pass through unchanged.
+    """
+    if not path:
+        return path
+    return to_wsl_path(path) if is_wsl() else to_windows_path(path)
 
 
 def _expand(path):
@@ -201,41 +227,43 @@ def _expand(path):
     return _posix(path)
 
 
-def _resolve(env_var, cfg_section, cfg_name, default=""):
-    """Environment variable -> env_config.json -> default (all expanded)."""
+def _deliverable(env_var, cfg_name, default=""):
+    """Environment variable -> env_config deliverables.<name> -> default;
+    the stored/default path is native-form and gets localized for the
+    current platform."""
     p = os.environ.get(env_var)
-    if p:
-        return p
-    p = _pick(cfg_section, cfg_name)
-    return _expand(p or default)
+    if not p:
+        p = _pick(_load_env_config().get("deliverables"), cfg_name)
+    return _localize(_expand(p or default))
 
 
 # ---------------------------------------------------------------- deliverables
 
 def games_dir():
-    """Deliverable folder for finished game builds (D:/Games <-> /mnt/d/Games)."""
-    return _resolve("GAMES_DIR", _load_env_config().get("deliverables"), "games",
-                    "D:/Games" if sys.platform == "win32" else "/mnt/d/Games")
+    """Deliverable folder for finished game builds (stored native:
+    D:/Games; localized to /mnt/d/Games on WSL)."""
+    return _deliverable("GAMES_DIR", "games", "D:/Games")
 
 
 def archives_dir():
-    """Deliverable folder for game archives (D:/GamesCompress <-> /mnt/d/GamesCompress)."""
-    return _resolve("ARCHIVES_DIR", _load_env_config().get("deliverables"), "archives",
-                    "D:/GamesCompress" if sys.platform == "win32" else "/mnt/d/GamesCompress")
+    """Deliverable folder for game archives (stored native:
+    D:/GamesCompress; localized to /mnt/d/GamesCompress on WSL)."""
+    return _deliverable("ARCHIVES_DIR", "archives", "D:/GamesCompress")
 
 
 def temp_dir():
-    """Work directory for temp copies (%LOCALAPPDATA%/Temp/opencode <-> /tmp/opencode)."""
-    return _resolve("TEMP_DIR", _load_env_config().get("deliverables"), "temp",
-                    "%LOCALAPPDATA%/Temp/opencode" if sys.platform == "win32"
-                    else "/tmp/opencode")
+    """Work directory for temp copies (stored native: /tmp/opencode on this
+    machine; win32 default is %LOCALAPPDATA%/Temp/opencode)."""
+    return _deliverable("TEMP_DIR", "temp",
+                        "%LOCALAPPDATA%/Temp/opencode"
+                        if sys.platform == "win32" else "/tmp/opencode")
 
 
 def win_temp_dir():
     """Windows-side temp for downloads and Windows-only tools (the Windows
-    %TEMP% folder); only meaningful on Windows / from WSL via /mnt/c."""
-    return _resolve("WIN_TEMP_DIR", _load_env_config().get("deliverables"),
-                    "win_temp", "%LOCALAPPDATA%/Temp")
+    %TEMP% folder; stored native: C:/Users/<user>/AppData/Local/Temp,
+    localized to /mnt/c/... on WSL)."""
+    return _deliverable("WIN_TEMP_DIR", "win_temp", "%LOCALAPPDATA%/Temp")
 
 
 # ---------------------------------------------------------------- venv
@@ -255,11 +283,13 @@ def venv_python():
 # ---------------------------------------------------------------- tools
 
 def _find_tool(env_var, cfg_name, win_default="", names=()):
-    """Resolve a tool binary: env var -> env_config.json -> default -> PATH."""
+    """Resolve a tool binary: env var -> env_config.json (current platform
+    section) -> default -> PATH."""
     p = os.environ.get(env_var)
     if p and os.path.isfile(p):
         return p
-    cfg = _expand(_pick(_load_env_config().get("tools"), cfg_name) or "")
+    cfg = _expand(_pick(_section_platform(_load_env_config().get("tools")),
+                        cfg_name) or "")
     if cfg and not os.path.isabs(cfg):
         cfg = str(LOCAL_ENV_FILE.parent / cfg)
     if cfg and os.path.isfile(cfg):

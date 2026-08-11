@@ -27,10 +27,11 @@
   目录间压缩），ffmpeg/rg/git 等在 PATH 中的自动发现、不写路径；只有
   文件存储位置是机器相关的。**Windows 端需要下载/暂存的内容一律用
   `deliverables.win_temp`（Windows 的 `%TEMP%`，代码里
-  `win_temp_dir()`），绝不放进 `games` / `archives`**。Windows 侧工具
-  （7z / ffmpeg / rg）路径同样记录在 env_config.json（`win_7z()` /
-  `win_ffmpeg()` / `win_rg()`），处理 Windows 侧文件时经 PowerShell
-  调用它们。工具安装/下载由
+  `win_temp_dir()`），绝不放进 `games` / `archives`**。**路径只存一份
+  （原生形式）**：Windows 侧资源写 `D:/..`/`C:/..`，WSL 侧写 `/tmp/..`；
+  代码按平台转换（`_localize()`），绝不重复写同一路径。Windows 侧工具
+  按 `[platform][tool]` 索引在配置里（`win_7z()` / `win_ffmpeg()` /
+  `win_rg()`），处理 Windows 侧文件时经 PowerShell 调用它们。工具安装/下载由
   owner 执行（如系统包管理器、`3rd/` 内二进制）。
 - **工作流（2026-08 定案）**：源压缩包在存储侧（Windows），解压/处理/
   压缩在 WSL 侧完成；只做必要的跨系统搬运。**CRITICAL（MUST）——处理

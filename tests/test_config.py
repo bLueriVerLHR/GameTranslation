@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for rpgmz/config.py path/platform helpers."""
+"""Unit tests for rpgmz/config.py path/platform helpers.
+
+Covers the single-native-form path convention: every path is stored once
+in the form of the platform where the resource lives; the code detects the
+current platform and converts (_localize -> to_wsl_path/to_windows_path).
+Tools are indexed [platform][tool] because the binaries differ per side.
+"""
+import json
 import os
 import sys
 
@@ -11,51 +18,217 @@ from rpgmz import config
 
 class TestPathConversions:
     def test_posix_windows_backslashes(self):
-        if not hasattr(config, "_posix"):
-            pytest.skip("cross-system helpers not merged to this branch yet")
         assert config._posix(r"C:\Games\Foo") == "C:/Games/Foo"
 
     def test_to_windows_path_wsl_form(self):
-        if not hasattr(config, "to_windows_path"):
-            pytest.skip("cross-system helpers not merged to this branch yet")
         assert config.to_windows_path("/mnt/d/Games/Foo") == "D:\\Games\\Foo"
 
     def test_to_windows_path_windows_form_passthrough(self):
-        if not hasattr(config, "to_windows_path"):
-            pytest.skip("cross-system helpers not merged to this branch yet")
         assert config.to_windows_path(r"C:\Games") == r"C:\Games"
 
     def test_to_windows_path_non_mnt_unchanged(self):
-        if not hasattr(config, "to_windows_path"):
-            pytest.skip("cross-system helpers not merged to this branch yet")
         assert config.to_windows_path("/home/user/game") == "/home/user/game"
 
     def test_to_wsl_path(self):
-        if not hasattr(config, "to_wsl_path"):
-            pytest.skip("cross-system helpers not merged to this branch yet")
         assert config.to_wsl_path(r"C:\Games\Foo") == "/mnt/c/Games/Foo"
 
     def test_to_wsl_path_relative_unchanged(self):
-        if not hasattr(config, "to_wsl_path"):
-            pytest.skip("cross-system helpers not merged to this branch yet")
         assert config.to_wsl_path("Games") == "Games"
 
     def test_roundtrip(self):
-        if not hasattr(config, "to_windows_path") or not hasattr(config, "to_wsl_path"):
-            pytest.skip("cross-system helpers not merged to this branch yet")
         for p in ("/mnt/d/Games/Foo", r"D:\Games\Foo"):
             assert config.to_windows_path(p) == r"D:\Games\Foo"
             assert config.to_wsl_path(config.to_windows_path(p)) == "/mnt/d/Games/Foo"
 
     def test_is_windows_side(self):
-        if not hasattr(config, "is_windows_side"):
-            pytest.skip("cross-system helpers not merged to this branch yet")
         # Only meaningful inside WSL; on native platforms it is always False.
         if config.is_wsl():
             assert config.is_windows_side("/mnt/c/foo")
             assert not config.is_windows_side("/home/user/foo")
         else:
             assert config.is_windows_side("/mnt/c/foo") is False
+
+
+class TestLocalize:
+    """_localize maps a stored native path to the current platform's view."""
+
+    def test_wsl_windows_form_converted(self, monkeypatch):
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        assert config._localize("D:/Games") == "/mnt/d/Games"
+        assert config._localize(r"C:\Games") == "/mnt/c/Games"
+
+    def test_wsl_native_passthrough(self, monkeypatch):
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        assert config._localize("/tmp/opencode") == "/tmp/opencode"
+        assert config._localize("3rd/7zz") == "3rd/7zz"
+
+    def test_win32_mnt_form_converted(self, monkeypatch):
+        monkeypatch.setattr(config, "is_wsl", lambda: False)
+        assert config._localize("/mnt/d/Games") == "D:\\Games"
+
+    def test_win32_native_passthrough(self, monkeypatch):
+        monkeypatch.setattr(config, "is_wsl", lambda: False)
+        assert config._localize("D:/Games") == "D:/Games"
+        assert config._localize("/home/user/game") == "/home/user/game"
+
+    def test_empty_input(self, monkeypatch):
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        assert config._localize("") == ""
+        assert config._localize(None) is None
+
+
+class TestPick:
+    """Plain name -> value lookups (no per-key platform mapping anymore)."""
+
+    def test_plain_value(self):
+        assert config._pick({"a": "x"}, "a") == "x"
+
+    def test_missing_key(self):
+        assert config._pick({"a": "x"}, "b") is None
+
+    def test_non_dict(self):
+        assert config._pick(None, "a") is None
+        assert config._pick("str", "a") is None
+
+
+class TestSectionPlatform:
+    """Platform-first sections: {wsl: {...}, win32: {...}}."""
+
+    def test_wsl_subdict(self, monkeypatch):
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        sec = {"wsl": {"7z": "3rd/7zz"}, "win32": {"7z": "C:/7z.exe"}}
+        assert config._section_platform(sec) == {"7z": "3rd/7zz"}
+
+    def test_win32_subdict(self, monkeypatch):
+        monkeypatch.setattr(config, "is_wsl", lambda: False)
+        monkeypatch.setattr(sys, "platform", "win32")
+        sec = {"wsl": {"7z": "3rd/7zz"}, "win32": {"7z": "C:/7z.exe"}}
+        assert config._section_platform(sec) == {"7z": "C:/7z.exe"}
+
+    def test_plain_section_passthrough(self):
+        assert config._section_platform({"a": "x"}) == {"a": "x"}
+
+    def test_empty_and_non_dict(self):
+        assert config._section_platform(None) == {}
+        assert config._section_platform("str") == {}
+        assert config._section_platform({"wsl": {}, "win32": {}}) == {}
+
+
+class TestWin32Section:
+    """Windows-only tools must be found regardless of the current platform."""
+
+    def test_win32_subdict(self):
+        sec = {"wsl": {"7z": "x"}, "win32": {"7z": "C:/7z.exe"}}
+        assert config._win32_section(sec) == {"7z": "C:/7z.exe"}
+
+    def test_missing_and_non_dict(self):
+        assert config._win32_section({"wsl": {"7z": "x"}}) == {}
+        assert config._win32_section(None) == {}
+        assert config._win32_section("str") == {}
+
+
+class TestDeliverable:
+    """Single native-form path in config; localized for the current platform."""
+
+    def _cfg(self, monkeypatch, tmp_path, deliverables):
+        cfg = tmp_path / "env_config.json"
+        cfg.write_text(json.dumps({"deliverables": deliverables}),
+                       encoding="utf-8")
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+
+    def test_games_native_form_localized(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path, {"games": "D:/Games"})
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        assert config.games_dir() == "/mnt/d/Games"
+
+    def test_env_var_wins(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path, {"games": "D:/Games"})
+        monkeypatch.setenv("GAMES_DIR", "/mnt/d/Other")
+        assert config.games_dir() == "/mnt/d/Other"
+
+    def test_missing_config_default_localized(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path, {})
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        assert config.games_dir() == "/mnt/d/Games"
+
+    def test_temp_native_posix(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path, {"temp": "/tmp/opencode"})
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        assert config.temp_dir() == "/tmp/opencode"
+
+    def test_win_temp_localized(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path,
+                  {"win_temp": "C:/Users/me/AppData/Local/Temp"})
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        assert config.win_temp_dir() == "/mnt/c/Users/me/AppData/Local/Temp"
+
+
+class TestWinTools:
+    """Windows-side tools resolve from env_config tools.win32.<name>."""
+
+    def _cfg(self, monkeypatch, tmp_path, win32_tools):
+        cfg = tmp_path / "env_config.json"
+        cfg.write_text(json.dumps({"tools": {"win32": win32_tools}}),
+                       encoding="utf-8")
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+
+    def test_ffmpeg_resolved(self, monkeypatch, tmp_path):
+        exe = tmp_path / "ffmpeg.exe"
+        exe.write_bytes(b"x")
+        self._cfg(monkeypatch, tmp_path, {"ffmpeg": str(exe)})
+        assert config.win_ffmpeg() == str(exe)
+
+    def test_ffmpeg_missing_entry_returns_none(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path, {})
+        monkeypatch.delenv("WIN_FFMPEG", raising=False)
+        assert config.win_ffmpeg() is None
+
+    def test_ffmpeg_missing_file_returns_none(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path,
+                  {"ffmpeg": str(tmp_path / "nope.exe")})
+        monkeypatch.delenv("WIN_FFMPEG", raising=False)
+        assert config.win_ffmpeg() is None
+
+    def test_env_var_wins(self, monkeypatch, tmp_path):
+        exe = tmp_path / "ffmpeg.exe"
+        exe.write_bytes(b"x")
+        self._cfg(monkeypatch, tmp_path, {"ffmpeg": str(tmp_path / "other.exe")})
+        monkeypatch.setenv("WIN_FFMPEG", str(exe))
+        assert config.win_ffmpeg() == str(exe)
+
+    def test_rg_resolved(self, monkeypatch, tmp_path):
+        exe = tmp_path / "rg.exe"
+        exe.write_bytes(b"x")
+        self._cfg(monkeypatch, tmp_path, {"rg": str(exe)})
+        assert config.win_rg() == str(exe)
+
+    def test_7z_configured(self, monkeypatch, tmp_path):
+        exe = tmp_path / "7z.exe"
+        exe.write_bytes(b"x")
+        self._cfg(monkeypatch, tmp_path, {"7z": str(exe)})
+        monkeypatch.delenv("SEVENZ_WIN", raising=False)
+        assert config.win_7z() == str(exe)
+
+    def test_7z_default_fallback_none(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path, {})
+        monkeypatch.delenv("SEVENZ_WIN", raising=False)
+        monkeypatch.setattr(config, "DEFAULT_WIN_SEVENZ", "")
+        assert config.win_7z() is None
+
+
+class TestFindToolPlatformSection:
+    """_find_tool reads the current platform's tools sub-dict."""
+
+    def test_7z_resolved_from_wsl_section(self, monkeypatch, tmp_path):
+        cfg = tmp_path / "env_config.json"
+        sevenz = tmp_path / "3rd" / "7zz"
+        sevenz.parent.mkdir()
+        sevenz.write_bytes(b"x")
+        cfg.write_text(json.dumps({"tools": {"wsl": {"7z": "3rd/7zz"}}}),
+                       encoding="utf-8")
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+        monkeypatch.delenv("SEVENZ", raising=False)
+        assert config.find_7z() == str(sevenz)
 
 
 class TestConfigLookups:
@@ -70,13 +243,13 @@ class TestConfigLookups:
         q = config.find_ffmpeg()
         assert isinstance(q, str) and q
 
-    def test_pick_platform_section(self):
-        section = {"7z": {"wsl": "/usr/bin/7zz", "win32": "C:/7z.exe"}}
-        assert config._pick(section, "7z")
-
     def test_expand_env_tokens(self, monkeypatch):
         monkeypatch.setenv("TESTVAR", "value")
         assert config._expand("%TESTVAR%/x") == "value/x"
+
+    def test_expand_unknown_token_passthrough(self, monkeypatch):
+        monkeypatch.delenv("NO_SUCH_VAR", raising=False)
+        assert config._expand("%NO_SUCH_VAR%/x") == "%NO_SUCH_VAR%/x"
 
     def test_load_env_config_missing_is_empty(self, monkeypatch):
         monkeypatch.setattr(config, "LOCAL_ENV_FILE",

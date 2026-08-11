@@ -129,7 +129,10 @@ docs/table/
      `rg -n -i "<游戏名|密码|C:\\Users\\|露骨词>" --glob "!*.pyc" --glob "!docs/table/**" .`
      零命中；
   2. `python -m py_compile` 所有改动的 `.py`（工具可运行）；
-  3. 文档一致性：README 目录树与新增文件同步、文档语言为中文。
+  3. 文档一致性：README 目录树与新增文件同步、文档语言为中文；
+  4. **单元测试（mandatory，2026-08 定案）**：新功能/新工具必须写单元
+     测试（`tests/`，pytest），**正例、反例、边缘情况都要覆盖**，提交前
+     `.venv/bin/python -m pytest tests/` 全绿。
 - 提交信息主要用中文描述，但不得含游戏名与敏感词。
 
 ## 语言规则（mandatory）
@@ -410,6 +413,10 @@ KiriKiri 游戏（`Game.exe` + `data.xp3` 等，无 `index.html`/`js/`）不走
 - 工作/解压副本一律放**系统临时文件夹**（如 Windows 的 `Temp`、Linux 的
   `/tmp`；本机具体路径见本地私有配置 `docs/table/env_config.json` 的
   `deliverables.temp`），绝不放源目录旁边。
+- **路径配置只存一份（原生形式）**：Windows 侧资源写 `D:/..`/`C:/..`，
+  WSL 侧写 `/tmp/..`；WSL 要用 Windows 侧路径时由代码转换
+  （`rpgmz/config.py` 的 `_localize()` → `to_wsl_path()`），**绝不把同一
+  路径写两份**。工具按 `[platform][tool]` 索引（两侧二进制不同）。
 - **Windows 端下载/暂存**（Windows-only 工具、待处理内容）一律放
   `deliverables.win_temp`（Windows 的 `%TEMP%`，代码里
   `rpgmz/config.py` 的 `win_temp_dir()`），**绝不放进 `deliverables.games`

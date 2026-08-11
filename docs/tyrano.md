@@ -32,6 +32,7 @@ Electron 目录结构），所以本引擎走 **JoiPlay 可玩构建 + 翻译** 
 python3 tyrano/pipeline.py build   <game_dir> -o <work>/build
 python3 tyrano/pipeline.py audio   <work>/build          # mp3 → ogg + 改脚本引用
 python3 tyrano/pipeline.py clean   <work>/build          # 删 MTool 残留
+python3 tyrano/pipeline.py fix-autoplay <work>/build     # [bgmovie] 自动播放补丁（幂等）
 python3 tyrano/pipeline.py verify  <work>/build --source <原版解包目录>
 python3 tyrano/pipeline.py serve   <work>/build --test   # HTTP 冒烟
 python3 tyrano/pipeline.py compress <work>/build -o <archives>/<Game>.7z
@@ -48,6 +49,13 @@ python3 tyrano/pipeline.py deliver <work>/build          # 写回存储侧
   （q3），并**同步重写** scenario 里 `storage=`/`clickse=`/`enterse=`/
   `decidese=`/`cancelse=` 的 `.mp3` → `.ogg`。只有解析得到实际文件的
   引用才重写；dangling 引用保持原样并计数。
+- **fix-autoplay**（可选）：用 `[bgmovie]` 的游戏在浏览器/JoiPlay 下被
+  自动播放策略拦截（`.play()` 抛 `NotAllowedError`，`wait_bgmovie`
+  永久等待 → 标题卡死黑屏）。补丁把 `tyrano/plugins/kag/kag.tag_ext.js`
+  里的 `.play()` 调用包上兜底：promise 被拒时挂一次性
+  click/touchstart/keydown 监听，用户首次交互后重播。**幂等**：已打
+  补丁的文件（含 `_p&&_p.catch` 标记）跳过；没有 `.play()` 调用的
+  引擎版本是 no-op。不用 `[bgmovie]` 的游戏可跳过此步。
 - **verify --source**：布局（index.html/tyrano/data）、存档后端、
   音频引用完整性（mp3 残留 + dangling）、PNG 4096 上限。`--source`
   指向**解包后未转换**的原始目录：源里本来就缺的引用（制作缺陷）
@@ -92,3 +100,9 @@ python3 tools/apply_tyrano_translation.py <work>          # 写回 <work>/patch/
   与引擎预期一致；改脚本引用即可，无需动 Config。
 - **视频**：`[bgmovie]` 引用 mp4，Android WebView 原生支持 h264，
   不需要转换。
+- **`[bgmovie]` 卡标题黑屏 = 自动播放策略**：浏览器/WebView 在无用户
+  激活时拒绝 `<video>.play()`（`NotAllowedError`），`wait_bgmovie`
+  永久等待。修复已固化进 `fix-autoplay` 构建步骤（见上）——`play()`
+  被拒时挂一次性交互监听、首次点击/触摸/按键后重播。手工打补丁时
+  注意：minified 文件里 `video2.play()` 后**没有分号**（ASI），替换
+  片段时不要把分号吃掉。

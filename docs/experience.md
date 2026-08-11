@@ -212,6 +212,17 @@ engagement），Edge 不行。修复：`Bitmap_Video.prototype.play` 在 catch
 里 `muted=true` 重试再取消静音；`_createVideo` 设 `autoplay=false`
 （浏览器自己的自动播放尝试不可 catch，会记未处理 rejection）。
 
+### 7.3.1 TyranoScript `[bgmovie]` 同样被自动播放策略卡死
+
+TyranoScript 引擎的 `[bgmovie]` 在 `tyrano/plugins/kag/kag.tag_ext.js`
+里直接 `video.play()`，被拒后 `wait_bgmovie` 永久等待 → 标题黑屏冻结
+（PC 浏览器和 JoiPlay 都可能复现，取决于该 origin 的播放权限历史）。
+修复已固化进 `tyrano/pipeline.py fix-autoplay`（幂等、可逆）：`play()`
+promise 被拒时挂一次性 click/touchstart/keydown 监听，首次用户交互后
+重播并移除监听。验证方式：把真实交付构建里手工打的补丁反解成原始文件，
+用模块重打，`cmp` 与交付构建字节一致。注意 minified 文件里
+`video2.play()j_video2.css` 无分号（ASI），替换时保留该特征。
+
 ### 7.4 过期 per-origin Web Storage
 
 `127.0.0.1:8100` 是所有游戏共享的一个 origin；localStorage/IndexedDB

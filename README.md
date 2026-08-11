@@ -32,10 +32,11 @@ GameTranslation/
 │   ├── asar.py          #   Electron app.asar 解包（npx @electron/asar，不重复造轮子）
 │   ├── build.py         #   JoiPlay 构建：解包 asar、剥 Electron 运行时、存档改 webstorage
 │   ├── audio.py         #   mp3→ogg 重编码 + scenario .ks 音频引用同步重写
+│   ├── autoplay.py      #   [bgmovie] 自动播放策略补丁（.play() 拒绝时用户交互后重播）
 │   ├── clean.py         #   MTool 残留 / 桌面运行时垃圾清理
 │   ├── verify.py        #   布局/存档后端/音频引用/PNG 4096 检查（--source 感知）
 │   ├── tyrano_extract.py #  TyranoBuilder .ks 解析（tb_start_text 块、speaker 行、text= 属性）
-│   └── pipeline.py      #   命令行：build → audio → clean → verify → serve → compress → deliver
+│   └── pipeline.py      #   命令行：build → audio → clean → fix-autoplay → verify → serve → compress → deliver
 ├── unity/               # Unity 工具包（仅翻译 + 运行时注入，绝不用流水线）
 │   └── rmunite/         #   RPG Maker Unite（Unity Mono）翻译：提取、
 │                        #   BepInEx+Harmony 运行时 hook 插件、系列预填

@@ -26,8 +26,12 @@ GameTranslation/
 │   └── merge_font.py    #   中文字体 + 日文字体合并（中文方块修复）
 ├── wolfrpg/             # Wolf RPG（ウディタ）工具包
 │   └── dxarchive.py     #   DXArchive v8 解包器（LZ/Huffman/KeyConv，从 UberWolf 移植）
-├── rpgmz/               # RPG Maker 工具包
-│   ├── config.py        #   工具发现（ffmpeg/ffprobe/7z）+ 阈值
+├── unity/               # Unity 工具包（仅翻译 + 运行时注入，绝不用流水线）
+│   └── rmunite/         #   RPG Maker Unite（Unity Mono）翻译：提取、
+│                        #   BepInEx+Harmony 运行时 hook 插件、系列预填
+│                        #   （IL2CPP/MelonLoader、Mono/AutoTranslator 见 AGENTS.md）
+├── rpgmaker/            # RPG Maker MZ/MV 工具包（两者通用，见 detect.py）
+│   ├── config.py        #   工具发现（ffmpeg/ffprobe/7z）+ 阈值 + 路径/平台转换
 │   ├── runtime.py       #   环境感知调优：CPU/内存/磁盘类型探测 + 自动并行度
 │   ├── detect.py        #   引擎 / 网页根目录检测（MZ 根部署 vs MV www/）
 │   ├── build.py         #   拷贝网页文件，剥离 NW.js 运行时（asyncio + 并行拷贝）
@@ -65,9 +69,7 @@ GameTranslation/
 │   ├── extract_remaining_text.py # 残留假名提取器（补翻流程，故事顺序）
 │   ├── unlock_gallery.py         # 可选：解锁 CG 回想（启动插件）
 │   ├── patch_names.py            # 用规则文件统一字典里的角色名写法
-│   ├── rmunite/                  # RPG Maker Unite（Unity Mono）翻译：提取、
-│   │                             #   BepInEx+Harmony 运行时 hook 插件、系列预填
-│   └── ...（旧版：translate_rpgmz、extract_text、plain_to_translated、
+│   └── ...（旧版：translate_rpgmaker、extract_text、plain_to_translated、
 │           qc_translation_chunks、CSV 流程工具 — 旧块格式）
 ├── tests/                # 单元 + 集成测试（pytest，fake 工具，全流程无外部依赖）
 │   ├── conftest.py       #   合成游戏/假 ffmpeg/ffprobe/7z 注入
@@ -109,7 +111,7 @@ python $tk\pipeline.py deliver $out            # 写回存储侧（压缩→压�
 如果解密不会改变游戏在 JoiPlay 下的运行方式，就不运行。
 
 `build`/`decrypt`/`audio` 并行运行（asyncio + 线程池）；每步可用
-`--workers N` 调整。**默认自动调优**（`rpgmz/runtime.py`）：按当前机器的
+`--workers N` 调整。**默认自动调优**（`rpgmaker/runtime.py`）：按当前机器的
 CPU 数、可用内存和磁盘类型（SSD/HDD）为每步选取最优并行度——IO 型步骤
 （build/decrypt/verify PNG）偏多线程，CPU 型步骤（音频编码、解码检查）
 按核数 + 内存上限收紧；可用 `GT_WORKERS=<n>`（全局）或
@@ -203,7 +205,7 @@ python 严禁直接操作 Windows 侧文件（CRITICAL，见上）。**字体（
 
 ```bash
 $tk = "<本工具库路径>"
-cfg() { python3 -c "import sys; sys.path.insert(0, '$tk'); from rpgmz import config; print(config.$1())"; }
+cfg() { python3 -c "import sys; sys.path.insert(0, '$tk'); from rpgmaker import config; print(config.$1())"; }
 
 $src = "<原版游戏路径>"                       # 绝不修改原版
 $out = "$(cfg temp_dir)/game"                 # 系统临时文件夹（工作副本）

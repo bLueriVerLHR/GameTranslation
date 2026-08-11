@@ -9,7 +9,7 @@ import subprocess
 
 from . import config, runtime
 
-log = logging.getLogger("rpgmz.compress")
+log = logging.getLogger("rpgmaker.compress")
 
 
 def compress(folder, archive, level=15, threads=None):

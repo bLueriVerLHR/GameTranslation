@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for rpgmz/runtime.py environment-aware worker tuning."""
+"""Unit tests for rpgmaker/runtime.py environment-aware worker tuning."""
 import os
 
 import pytest
 
-from rpgmz import runtime
+from rpgmaker import runtime
 
 
 class TestAutoWorkers:

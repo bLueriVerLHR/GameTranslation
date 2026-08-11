@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for rpgmz/build.py JoiPlay folder build."""
+"""Unit tests for rpgmaker/build.py JoiPlay folder build."""
 import os
 
 from conftest import make_game
 
-from rpgmz import build
+from rpgmaker import build
 
 
 class TestBuildJoiplay:

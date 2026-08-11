@@ -14,7 +14,7 @@ import threading
 import urllib.parse
 import urllib.request
 
-log = logging.getLogger("rpgmz.serve")
+log = logging.getLogger("rpgmaker.serve")
 
 # Python's http.server ships a bare mimetypes db on Windows; without a
 # correct MIME type Chromium rejects @font-face/FontFace font loads

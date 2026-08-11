@@ -15,7 +15,7 @@ import pytest
 
 from conftest import free_port, make_game
 
-from rpgmz import build, clean, compress, decrypt, serve, verify
+from rpgmaker import build, clean, compress, decrypt, serve, verify
 
 
 class TestFullPipeline:
@@ -28,7 +28,7 @@ class TestFullPipeline:
         # passes after decryption)
         from conftest import make_png_bytes
         plain = make_png_bytes(16, 16)
-        from rpgmz import config as cfg
+        from rpgmaker import config as cfg
         enc = bytearray(cfg.RPGMV_HEADER + plain)
         key = bytes.fromhex("0123456789abcdef0123456789abcdef")
         for i in range(min(16, len(enc) - 16)):
@@ -68,7 +68,7 @@ class TestDeliver:
         archives = str(tmp_path / "archives")
         build.build_joiplay(web, out, workers=2)
 
-        from rpgmz import deliver
+        from rpgmaker import deliver
         arch = deliver.deliver(out, games=games, archives=archives)
         assert os.path.isfile(arch)
         assert os.path.isdir(os.path.join(games, "build"))
@@ -85,7 +85,7 @@ class TestDeliver:
         os.makedirs(stale)
         with open(os.path.join(stale, "stale.txt"), "w") as f:
             f.write("old")
-        from rpgmz import deliver
+        from rpgmaker import deliver
         deliver.deliver(out, games=games, archives=archives)
         assert not os.path.exists(os.path.join(games, "build", "stale.txt"))
 
@@ -134,7 +134,7 @@ class TestCli:
 class TestTranslatedBuild:
     def test_bake_and_verify_kv_archived(self, tmp_path, fake_tools):
         """A translated build: KV baked into data JSON survives the pipeline."""
-        from rpgmz import config as cfg
+        from rpgmaker import config as cfg
         root = str(tmp_path / "src")
         web = make_game(root)
         # write a translation KV into the game and bake it into data/Map001.json

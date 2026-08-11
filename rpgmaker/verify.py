@@ -12,7 +12,7 @@ from . import config
 from . import audio as audio_mod
 from . import runtime
 
-log = logging.getLogger("rpgmz.verify")
+log = logging.getLogger("rpgmaker.verify")
 
 BENIGN_DECODE = re_ignore = (
     "Application provided invalid, non monotonically increasing dts to muxer"

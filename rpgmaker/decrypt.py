@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import config, runtime
 
-log = logging.getLogger("rpgmz.decrypt")
+log = logging.getLogger("rpgmaker.decrypt")
 
 DEFAULT_WORKERS = 8  # legacy fallback; None = auto-tuned (see runtime.py)
 

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmz import runtime  # noqa: E402
+from rpgmaker import runtime  # noqa: E402
 
 log = logging.getLogger("downscale_images")
 

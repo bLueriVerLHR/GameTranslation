@@ -317,7 +317,7 @@ python $tk\pipeline.py deliver $out
 **WSL 下（CRITICAL，MUST）**：上面第 3/4 步处理的是 **Windows 侧文件**，
 必须由 **Windows 侧工具**完成——不能靠 WSL 内 7z 操作 `/mnt/*` 文件
 （WSL 内 python 的 `shutil.rmtree` 删 Windows 侧目录同样被禁）。
-`rpgmz/deliver.py` 已内置**自动桥接**：WSL 下对 `/mnt/*` 的删除与解压
+`rpgmaker/deliver.py` 已内置**自动桥接**：WSL 下对 `/mnt/*` 的删除与解压
 自动改用 Windows 7z.exe / PowerShell `Remove-Item`（经 `powershell.exe`
 调用，路径自动转 Windows 格式），压缩与压缩包复制照常走 WSL 侧；仅当
 Windows 7z（默认 `C:\Program Files\7-Zip-Zstandard\7z.exe`，可用
@@ -378,7 +378,7 @@ powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<g
 - **翻译文件不是垃圾。** MTool/AI 翻译文件以几个常见名字出现：
   `AI翻译.json`、`翻译.json`，或 `<游戏名>/<文件名>.json`（游戏名目录里的
   `.json`）。留在 JoiPlay 副本 — 几 MB，引擎忽略，之后还能用
-  `translate_rpgmz.py --trs` 重新应用（或 `detect_trs` 自动检测）。
+  `translate_rpgmaker.py --trs` 重新应用（或 `detect_trs` 自动检测）。
   只有你故意不要翻译时才删。
 - 画廊 / 回想モード解锁是**可选**功能。有全解锁标志就 `tools/unlock_gallery.py`
   （见 §5）在最终构建上应用。没有这种标志的游戏（插件/存档/逐条目解锁）
@@ -416,7 +416,7 @@ powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<g
   目录带 `<game title>.json`（MTool 字典）— `build` 会拷贝（根文件），
   但**数据在你翻译前保持日文**。两种情况：
   - 字典是**静态、逐行键**模板 → 用旧版
-    `tools/translate_rpgmz.py <build> <out> --trs <title>.json` 烘焙
+    `tools/translate_rpgmaker.py <build> <out> --trs <title>.json` 烘焙
     （写进 `data/*.json`，向 `css/game.css` 加 CJK 字体回退）。
   - 字典是 **MTool 运行时替换文件**（键是 `\n` 拼接的整条消息 + 片段键）
     → **不可静态烘焙**；贪心片段回退会毁句子（「のはいいが」→「的
@@ -445,9 +445,9 @@ powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<g
   4. 没禁止 → 加载并应用翻译。
   有翻译文件时绝不问"你要翻译吗" — 文件在场就是意图。都没有就先
   `serve` 试玩检查，再问。找到文件后判断是静态逐行键模板（→ 旧版
-  `translate_rpgmz.py`）还是 MTool 运行时字典（→ 静态 subagent 工作流，
+  `translate_rpgmaker.py`）还是 MTool 运行时字典（→ 静态 subagent 工作流，
   `docs/translation.md`）。
-- 流水线后应用翻译：`translate_rpgmz.py <built> <new>`（兼容静态字典）
+- 流水线后应用翻译：`translate_rpgmaker.py <built> <new>`（兼容静态字典）
   或 `bake_translation.py <built> <new> --trs translated.json --glossary
   glossary.json`（静态 subagent 工作流）会拷贝**已解密、已压缩**的构建、
   把字典烘焙进 `data/*.json`、应用**标准字体策略** — 无需重跑
@@ -469,7 +469,7 @@ fallback 字体**（`--jp-font` 指定；未配置时回退到游戏原始字体
 `docs/table/` 的路径）→ **自动发现 `docs/table/fonts/`**（`GlowSansSC*`
 作中文、`GlowSansJ*` 作日文回退）→ 无字体时策略整体跳过。字体偏好
 只存在本地 `docs/table/`（gitignored），仓库代码不含字体名。实现
-（`translate_rpgmz.py apply_font_policy`，幂等可重跑）：
+（`translate_rpgmaker.py apply_font_policy`，幂等可重跑）：
 
 - **MZ**（有 `js/rmmz_managers.js`）：`System.json`
   `advanced.mainFontFilename` 置空（引擎不再注册全范围 FontFace，杜绝

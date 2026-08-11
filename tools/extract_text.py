@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-extract_text.py - Companion to translate_rpgmz.py
+extract_text.py - Companion to translate_rpgmaker.py
 
 Creates a key-value translation template from an RPG Maker MZ game when you
 have NO translation file yet. Run it, translate the output JSON, then feed the
-result back to translate_rpgmz.py via --trs.
+result back to translate_rpgmaker.py via --trs.
 
     python extract_text.py <game_dir> [--output translations.json]
 
@@ -14,7 +14,7 @@ Output JSON format (one entry per translatable text line):
 
 Fill the empty strings with your translation, keep values equal to the key for
 names you do not want to change, then run:
-    python translate_rpgmz.py <game_dir> <out_dir> --trs translations.json
+    python translate_rpgmaker.py <game_dir> <out_dir> --trs translations.json
 """
 
 import argparse
@@ -24,7 +24,7 @@ import os
 import re
 import sys
 
-# Same whitelist as translate_rpgmz.py
+# Same whitelist as translate_rpgmaker.py
 DISPLAY_KEYS = {
     "name", "nickname", "profile", "description",
     "message1", "message2", "message3", "message4", "text",
@@ -34,7 +34,7 @@ SYSTEM_TEXT_FIELDS = ["terms", "message", "commands", "equipTypes",
                       "weaponTypes", "armorTypes", "skillTypes", "element"]
 SYSTEM_TEXT_ARRAYS = ["variables", "switches"]
 
-# Same directive guard as translate_rpgmz.py: comment (408) lines used as
+# Same directive guard as translate_rpgmaker.py: comment (408) lines used as
 # plugin commands are not display text and must not be extracted.
 DIRECTIVE_RE = re.compile(
     r"^\s*(?:<|>|//|#|\[|`)|<[A-Za-z_@][^>]*>", re.S)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for rpgmz/config.py path/platform helpers.
+"""Unit tests for rpgmaker/config.py path/platform helpers.
 
 Covers the single-native-form path convention: every path is stored once
 in the form of the platform where the resource lives; the code detects the
@@ -13,7 +13,7 @@ import sys
 
 import pytest
 
-from rpgmz import config
+from rpgmaker import config
 
 
 class TestPathConversions:

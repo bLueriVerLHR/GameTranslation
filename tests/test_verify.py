@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for rpgmz/verify.py build integrity checks."""
+"""Unit tests for rpgmaker/verify.py build integrity checks."""
 import json
 import os
 
 from conftest import make_game
 
-from rpgmz import verify
+from rpgmaker import verify
 
 
 class TestPngSignatures:

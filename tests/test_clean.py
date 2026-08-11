@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for rpgmz/clean.py safe cleanup."""
+"""Unit tests for rpgmaker/clean.py safe cleanup."""
 import os
 
 from conftest import make_game
 
-from rpgmz import clean
+from rpgmaker import clean
 
 
 class TestImgJunk:

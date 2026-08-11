@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for rpgmz/audio.py probing and re-encoding policy."""
+"""Unit tests for rpgmaker/audio.py probing and re-encoding policy."""
 import os
 
 from conftest import make_game
 
-from rpgmz import audio, config
+from rpgmaker import audio, config
 
 
 class TestBitrateCalc:

@@ -3,7 +3,7 @@
 """
 bake_translation.py - Static-bake a translated template into an RPG Maker MZ
 game (the new workflow's bake step; replaces the greedy logic of the old
-translate_rpgmz.py).
+translate_rpgmaker.py).
 
 EXACT-MATCH ONLY: no greedy fragment replacement.  A string is replaced iff
 its full text is a key of the translation dict.  Message blocks (runs of
@@ -46,8 +46,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import plain_io  # noqa: E402
 import plugins_io  # noqa: E402
-from rpgmz import config  # noqa: E402
-from translate_rpgmz import (  # noqa: E402
+from rpgmaker import config  # noqa: E402
+from translate_rpgmaker import (  # noqa: E402
     apply_font_policy, clear_encryption_flags, decrypt_dir,
 )
 

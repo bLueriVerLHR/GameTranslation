@@ -26,7 +26,7 @@ from pathlib import Path
 from . import compress as compress_mod
 from . import config
 
-log = logging.getLogger("rpgmz.deliver")
+log = logging.getLogger("rpgmaker.deliver")
 
 
 def deliver(folder, archive=None, games=None, archives=None, level=15):

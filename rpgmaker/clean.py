@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import config, runtime
 
-log = logging.getLogger("rpgmz.clean")
+log = logging.getLogger("rpgmaker.clean")
 
 
 def _read_text(path):

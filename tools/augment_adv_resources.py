@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+r"""augment_adv_resources.py - Merge custom text-resource JSON files (ADV
+plugins, SNS feeds, etc.) into an existing static-translation work package.
+
+RPG Maker MZ games with a custom text-resource plugin (e.g. TextResource.js)
+keep their real dialogue in data/resources/<lang>/*.json instead of standard
+401 message commands.  build_translation.py cannot see them, so the story
+chunks would miss the main script.  This tool augments the work package the
+shard generator reads (template/kinds/structure/context):
+
+- every kana-bearing string VALUE in each resource file becomes a template
+  key (kind "story"), with context windows built from its neighbouring
+  values in the same file - scene continuity for the translator.
+- JSON keys (IDs like "Hiroka_HEV1_000") are functional lookups and are
+  NEVER extracted; only values are translatable.
+- the "metadata" key is always skipped.
+- nested string arrays (e.g. SNS tweet lists) are flattened in document
+  order, so a feed reads in the same order the player sees it.
+- resource files are processed in --order, not alphabetically, so scene
+  order matches the story.
+
+The same tool backs the bake step: --bake <game_dir> --trs translated.json
+exact-matches kana values against the dict and rewrites them in place
+(keys/metadata untouched).  Bake refuses below --min-coverage unless --force.
+
+Usage:
+    python augment_adv_resources.py <game_dir> <work_dir> \
+        --order Hiroka_Prologue,Hiroka_MapEvent,... [--window 2]
+    python augment_adv_resources.py <game_dir> --bake --trs translated.json \
+        [--min-coverage 0.5] [--force]
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+
+KANA = re.compile(r"[\u3040-\u30ff]")
+DEFAULT_DIRS = ["ja-JP"]
+DEFAULT_TWEETS = ["hiroka_tweet_list.json"]
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def load_json(path):
+    with open(path, encoding="utf-8-sig") as f:
+        return json.load(f)
+
+
+def save_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+
+
+def is_kana_str(v):
+    return isinstance(v, str) and bool(KANA.search(v))
+
+
+def ordered_kana_strings(obj):
+    """All kana-bearing strings in document order (nested values too)."""
+    out = []
+    if isinstance(obj, dict):
+        for v in obj.values():
+            out.extend(ordered_kana_strings(v))
+    elif isinstance(obj, list):
+        for v in obj:
+            out.extend(ordered_kana_strings(v))
+    elif is_kana_str(obj):
+        out.append(obj)
+    return out
+
+
+def walk_resources(game_dir, lang_dirs, tweet_files, order):
+    """[(where, key)] in story order; keys are the resource VALUES."""
+    items = []
+    if not order:
+        raise SystemExit("--order is required (comma list of resource file "
+                         "stems; files are scene groups, alphabetical order "
+                         "would scramble the story)")
+    for lang in lang_dirs:
+        base = os.path.join(game_dir, "data", "resources", lang)
+        if not os.path.isdir(base):
+            log("skip: %s (no such dir)" % base)
+            continue
+        seen = {}
+        for stem in order:
+            path = os.path.join(base, stem + ".json")
+            if not os.path.isfile(path):
+                log("skip: %s (not found)" % os.path.relpath(path, game_dir))
+                continue
+            data = load_json(path)
+            if not isinstance(data, dict):
+                log("skip: %s (not an object)" % os.path.relpath(path, game_dir))
+                continue
+            for key, val in data.items():
+                if key == "metadata":
+                    continue
+                if is_kana_str(val) and val not in seen:
+                    seen[val] = True
+                    items.append(("%s/%s" % (lang, stem), val))
+    for tf in tweet_files:
+        path = os.path.join(game_dir, "data", "resources", tf)
+        if not os.path.isfile(path):
+            log("skip: %s (not found)" % os.path.relpath(path, game_dir))
+            continue
+        for s in ordered_kana_strings(load_json(path)):
+            items.append(("tweets/%s" % tf, s))
+    return items
+
+
+def augment(work_dir, items, window):
+    tpl_path = os.path.join(work_dir, "template.json")
+    kinds_path = os.path.join(work_dir, "kinds.json")
+    struct_path = os.path.join(work_dir, "structure.json")
+    ctx_path = os.path.join(work_dir, "context.json")
+    tpl = load_json(tpl_path)
+    kinds = load_json(kinds_path)
+    struct = load_json(struct_path)
+    ctx = load_json(ctx_path)
+
+    # group by where (file), preserving story order
+    groups = []
+    group_keys = {}
+    for where, key in items:
+        if key in tpl:
+            continue
+        if where not in group_keys:
+            group_keys[where] = []
+            groups.append((where, group_keys[where]))
+        group_keys[where].append(key)
+
+    for where, keys in groups:
+        tpl.update({k: "" for k in keys})
+        for k in keys:
+            kinds[k] = "story"
+        idx = keys.index
+        ctx.update({
+            k: {
+                "where": "data/resources/%s" % where,
+                "window": _window(keys, idx(k), window),
+            }
+            for k in keys
+        })
+        # flat Wolf-style layout: {"kind","key"} items directly on the map
+        struct["maps"].append({
+            "id": where,
+            "items": [{"kind": "story", "key": k} for k in keys],
+        })
+    save_json(tpl_path, tpl)
+    save_json(kinds_path, kinds)
+    save_json(struct_path, struct)
+    save_json(ctx_path, ctx)
+    log("augmented %d keys in %d resource groups"
+        % (sum(len(ks) for _w, ks in groups), len(groups)))
+
+
+def _window(keys, pos, radius):
+    out = []
+    start = max(0, pos - radius)
+    end = min(len(keys), pos + radius + 1)
+    for i in range(start, end):
+        if i == pos:
+            continue
+        out.append(keys[i][:45])
+    return out
+
+
+# ------------------------------------------------------------------- bake
+
+def bake_resources(game_dir, trs, min_coverage, force, lang_dirs,
+                   tweet_files):
+    D = load_json(trs)
+    hits = misses = 0
+    miss_samples = []
+    targets = []
+    for lang in lang_dirs:
+        base = os.path.join(game_dir, "data", "resources", lang)
+        if not os.path.isdir(base):
+            continue
+        for fn in sorted(os.listdir(base)):
+            if not fn.endswith(".json"):
+                continue
+            targets.append(os.path.join(base, fn))
+    for tf in tweet_files:
+        p = os.path.join(game_dir, "data", "resources", tf)
+        if os.path.isfile(p):
+            targets.append(p)
+    n_changed = 0
+    for path in targets:
+        data = load_json(path)
+
+        def fix(v):
+            global hits, misses
+            if not is_kana_str(v):
+                return v
+            if v in D:
+                hits += 1
+                return D[v]
+            misses += 1
+            if len(miss_samples) < 10 and len(v) > 4:
+                miss_samples.append(v[:60])
+            return v
+
+        def walk(obj):
+            nonlocal n_changed
+            if isinstance(obj, dict):
+                out = {}
+                for k, v in obj.items():
+                    if k == "metadata":
+                        out[k] = v
+                        continue
+                    if isinstance(v, str) and is_kana_str(v) and v in D:
+                        out[k] = D[v]
+                        n_changed += 1
+                    elif isinstance(v, (dict, list)):
+                        out[k] = walk(v)
+                    else:
+                        out[k] = v
+                return out
+            if isinstance(obj, list):
+                return [walk(x) if isinstance(x, (dict, list)) else fix(x)
+                        for x in obj]
+            return obj
+
+        new = walk(data)
+        save_json(path, new)
+    coverage = hits / (hits + misses) if (hits + misses) else 1.0
+    log("resources coverage: %d hit / %d missed = %.0f%% (changed %d values)"
+        % (hits, misses, coverage * 100, n_changed))
+    for s in miss_samples:
+        log("  MISS: %r" % s)
+    if coverage < min_coverage and not force:
+        raise SystemExit("coverage %.0f%% below --min-coverage %.2f; use "
+                         "--force to bake anyway" % (coverage * 100,
+                                                     min_coverage))
+    log("baked resources done")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("game_dir")
+    ap.add_argument("work_dir", nargs="?")
+    ap.add_argument("--order", default="",
+                    help="comma list of resource file stems in story order")
+    ap.add_argument("--window", type=int, default=2)
+    ap.add_argument("--bake", action="store_true")
+    ap.add_argument("--trs", default="translated.json")
+    ap.add_argument("--min-coverage", type=float, default=0.5)
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--lang-dirs", default=",".join(DEFAULT_DIRS))
+    ap.add_argument("--tweet-files", default=",".join(DEFAULT_TWEETS))
+    args = ap.parse_args()
+
+    if args.bake:
+        bake_resources(args.game_dir, args.trs, args.min_coverage,
+                       args.force,
+                       [x for x in args.lang_dirs.split(",") if x],
+                       [x for x in args.tweet_files.split(",") if x])
+        return
+
+    if not args.work_dir:
+        ap.error("work_dir is required unless --bake")
+    items = walk_resources(args.game_dir,
+                           [x for x in args.lang_dirs.split(",") if x],
+                           [x for x in args.tweet_files.split(",") if x],
+                           [x for x in args.order.split(",") if x])
+    augment(args.work_dir, items, args.window)
+
+
+if __name__ == "__main__":
+    main()

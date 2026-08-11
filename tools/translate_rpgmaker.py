@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-translate_rpgmz.py - Reusable tool for RPG Maker MZ games.
+translate_rpgmaker.py - Reusable tool for RPG Maker MZ games.
 
 Does three things to a game and writes the result to an output folder:
   1. Copies the whole game tree.
@@ -11,7 +11,7 @@ Does three things to a game and writes the result to an output folder:
      baking the translations into the data/*.json files.
 
 Usage:
-    python translate_rpgmz.py <game_dir> <out_dir> [--trs translation.json]
+    python translate_rpgmaker.py <game_dir> <out_dir> [--trs translation.json]
                               [--skip-translate] [--plugins]
 
 The translation JSON is auto-detected in the game root when --trs is omitted.
@@ -36,7 +36,7 @@ import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmz import config  # noqa: E402
+from rpgmaker import config  # noqa: E402
 
 RPGMV_HEADER = bytes.fromhex("5250474d560000000003010000000000")
 SPLIT = re.compile(r"(\\\.|\n)")
@@ -414,7 +414,7 @@ def add_cjk_font_fallback(root):
     if os.path.exists(os.path.join(root, "js", "rmmz_managers.js")):
         return
     rule = (
-        "\n/* CJK font fallback (added by translate_rpgmz.py) */\n"
+        "\n/* CJK font fallback (added by translate_rpgmaker.py) */\n"
         "#gameCanvas, .GameFont {\n"
         '    font-family: "GameFont", "Microsoft YaHei", "PingFang SC",'
         ' "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;\n'
@@ -579,7 +579,7 @@ def _strip_managed_font_rules(css):
     re-applied cleanly on re-bakes: our rmmz-mainfont/GameFont @font-face
     blocks, our #gameCanvas family overrides, and their comment headers."""
     css = re.sub(
-        r"/\*\s*Font policy \(translate_rpgmz\.py\).*?\*/\s*"
+        r"/\*\s*Font policy \(translate_rpgmaker\.py\).*?\*/\s*"
         r"(?:@font-face\s*\{[^}]*\}|#gameCanvas\s*,\s*\.GameFont\s*\{[^}]*\})*",
         "", css, flags=re.S)
     css = re.sub(
@@ -587,7 +587,7 @@ def _strip_managed_font_rules(css):
         "", css, flags=re.S)
     css = re.sub(r"#gameCanvas\s*,\s*\.GameFont\s*\{[^}]*\}", "", css,
                  flags=re.S)
-    css = re.sub(r"/\*\s*CJK font fallback \(added by translate_rpgmz\.py\)\s*\*/\s*",
+    css = re.sub(r"/\*\s*CJK font fallback \(added by translate_rpgmaker\.py\)\s*\*/\s*",
                  "", css, flags=re.S)
     return css
 
@@ -597,7 +597,7 @@ def _existing_policy_orig_font(css):
     policy block (the kana face).  System.json mainFontFilename is emptied by
     the first apply, so re-applies need this to stay idempotent."""
     m = re.search(
-        r"Font policy \(translate_rpgmz\.py\).*?@font-face\s*\{"
+        r"Font policy \(translate_rpgmaker\.py\).*?@font-face\s*\{"
         r"[^}]*?src:\s*url\(\"\.\./fonts/([^\")]+)\"\)[^}]*?"
         r"unicode-range:\s*[^;}]*U\+3000-30FF[^}]*\}",
         css, re.S)
@@ -642,7 +642,7 @@ def _apply_mz_font_policy(root, cjk_font_src, jp_font_src=None):
     elif orig_name and os.path.exists(os.path.join(root, "fonts", orig_name)):
         kana_src = 'url("../fonts/%s")' % orig_name
         kana_label = orig_name
-    blocks = ["/* Font policy (translate_rpgmz.py): bundled CJK font for "
+    blocks = ["/* Font policy (translate_rpgmaker.py): bundled CJK font for "
               "Chinese/latin,", "   the Japanese fallback for kana/JP "
               "punctuation */"]
     if kana_src:

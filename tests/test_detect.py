@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for rpgmz/detect.py engine/layout detection."""
+"""Unit tests for rpgmaker/detect.py engine/layout detection."""
 import os
 
 from conftest import make_game
 
-from rpgmz import detect
+from rpgmaker import detect
 
 
 class TestWebRootDetection:

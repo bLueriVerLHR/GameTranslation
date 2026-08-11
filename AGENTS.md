@@ -67,7 +67,7 @@ powershell.exe -NoProfile -Command \
   "& 'C:\Program Files\7-Zip-Zstandard\7z.exe' x -y '-o<games_dir>' '<archives_dir>\game.7z'"
 ```
 
-`rpgmz/deliver.py` 已内置**自动桥接**：WSL 下对 Windows 侧（`/mnt/*`）
+`rpgmaker/deliver.py` 已内置**自动桥接**：WSL 下对 Windows 侧（`/mnt/*`）
 文件的删除/解压自动改用 Windows 7z.exe / PowerShell `Remove-Item`（经
 `powershell.exe` 调用，路径自动转 Windows 格式），无需手工介入；仅当
 Windows 7z（默认 `C:\Program Files\7-Zip-Zstandard\7z.exe`，可用
@@ -217,7 +217,7 @@ Unity 游戏（`<Game>.exe` + `<Game>_Data/` + `globalgamemanagers`，无
   hooking）"，已在 Unity 6 IL2CPP + Addressables 游戏上跑通）；
   **RPG Maker Unite（Unity Mono）用 BepInEx 5 + Harmony 自定义插件**
   （见下节 "RPG Maker Unite (Unity Mono) 翻译"，多款同作者短篇系列跑通，
-  工具在 `tools\rmunite\`）。绝不在 Unity 游戏上跑流水线，绝不解密/
+  工具在 `unity\rmunite\`）。绝不在 Unity 游戏上跑流水线，绝不解密/
   重编码任何东西。
 - Unity 游戏放到专门的 Unity 游戏目录（`<Game>\`；先解压到 Temp、
   删除广告文件、再移动；剥掉重复嵌套的目录层级）。
@@ -415,11 +415,11 @@ KiriKiri 游戏（`Game.exe` + `data.xp3` 等，无 `index.html`/`js/`）不走
   `deliverables.temp`），绝不放源目录旁边。
 - **路径配置只存一份（原生形式）**：Windows 侧资源写 `D:/..`/`C:/..`，
   WSL 侧写 `/tmp/..`；WSL 要用 Windows 侧路径时由代码转换
-  （`rpgmz/config.py` 的 `_localize()` → `to_wsl_path()`），**绝不把同一
+  （`rpgmaker/config.py` 的 `_localize()` → `to_wsl_path()`），**绝不把同一
   路径写两份**。工具按 `[platform][tool]` 索引（两侧二进制不同）。
 - **Windows 端下载/暂存**（Windows-only 工具、待处理内容）一律放
   `deliverables.win_temp`（Windows 的 `%TEMP%`，代码里
-  `rpgmz/config.py` 的 `win_temp_dir()`），**绝不放进 `deliverables.games`
+  `rpgmaker/config.py` 的 `win_temp_dir()`），**绝不放进 `deliverables.games`
   或 `deliverables.archives`**。
 - 成品放专门交付目录，命名 `<Game>` / `<Game>.7z`，与其他转换过的游戏一致。
 - 绝不修改原版游戏目录。
@@ -435,7 +435,7 @@ KiriKiri 游戏（`Game.exe` + `data.xp3` 等，无 `index.html`/`js/`）不走
      本地 7z（快文件系统），再把压缩包**单个文件复制**到压缩包目录
      （`deliverables.archives`，Windows 侧，覆盖旧包——通常就是源压缩包）；
   5. 删除成品目录（`deliverables.games`，Windows 侧）同名旧文件夹 + 从
-     压缩包解压到成品目录：**由 Windows 侧工具完成**。`rpgmz/deliver.py`
+     压缩包解压到成品目录：**由 Windows 侧工具完成**。`rpgmaker/deliver.py`
      内置**自动桥接**（`config.is_windows_side` / `win_7z`）：WSL 下对
      `/mnt/*` 的删除与解压自动改用 Windows 7z.exe / PowerShell
      `Remove-Item`（经 `powershell.exe` 调用），无需手工介入；仅当

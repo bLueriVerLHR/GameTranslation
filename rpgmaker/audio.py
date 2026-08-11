@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import config, runtime
 
-log = logging.getLogger("rpgmz.audio")
+log = logging.getLogger("rpgmaker.audio")
 
 DEFAULT_PROBE_WORKERS = 8   # legacy fallbacks; None = auto-tuned (runtime.py)
 DEFAULT_ENCODE_WORKERS = 4

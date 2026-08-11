@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for rpgmz/decrypt.py RPGMV easy-decryption."""
+"""Unit tests for rpgmaker/decrypt.py RPGMV easy-decryption."""
 import json
 import os
 
 from conftest import make_game
 
-from rpgmz import config
-from rpgmz import decrypt as dec
+from rpgmaker import config
+from rpgmaker import decrypt as dec
 
 
 KEY = bytes.fromhex("0123456789abcdef0123456789abcdef")

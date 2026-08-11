@@ -157,7 +157,7 @@ build → decrypt → audio → clean → verify → serve → compress
 
 ## 7. 翻译（zh_CN 翻译文件.json）
 
-- 用 `tools/translate_rpgmz.py <src> <out> --trs 翻译文件.json`，或用其
+- 用 `tools/translate_rpgmaker.py <src> <out> --trs 翻译文件.json`，或用其
   `translate_data` 直接烘焙进构建（只数据文件；JSON 写 `indent=2`、
   `ensure_ascii=False`、无 BOM）。
 - 翻译后**打包 CJK 字体**，否则中文渲染方块。最佳做法：加
@@ -175,9 +175,9 @@ build → decrypt → audio → clean → verify → serve → compress
 
 - **对话在 `data/ExternMessage.csv`，不在 JSON。** 有些 MV 游戏带
   UTF-16LE `ExternMessage.csv`（列 `名前(ID),本文(body),...`）；事件只含
-  指向它的 `\M[ID]` 引用。`translate_rpgmz.py` 原本只烘焙 `data/*.json`
+  指向它的 `\M[ID]` 引用。`translate_rpgmaker.py` 原本只烘焙 `data/*.json`
   → 开场场景保持日文，且贪心翻译器重写了 `\M[...]` 里的 ID，破坏 CSV
-  查找。**修复（已应用于 `tools/translate_rpgmz.py`）：** (1)
+  查找。**修复（已应用于 `tools/translate_rpgmaker.py`）：** (1)
   `translate_text` 现在保护控制码括号（`\M[ID]`、`\V[1]`、`:name[...]`、
   …）— 只翻译它们之间的纯日文片段，`:name[NAME,FACE]` 的 NAME 部分除外
   （它是显示文本；已验证无 `:name` 参数与 CSV id 冲突）；(2) 新
@@ -222,7 +222,7 @@ engagement），Edge 不行。修复：`Bitmap_Video.prototype.play` 在 catch
 
 一款 repack 正常 — 数据已翻译；另一款不是：repack 在游戏根带 MTool
 字典、*数据文件仍是日文*；你必须自己烘焙：
-`python tools\translate_rpgmz.py <built> <out> --trs "<title>.json"`
+`python tools\translate_rpgmaker.py <built> <out> --trs "<title>.json"`
 （那次 7742 条）。它还向 `css/game.css` 追加 CJK 字体回退。之后重
 verify + serve --test。别假设"repack = 已烘焙"。
 
@@ -309,7 +309,7 @@ verify + serve --test。别假设"repack = 已烘焙"。
 - no-cache 处理器意味着加资源后普通刷新即可。
 - 工具路径：命令里直接用 `python`；ffmpeg 在
   `%LOCALAPPDATA%\Temp\opencode\ffmpeg_x\...\bin\`（见
-  `rpgmz/config.py`），7z = `C:\Program Files\7-Zip-Zstandard\7z.exe`，
+  `rpgmaker/config.py`），7z = `C:\Program Files\7-Zip-Zstandard\7z.exe`，
   ripgrep（`rg`）与 Everything（`es`）在 PATH。
 - PowerShell 坑：`Start-Process -ArgumentList` 弄坏带空格参数；传单个
   预引号字符串（`'serve "' + $folder + '" -p 8100'`）并含脚本路径。

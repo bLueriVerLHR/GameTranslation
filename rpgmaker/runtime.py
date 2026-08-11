@@ -35,7 +35,7 @@ import logging
 import os
 import sys
 
-log = logging.getLogger("rpgmz.runtime")
+log = logging.getLogger("rpgmaker.runtime")
 
 MAX_WORKERS = 32
 

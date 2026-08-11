@@ -9,6 +9,9 @@ Steps (run in this order on a game folder):
   audio     re-encode bgm/ + sound/ mp3 to Ogg Vorbis and rewrite the
             scenario .ks audio refs in lockstep
   clean     remove MTool residues and other desktop leftovers
+  fix-autoplay
+            patch kag.tag_ext.js so [bgmovie] starts despite the browser
+            autoplay policy (idempotent; games without bgmovie are a no-op)
   verify    check layout, save backend, audio refs and PNG limits
   serve     run an HTTP server + smoke test (for browser/JoiPlay testing)
   compress  package the result as a 7z-zstd archive (tested last)
@@ -42,6 +45,7 @@ from rpgmaker import deliver as rpg_deliver  # noqa: E402
 from rpgmaker import serve as rpg_serve  # noqa: E402
 
 from tyrano import audio as audio_mod  # noqa: E402
+from tyrano import autoplay as autoplay_mod  # noqa: E402
 from tyrano import build as build_mod  # noqa: E402
 from tyrano import clean as clean_mod  # noqa: E402
 from tyrano import verify as verify_mod  # noqa: E402
@@ -71,6 +75,10 @@ def cmd_clean(args):
     removed = clean_mod.cleanup_all(args.out, dry_run=args.dry_run)
     for p in removed:
         log.info("removed %s", p)
+
+
+def cmd_fix_autoplay(args):
+    autoplay_mod.patch_autoplay(args.out)
 
 
 def cmd_verify(args):
@@ -163,6 +171,12 @@ def main():
     p.add_argument("out", help="built game folder")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_clean)
+
+    p = sub.add_parser("fix-autoplay",
+                       help="patch [bgmovie] play() with user-interaction "
+                            "fallback (autoplay policy)")
+    p.add_argument("out", help="built game folder")
+    p.set_defaults(func=cmd_fix_autoplay)
 
     p = sub.add_parser("verify", help="check the built folder")
     p.add_argument("out", help="built game folder")

@@ -11,6 +11,9 @@ prompt 契约已定稿，下面的数字都是实战验证过的。
 见 `docs/workflow.md`。Wolf RPG（ウディタ）翻译走同一条 chunk/subagent
 管线，但**提取/回写/编码完全不同**，见 `docs/wolfrpg.md`（含
 `tools/build_wolf_translation.py` 与 `tools/apply_translation_to_patch.py`）。
+KiriKiri（吉里吉里）同理走统一管线 + 独立提取/写回/patch.xp3 打包，
+见 `docs/kirikiri.md`（含 `tools/build_ks_translation.py` /
+`tools/apply_ks_translation.py` / `tools/qc_ks_kana.py`）。
 
 所有命令在终端（PowerShell / CMD）运行。需要 **Python 3.8+**（`python`
 在 PATH 上）。
@@ -158,8 +161,7 @@ python tools\gen_translation_shards.py <work_dir> --max-chars 11000 --window 1
 `--max-chars`，使块数 ≤ `--target-chunks` 且每个 `context.md` 低于
 **`--context-budget-kb 90`** 预算（90KB+ 的 context 块是 flaky
 no-file 失败的温床；密集块用 `--window 1`）。写优先契约下 **每块约
-11,000 键字符是验证过的尺寸**（一个 3.6 万键 / 64.7 万字符的 MZ 任务按
-4500→11000 跑了 145 块；一个 1 万键任务按 4500 跑了 43 块）。单个超长键
+11,000 键字符是验证过的尺寸**（多款任务按 4500→11000 实测）。单个超长键
 自成一块。显式 `--max-chars` / `--per-chunk` 覆盖 auto 选档。真正的约束
 是上下文预算而不是模型 — 生成器会打印所选尺寸与预期上下文大小。
 

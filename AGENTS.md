@@ -164,8 +164,18 @@ docs/table/
 
 ## 转换目标
 
-最终目标是**可玩的 JoiPlay 构建**，而不是完美克隆。做让游戏能在
-Android 的 JoiPlay 里跑起来所需的最小工作。
+两条目的（2026-08 定案），按游戏类别选择，不做多余工作：
+
+1. **HTML5 系游戏（RPG Maker MZ/MV 网页版）→ 可玩的 JoiPlay 构建**：
+   剥离桌面运行时（NW.js）、解密（仅 easy）、压缩音频、清理、验证、
+   7z-zstd 打包。做让游戏能在 Android 的 JoiPlay 里跑起来所需的最小工作。
+2. **Unity / Wolf RPG / KiriKiri 游戏 → 翻译 + 注入**（**不做 JoiPlay 转换**）：
+   解包 → 提取 → 翻译（**清除 MTool 机翻，自己翻译**）→ 运行时 hook /
+   补丁注入。翻译能力按具体游戏持续优化，打补丁内容由 owner 逐款给出。
+
+**游戏特定特征（引擎+特征案例、体量、坑）一律记录在本地
+`docs/table/<Game>/notes.md`，不写进仓库文档**（仓库只留引擎级通用知识，
+以「引擎 + 特征描述」形式，见公开仓库卫生）。
 
 ## 解密规则
 
@@ -184,10 +194,13 @@ Android 的 JoiPlay 里跑起来所需的最小工作。
 
 ## 引擎
 
-- RPG Maker MZ/MV → `pipeline.py`（见 `docs/workflow.md`）
-- Unity（任何类型）→ 仅翻译，绝不用流水线（见下）
+- RPG Maker MZ/MV（HTML5）→ `pipeline.py`（JoiPlay 构建，见
+  `docs/workflow.md`）
+- Unity（任何类型）→ 仅翻译 + 运行时注入，绝不用流水线（见下）
 - Wolf RPG（ウディタ）→ 仅翻译 + 解包/回写，绝不用流水线（见
   `docs/wolfrpg.md`）
+- KiriKiri（吉里吉里）→ 仅翻译 + patch.xp3 补丁注入，绝不用流水线（见
+  `docs/kirikiri.md`）
 
 ## Unity 游戏（非 RPG Maker）
 
@@ -233,14 +246,11 @@ bundle，见下方 FAILURE 记录）——正确路线是 **MelonLoader 运行�
 - **GameScript `bytecode` 字段（最容易漏！）**：图式脚本插件（如
   NemukeGraph/LogicToolkit）的图被编译成自定义字节码存在 `bytecode` 字段
   （`list[int]`），**主剧情台词全在这里**。字符串格式：`opcode 6 (0x06) +
-  int32(utf8-len) + utf8`。只做 `read()` 遍历的提取会**完全漏掉主剧情**——
-  第一次提取报 1960 texts 是错的，真实范围 **2742 条唯一文本 /
-  ~15.9 万字符**。
+  int32(utf8-len) + utf8`。只做 `read()` 遍历的提取会**完全漏掉主剧情**。
 - **Unity Localization 字符串表**：`localization-string-tables-japanese(ja)_assets_all.bundle`
-  里的小表（~14 条通用文本，名字/地名等）。
+  里的小表（通用文本，名字/地名等）。
 
-分片：写优先契约下 **~250 键 / ~9k 字符** 的大块完全可行（24 块一轮 10
-并行 ~3 轮跑完），QC 保证不丢行。
+分片：写优先契约下 **~250 键 / ~9k 字符** 的大块完全可行，QC 保证不丢行。
 
 ### 2. 运行时注入（MelonLoader 0.7.3 + Harmony）
 
@@ -286,13 +296,6 @@ bundle，见下方 FAILURE 记录）——正确路线是 **MelonLoader 运行�
   字形保留原样，缺失汉字回退到宋体）。**用户偏好：宋体 (SimSun) 比雅黑
   更适合本作**。参考实现：eviltwo/SystemFontLocalization（Unity 6 验证）。
 
-记录：一个 Unity 6000.3.5f2 IL2CPP + Addressables 视觉小说（2026-08）——
-**2742 条唯一文本 / ~15.9 万字符**；MelonLoader 运行时 hook（Say 系列 +
-AddChoice + Nameplate.SetName + TMP_Text.text）+ translated.json 字典；
-24 个 subagent 分片（~250 键/块）翻译 + QC 零假名残留、`<sprite=0>`
-逐行 1:1；字体 fallback = 运行时 SimSun。终态：全文本汉化、无卡顿、
-游戏完整可玩。**bundle 改写历史作废，勿再尝试。**
-
 **Unity 6 bundle-改写 FAILURE（2026-08，勿再盲目重复）：** 引擎拒绝一切
 修改过的 bundle（静默黑屏、无日志、约 2s CPU、窗口存在）。按顺序全部
 失败：UnityPy typetree 补丁+保存；UnityPy raw set_raw_data 字节替换
@@ -304,15 +307,8 @@ UnityPy 可读验证）；catalog crc 与 content-hash 清零。原始 bundle �
 改写不可行**（UnityPy 自己的 GitHub 也承认 LZ4 保存的 bundle 可能无法
 加载）。**旧记录的"翻译需要 runtime hooking（BepInEx+AutoTranslator，
 Unity 6 存疑）"已过时**——MelonLoader 运行时 hook 方案于同日跑通并交付
-（见上节）。另外当时"full residual scan 0"是**假阳性**：read() 遍历漏掉了
-GameScript bytecode 里的主剧情文本（真实范围 2742 条而非 1960 条）。
-游戏已恢复原装日文且可玩；不要再对它做 bundle 改写。
-
-记录：一个 Unity 5.6.7f1 x64 带翻译 mod 的 repack——正文 = AutoTranslator
-EN（机器翻译，3651 条 / ~13.1 万字符）；mod 自带完整手工汉化包
-（19 个场景 JSON + EventCore 65 个文件，游戏内可选语言）。保持原样
-（EN 正文 + CN mod）。**2026-08 删除**（owner 决定——正文翻译量过大；
-日后可能再做；本条记录保留作参考）。
+ （见上节）。另外当时"full residual scan 0"是**假阳性**：read() 遍历漏掉了
+GameScript bytecode 里的主剧情文本。**bundle 改写历史作废，勿再尝试。**
 
 ## RPG Maker Unite (Unity Mono) 翻译 — 已在短篇系列验证（2026-08）
 
@@ -376,10 +372,38 @@ Unity **2021.3.15f1 Mono**（非 IL2CPP），Addressables bundles。
 6. 交付：汉化版完整目录放 Workspace（含 BepInEx/插件/translated.json），
    原版不动。
 
-记录：一个 7 款系列（2026-08, first 123 entries；后续 155–582 entries，
-含一次 68 条半翻译修复、系列复用收债线、会津弁口语化译法）。
-压缩包密码见本地 `docs/table/passwords.md`（gitignored）；Unity
-2021.3.15f1 统一。
+## KiriKiri（吉里吉里）翻译 — 补丁注入（2026-08 定案）
+
+KiriKiri 游戏（`Game.exe` + `data.xp3` 等，无 `index.html`/`js/`）不走
+流水线，也**不做 Ren'Py 移植**（旧 JoiPlay 移植方向废弃）。路线：
+解包 → 提取 → 统一 chunk 翻译 → 写回 → 打包 `patch.xp3`（引擎档案
+优先级 patch > 原档，同名文件先到先得，**原包不动**）。完整指南见
+`docs/kirikiri.md`。
+
+- **解包**：`kirikiri/xp3tool.py`（标准 krkrz 头、zlib/raw 索引、
+  0x80 间接块、raw/zlib 段）。多档案（data/patch/update）解到**同一
+  目录覆盖**（等价引擎叠加顺序）。
+- **打包**：`kirikiri/xp3pack.py`（纯 Python：raw 段 + zlib 索引 +
+  写完用 xp3tool 解析器回读自校验）。
+- **提取/写回**：`tools/build_ks_translation.py` → 统一 chunk 流程 →
+  `tools/apply_ks_translation.py`（整行键替换，保留缩进/行尾/原编码）。
+- **键 = 整行**（含 `[l]` 等格式标签与 `text="..."` 属性）：标签是
+  控制码，逐行 1:1 数清（chunk 契约与 RPG Maker 相同）；这同时覆盖
+  对白、名字窗（`[name text=..]`）、消息窗（`[wm2 text=..]`）、选择肢
+  （`[select_caption text=..]`）。
+- **故事顺序**：从入口脚本（默认 `start.ks`）沿 `[call]/[jump]`
+  storage 引用 BFS 追踪，孤立文件按排序追加；`@bg storage=` 等**素材
+  引用不追踪**。
+- **编码**：每文件自动探测（UTF-16LE/BE、Shift-JIS、UTF-8），写回用
+  原编码；**Shift-JIS 编不下中文时整文件转 UTF-16LE**（引擎按 BOM
+  嗅探）并 WARN。
+- **`*` 标签行、`;` 注释行、未配对方括号行一律不提取**（防改坏跳转）。
+- **QC**：`tools/qc_ks_kana.py`（补丁树/字典值假名残留，文件:行定位；
+  汉字不算残留）。
+- **MTool 清除**：KiriKiri 游戏同样按打包规则删 MTool 注入残留
+  （根目录运行时字典 json、winmm.dll/version.dll、启动/移除 bat）。
+- **字体**：中文方块按具体游戏解决（系统字体 / `kirikiri/merge_font.py`
+  合并字体），跑通的方案记入本地 `docs/table/<Game>/notes.md`。
 
 ## 目录约定
 
@@ -447,8 +471,7 @@ Unity **2021.3.15f1 Mono**（非 IL2CPP），Addressables bundles。
 ## 手机贴图限制（强制单一构建，2026-08 定案）
 
 Android WebView/PixiJS 把 WebGL 贴图限制在**每边 4096 像素**；PNG 超过
-4096（通常是竖版立绘，如 2160x4237）在手机上会渲染成**黑块**，而 PC
-浏览器正常。
+4096（通常是竖版立绘）在手机上会渲染成**黑块**，而 PC 浏览器正常。
 
 - **不再分高清/低清两套构建。** 每个游戏只交付一个构建
   `<Game>` / `<Game>.7z`：把超过 4096 的 PNG 直接缩放到 ≤4096（保持
@@ -456,10 +479,8 @@ Android WebView/PixiJS 把 WebGL 贴图限制在**每边 4096 像素**；PNG 超
 - 用 `tools/downscale_images.py <web_root>` 扫描 `img/**/*.png`（读 IHDR
   头字节 16-23 预检）并就地缩放超限图片；`--dry-run` 只报告不写。
 - 只在确实存在超过 4096 的 PNG 时才需要这一步（大多数游戏没有）。
-- 记录：一款游戏 30 张 2160x4237 竖版立绘（缩放后 2088x4095）在
-  JoiPlay 里造成黑块；2026-08 修复。曾试行运行时检测贴图上限并即时
-  缩放（插件方案）以省去缩放步骤 — 维护成本高于收益，已放弃，一律
-  构建期缩放。
+- 曾试行运行时检测贴图上限并即时缩放（插件方案）以省去缩放步骤 —
+  维护成本高于收益，已放弃，一律构建期缩放。
 
 ## 翻译体量协商 (mandatory)
 

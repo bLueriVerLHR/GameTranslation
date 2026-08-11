@@ -3,23 +3,8 @@
 如何把 RPG Maker MZ/MV 游戏转换成 JoiPlay 兼容构建、压缩、测试、打包 —
 用本工具库的 `pipeline.py` 命令行。
 
-本工作流覆盖的引擎/特征案例（不含游戏名）：
-
-| 案例（引擎 + 特征） | 要点 |
-| --- | --- |
-| MZ、NW.js 根部署、纯 ogg 音频 | 纯 ogg 音频 — 压缩空间小 |
-| MZ、NW.js 根部署、异步图片加载 | AsyncLoadImage fs 修复（选择场景） |
-| MV、`www/` 部署、加密资源 | 加密 `.rpgmvo`/`.rpgmvp` 资源 |
-| MZ、NW.js 根部署、加密 + CG 保无损 | 加密 `.ogg_`/`.png_`；CG 保无损 |
-| MZ、NW.js 根部署、密码保护 RAR | 默认加密密钥；AI 翻译已烘焙 |
-| MZ、NW.js 根部署、10GB+ 媒体重 | 加密 `.png_`；webm 电影全保留（事件都引用）— 媒体已压缩，压缩空间小 |
-| MV、`www/` 部署、加密 + 剧情插件 | Saba_SimpleScenario `process` 修复；MoviePicture 自动播放修复；`clean` 字体匹配 bug 后恢复 3 个字体 |
-| MV、`www/` 部署、加密 + DLC 补丁插件 | DLC 补丁插件 `process` 修复；22 个默认 MV 音频引用未随包（无害） |
-| MZ、NW.js 根部署、加密 + MTool 字典 | MTool 翻译 `<title>.json` 已烘焙；无 `process` 插件 |
-| MV、`www/` 部署、加密 + ExternMessage.csv 对话 | 根 `<title>.json` 已烘焙；**ExternMessage.csv 对话**（UTF-16LE，`\M[ID]` 引用受保护）；MV `gamefont.css` 拆分 + NotoSansSC 打包；嵌套 `www/www` 重复跳过 |
-| MZ、NW.js 根部署、加密 + MTool 运行时字典 | 根 `<title>.json` 运行时字典（不可静态烘焙 — 重提取成静态模板，走 subagent 工作流，见 `docs/translation.md`） |
-| MZ、NW.js 根部署、加密 + TemplateEvent 插件 | 静态翻译已烘焙；**TemplateEvent `<TE:name>` note 引用 vs 已译模板事件名**（移动锁死 — 已在 `bake_translation.py` 修复） |
-| MZ、NW.js 根部署、MTool repack、无加密 | MTool 字典 harvest + **11,000 字符块的 subagent 补翻**（auto 选档）；harvest `is_name_line` 首行 bug 用逐行片段重建修复；identity 条目剔除 |
+游戏特定特征（引擎+特征案例、体量、坑）**不写进本文件**，一律记录在
+本地 `docs/table/<Game>/notes.md`（gitignored，不入库，仅 owner 维护）。
 
 ---
 
@@ -111,7 +96,7 @@ python $tk\pipeline.py deliver $out          # 写回存储侧（见 §6a）
   文件夹 → 解压到成品目录。原版游戏保持不动。
 - **手机贴图限制（单一构建策略，2026-08 定案）。** Android
   WebView/PixiJS 把 WebGL 贴图限制在**每边 4096 像素**；任何超过 4096
-  的 PNG（通常是竖版立绘，如 2160x4237）在手机上渲染成**黑块**，PC
+  的 PNG（通常是竖版立绘）在手机上渲染成**黑块**，PC
   浏览器正常。约定：
   - **不再分高清/低清两套构建**，每个游戏只交付一个构建
     `<Game>` / `<Game>.7z`。
@@ -119,10 +104,8 @@ python $tk\pipeline.py deliver $out          # 写回存储侧（见 §6a）
     <web_root>`（读 IHDR 头字节 16-23 预检，`--dry-run` 先看报告）就地
     缩放到 ≤4096（保持宽高比 + alpha，PNG），保证 Android 正常显示。
   - 大多数游戏没有超限图，跳过此步即可。
-  - 记录：一款游戏 30 张 2160x4237 竖版立绘（缩放后 2088x4095）在
-    JoiPlay 里造成黑块；2026-08 修复。曾试行运行时检测贴图上限并即时
-    缩放（插件方案）以省去缩放步骤 — 维护成本高于收益，已放弃，一律
-    构建期缩放。
+  - 曾试行运行时检测贴图上限并即时缩放（插件方案）以省去缩放步骤 —
+    维护成本高于收益，已放弃，一律构建期缩放。
 
 ## 3. 引擎检测
 
@@ -204,8 +187,6 @@ MZ（`*.png_`、`*.ogg_`）与 MV（`*.rpgmvp`、`*.rpgmvo`、`*.rpgmvm` —
   只能解 **Vorbis**）。
 - 先用 `--sample N` 在少量文件上试策略，`--probe-only --report file.csv`
   只查码率不动文件。
-
-记录：一款游戏音频 **1889 MB → 471 MB**（全部 4028 个文件之后解码干净）。
 
 ### clean — 只做安全删除
 

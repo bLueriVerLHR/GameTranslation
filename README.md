@@ -1,16 +1,29 @@
 # GameTranslation
 
-面向 **RPG Maker** 和 **Unity** 等方便翻译的游戏而设计的 **JP→ZH 翻译流程**；
-RPG Maker 游戏有打包成 **JoiPlay** 可玩的完整流程。本项目仅由
-**DeepSeek V4 Flash** 编写，基本没有人工编写代码。
+面向 **JP→ZH 翻译 + 可玩构建** 的本地工具库；**DeepSeek V4 Flash**
+编写，基本没有人工编写的代码。
 
-把 **RPG Maker MZ/MV** 游戏转换成 **JoiPlay 可玩**的构建：
-剥离桌面运行时（NW.js）、解密加密资源（仅 easy 加密）、压缩音频、
-清理无用文件、验证、HTTP 测试、打包成 `7z-zstd` 压缩包。
+## 游戏目的（2026-08 定案）
+
+| 目的 | 引擎 | 做法 |
+| --- | --- | --- |
+| **可玩构建（JoiPlay）** | HTML5 系（RPG Maker MZ/MV 网页版） | 剥离 NW.js、解密（仅 easy）、压缩音频、清理、验证、7z-zstd 打包 —— `pipeline.py` |
+| **翻译 + 注入（不做 JoiPlay 转换）** | Unity / Wolf RPG / KiriKiri | 解包 → 提取 → 自译（统一 chunk/subagent 流程）→ 运行时 hook / 补丁注入 |
+
+第二条是当前主线：**清除 MTool 机翻，自己翻译，持续优化翻译能力**。
+Unity = MelonLoader/BepInEx 运行时 hook；Wolf RPG = rewolf-trans 补丁
+回写；KiriKiri = patch.xp3 覆盖 scenario。翻译能力按具体游戏打补丁优化，
+游戏特定特征（引擎+特征案例、体量、坑）一律记录在**本地
+`docs/table/<Game>/notes.md`**（gitignored，不入库），**不写进仓库文档**。
 
 ```
 GameTranslation/
 ├── pipeline.py          # RPG Maker 命令行（build → decrypt → audio → clean → verify → serve/compress/deliver）
+├── kirikiri/            # KiriKiri（吉里吉里）工具包
+│   ├── xp3tool.py       #   XP3 解包（zlib 索引、0x80 间接块、raw/zlib 段）
+│   ├── xp3pack.py       #   XP3 打包（patch.xp3：raw 段 + zlib 索引 + 自校验）
+│   ├── ks_extract.py    #   .ks 解析（编码探测、方括号配对、可译性判定）
+│   └── merge_font.py    #   中文字体 + 日文字体合并（中文方块修复）
 ├── wolfrpg/             # Wolf RPG（ウディタ）工具包
 │   └── dxarchive.py     #   DXArchive v8 解包器（LZ/Huffman/KeyConv，从 UberWolf 移植）
 ├── rpgmz/               # RPG Maker 工具包
@@ -32,6 +45,9 @@ GameTranslation/
 │   │                          #   + 插件参数文本（js/plugins.js）
 │   ├── build_wolf_translation.py # Wolf RPG：rewolf-trans 补丁 → 标准工作包
 │   ├── apply_translation_to_patch.py # Wolf RPG：translated.json → 补丁注入
+│   ├── build_ks_translation.py # KiriKiri：.ks 提取 → 标准工作包（故事顺序）
+│   ├── apply_ks_translation.py # KiriKiri：translated.json → 补丁 .ks + patch.xp3
+│   ├── qc_ks_kana.py          # KiriKiri：假名残留 QC（补丁树/字典值）
 │   ├── downscale_images.py    # 把超过 4096 的 PNG 就地缩放到 ≤4096
 │   │                          #   （单一构建策略，替代旧 LowRes 变体；自动并行）
 │   ├── gen_translation_shards.py # 切成双文件块：ja.txt + zh.txt + context.md
@@ -59,13 +75,15 @@ GameTranslation/
 │   ├── test_*.py         #   各模块单元测试 + pipeline 端到端集成测试
 │   └── test_integration.py  # build→decrypt→clean→verify→serve→compress→deliver
 └── docs/
-    ├── workflow.md      # RPG Maker 转换工作流（本指南）
+    ├── workflow.md      # RPG Maker 转换工作流（JoiPlay 构建）
     ├── translation.md   # 统一翻译工作流（全量 + 补翻，一套参数：10 并行、
     │                    #   auto 分块约 11k 字符/块）
     ├── wolfrpg.md       # Wolf RPG 翻译指南（解包/提取/分块/编码/运行，含坑）
+    ├── kirikiri.md      # KiriKiri 翻译指南（解包/提取/写回/patch.xp3/QC）
     ├── experience.md    # 会话经验日志（坑、失败模式）
-    └── table/           # 本地名词表/翻译资料库（glossary/tone/notes + 词表）—
-                         #   LOCAL ONLY, gitignored, 绝不推送（游戏名 + 成人词表留本地）
+    └── table/           # 本地名词表/翻译资料库/游戏特定特征记录（glossary/
+                         #   tone/notes + 词表）— LOCAL ONLY, gitignored,
+                         #   绝不推送（游戏名 + 成人词表留本地）
 ```
 
 ## 快速开始 — RPG Maker
@@ -125,14 +143,16 @@ WSL 内 7zz 解压/压缩 Windows 侧文件、WSL 内 python 直接操作 Window
 
 统一翻译工作流（[docs/translation.md](docs/translation.md)）涵盖
 RPG Maker 静态翻译（提取 → 词表 → subagent 分块 → 精确匹配烘焙）、
-残留假名补翻、插件参数文本——以及 Unity 游戏的运行时 hook 翻译
-（`tools/rmunite/`、MelonLoader、BepInEx+Harmony；引擎记录见 `AGENTS.md`）。
+残留假名补翻、插件参数文本——以及 **Unity / Wolf RPG / KiriKiri** 的
+翻译 + 注入（运行时 hook 或补丁回写；引擎指南见 `docs/wolfrpg.md`、
+`docs/kirikiri.md`、`AGENTS.md`）。共同路线：解包/提取 → 标准工作包 →
+subagent 翻译 → `translated.json` → 注入。
 
 - **Subagent**：每轮 10 个并行，写优先 prompt 契约，auto 分块
   （约 11,000 字符）配 90KB 上下文预算。
-- **本地名词表**（`docs/table/`，gitignored，仅本地使用）：翻译用语库 —
+- **本地名词表 + 游戏特定特征**（`docs/table/`，gitignored，仅本地使用）：
   每游戏子目录的 `glossary.json`（术语/人名表）+ `tone.md`（语气/风格）+
-  `notes.md`（该游戏经验与坑），以及通用词表；分块时注入每个 chunk 的
+  `notes.md`（该游戏经验、坑与特征）；分块时注入每个 chunk 的
   context.md 供 agent 遵循。该目录不入库、不推送（含成人词表，保持私有）。
 
 ## 测试

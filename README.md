@@ -104,7 +104,12 @@ CPU 数、可用内存和磁盘类型（SSD/HDD）为每步选取最优并行度
 `<Game>.7z`，与其他转换过的游戏一致。**写回存储侧用 `deliver`**：先在
 平台内压缩成 7z，把压缩包复制到压缩包目录（覆盖旧包——通常就是源
 压缩包），删除成品目录里的同名旧文件夹，再从压缩包解压到成品目录——
-跨系统只搬运单个压缩包，避免大量小文件走 9P。**单一构建策略**：所有
+跨系统只搬运单个压缩包，避免大量小文件走 9P。**CRITICAL：处理文件必须
+用「文件所在系统」的原生应用**——Windows 侧文件（`/mnt/*`）一律用
+Windows 侧应用（`7z.exe`、PowerShell，经 `powershell.exe` 调用）处理；
+WSL 内 7zz 解压/压缩 Windows 侧文件、WSL 内 python 直接操作 Windows 侧
+文件均被禁止（曾致电脑花屏）。`deliver` 在 WSL 下自动桥接 Windows
+7z.exe / `Remove-Item` 完成删除与解压。**单一构建策略**：所有
 超过 4096 像素的 PNG 在构建期直接缩放到 ≤4096（`tools/downscale_images.py`），
 保证 Android 上正常显示，不再分高清/低清两套。
 
@@ -163,7 +168,10 @@ RPG Maker 静态翻译（提取 → 词表 → subagent 分块 → 精确匹配�
 交付目录（成品游戏 / 压缩包 / 系统临时文件夹）与工具路径都写在这里，
 记录当前平台。**所有工具用当前平台内部的版本**：7z 用 7-Zip-Zstandard
 （项目内 `docs/table/3rd/`），ffmpeg/rg/git 等在 PATH 中的自动发现，配置
-里不写路径；只有文件存储位置是机器相关的。**字体（中文/日文打包字体）
+里不写路径；只有文件存储位置是机器相关的。**工具只处理「同侧」文件**：
+Windows 侧文件的处理（解压/压缩/脚本读写）必须由 Windows 侧应用完成
+（从 WSL 经 `powershell.exe` 调用，路径用 Windows 格式）——WSL 内 7zz /
+python 严禁直接操作 Windows 侧文件（CRITICAL，见上）。**字体（中文/日文打包字体）
 放 `docs/table/fonts/`，自动发现，不写绝对路径**（可用
 `docs/table/local_font_path.txt` 覆盖，支持相对路径；见
 `docs/workflow.md` 标准字体策略）。工作流：源压缩包在存储侧 →
@@ -189,5 +197,6 @@ python3 "$tk/pipeline.py" clean   "$out"
 python3 "$tk/pipeline.py" verify  "$out" --source "$src"
 python3 "$tk/pipeline.py" serve   "$out" --test
 python3 "$tk/pipeline.py" compress "$out" -o "$ga/game.7z"
-python3 "$tk/pipeline.py" deliver "$out"      # 写回存储侧（压缩→压缩包目录→解压到成品目录）
+python3 "$tk/pipeline.py" deliver "$out"      # 写回存储侧（压缩→压缩包目录→解压到成品目录；
+                                              # WSL 下删除/解压自动桥接 Windows 7z.exe）
 ```

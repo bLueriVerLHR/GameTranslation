@@ -36,6 +36,44 @@ docs、README、commit message、文件名）都不允许出现以下内容；�
   `docs/table/ad_keywords.md`，同样排除）；commit message 同样不含游戏名/
   敏感词。
 
+## 跨系统文件处理 — CRITICAL（MUST，2026-08 定案）
+
+**处理文件必须使用「文件所在系统」的原生应用**：
+
+- 文件在 **Windows 侧**（`C:\`/`D:\`，WSL 里显示为 `/mnt/c`、`/mnt/d`
+  等）→ 一律用 **Windows 侧的应用**处理：Windows `7z.exe`、Windows 版
+  `python.exe`、PowerShell 脚本。从 WSL 调用统一走 `powershell.exe`，
+  路径用 Windows 格式（`C:\...`，不要用 `/mnt/...`）。
+- 文件在 **WSL 侧**（`/tmp`、`/home` 等 ext4 路径）→ 才允许用 WSL 内的
+  工具（`7zz`、WSL 的 python）。
+
+**明确禁止（MUST NOT）**：
+
+1. **WSL 内的 `7zz` 解压/压缩 Windows 侧的文件**（包括 `/mnt/*` 路径）。
+2. **WSL 内的 python 脚本直接操作 Windows 侧的文件**（包括 `/mnt/*`
+   路径；`shutil.rmtree` / 读写 `/mnt/*` 同样禁止）。
+
+**事故记录（2026-08）**：曾有 agent 用 WSL 内 7zz / python 直接处理
+Windows 侧文件（解压、脚本读写），造成电脑**花屏**的严重显示故障。
+本规则为 MUST 级，任何违背立即停止并上报 owner。
+
+**正确姿势**：核心判据——**工具与其输入文件必须在同一平台**。跨系统只
+允许「搬运」**单个压缩包**；一切「处理」（解压/压缩/脚本读写）都在文件
+所在侧完成。Windows 侧文件需要处理时，从 WSL 经 `powershell.exe` 调
+Windows 原生工具（路径用 Windows 格式），例如：
+
+```bash
+powershell.exe -NoProfile -Command \
+  "& 'C:\Program Files\7-Zip-Zstandard\7z.exe' x -y '-o<games_dir>' '<archives_dir>\game.7z'"
+```
+
+`rpgmz/deliver.py` 已内置**自动桥接**：WSL 下对 Windows 侧（`/mnt/*`）
+文件的删除/解压自动改用 Windows 7z.exe / PowerShell `Remove-Item`（经
+`powershell.exe` 调用，路径自动转 Windows 格式），无需手工介入；仅当
+Windows 7z（默认 `C:\Program Files\7-Zip-Zstandard\7z.exe`，可用
+`SEVENZ_WIN` 环境变量或 `env_config.json` 的 `tools.win7z` 覆盖）缺失、
+或同一 7z 命令的输入跨两侧混用（archive 与 dest 不同侧）时才拒绝。
+
 ## 本地名词表 docs/table/ — 加载规则 (mandatory)
 
 `docs/table/` 是**本地名词表/翻译资料库**（gitignored，不入库不推送），
@@ -350,18 +388,24 @@ Unity **2021.3.15f1 Mono**（非 IL2CPP），Addressables bundles。
   `deliverables.temp`），绝不放源目录旁边。
 - 成品放专门交付目录，命名 `<Game>` / `<Game>.7z`，与其他转换过的游戏一致。
 - 绝不修改原版游戏目录。
-- **工作流（2026-08 定案）**：源压缩包在存储侧（Windows），处理在当前
-  平台（WSL）内完成；只做必要的跨系统搬运。
-  1. 开工前先检查**系统临时文件夹**（`deliverables.temp`）：已有该游戏的
-     工作副本 → 直接基于它继续，不重复解压/复制；
-  2. 没有 → 从源压缩包（`deliverables.archives`）复制/解压到系统临时文件夹；
-  3. 在当前平台内处理（流水线/翻译等，工具用当前平台内部的）；
-  4. 收尾用 `pipeline.py deliver <成品目录>`：先在平台内把成品压缩成本地
-     7z（快文件系统），再把压缩包复制到压缩包目录（`deliverables.archives`，
-     覆盖旧包——通常就是源压缩包）；
-  5. 若成品目录（`deliverables.games`）已有同名旧文件夹，先删除，再从
-     压缩包目录的 7z 解压到成品目录。跨系统只搬运单个压缩包，避免大量
-     小文件走 9P。
+- **工作流（2026-08 定案）**：源压缩包在存储侧（Windows），处理在
+  WSL 侧进行；只做必要的跨系统搬运。**严格遵守「跨系统文件处理」
+  CRITICAL 规则（见上）**：
+  1. 开工前先检查**系统临时文件夹**（`deliverables.temp`，WSL 侧）：
+     已有该游戏的工作副本 → 直接基于它继续，不重复解压/复制；
+  2. 没有 → 把源压缩包（`deliverables.archives`，Windows 侧）**单个文件
+     复制**到系统临时文件夹，再在 WSL 侧解压（处理发生在 WSL 侧）；
+  3. 在 WSL 侧处理（流水线/翻译等，工具用 WSL 内的）；
+  4. 收尾用 `pipeline.py deliver <成品目录>`：先在 WSL 侧把成品压缩成
+     本地 7z（快文件系统），再把压缩包**单个文件复制**到压缩包目录
+     （`deliverables.archives`，Windows 侧，覆盖旧包——通常就是源压缩包）；
+  5. 删除成品目录（`deliverables.games`，Windows 侧）同名旧文件夹 + 从
+     压缩包解压到成品目录：**由 Windows 侧工具完成**。`rpgmz/deliver.py`
+     内置**自动桥接**（`config.is_windows_side` / `win_7z`）：WSL 下对
+     `/mnt/*` 的删除与解压自动改用 Windows 7z.exe / PowerShell
+     `Remove-Item`（经 `powershell.exe` 调用），无需手工介入；仅当
+     Windows 7z 缺失或输入跨两侧混用时报错（提示见上节）。
+  跨系统只搬运单个压缩包，避免大量小文件走 9P。
 - **本机环境信息（交付目录、工具路径、venv 等）一律写进本地私有配置
   `docs/table/env_config.json`**（gitignored，不入库）；代码按平台
   （wsl）解析，不硬编码本机路径。新增本机专用信息

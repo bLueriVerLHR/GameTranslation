@@ -194,7 +194,7 @@ def bake_resources(game_dir, trs, min_coverage, force, lang_dirs,
         data = load_json(path)
 
         def fix(v):
-            global hits, misses
+            nonlocal hits, misses
             if not is_kana_str(v):
                 return v
             if v in D:
@@ -213,17 +213,27 @@ def bake_resources(game_dir, trs, min_coverage, force, lang_dirs,
                     if k == "metadata":
                         out[k] = v
                         continue
-                    if isinstance(v, str) and is_kana_str(v) and v in D:
-                        out[k] = D[v]
-                        n_changed += 1
+                    if isinstance(v, str) and is_kana_str(v):
+                        fixed = fix(v)
+                        if fixed is not v:
+                            n_changed += 1
+                        out[k] = fixed
                     elif isinstance(v, (dict, list)):
                         out[k] = walk(v)
                     else:
                         out[k] = v
                 return out
             if isinstance(obj, list):
-                return [walk(x) if isinstance(x, (dict, list)) else fix(x)
-                        for x in obj]
+                out = []
+                for x in obj:
+                    if isinstance(x, (dict, list)):
+                        out.append(walk(x))
+                    else:
+                        fixed = fix(x)
+                        if fixed is not x:
+                            n_changed += 1
+                        out.append(fixed)
+                return out
             return obj
 
         new = walk(data)

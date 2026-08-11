@@ -42,16 +42,27 @@
   自动发现、不写路径；只有文件存储位置是机器相关的。工具安装/下载由
   owner 执行（如系统包管理器、`3rd/` 内二进制）。
 - **工作流（2026-08 定案）**：源压缩包在存储侧（Windows），解压/处理/
-  压缩在当前平台内完成；只做必要的跨系统搬运：
-  1. 开工前先检查系统临时文件夹（`deliverables.temp`）：已有该游戏的工作
-     副本 → 直接基于它继续，不重复解压/复制；
-  2. 没有 → 从源压缩包（`deliverables.archives`）复制/解压到系统临时文件夹；
-  3. 在当前平台内处理（流水线/翻译等）；
-  4. 收尾用 `pipeline.py deliver <成品目录>`：先在平台内压缩成本地 7z，
-     再把压缩包复制到压缩包目录（`deliverables.archives`，覆盖旧包——
-     通常就是源压缩包）；
-  5. 若成品目录（`deliverables.games`）已有同名旧文件夹，先删除，再从
-     压缩包目录的 7z 解压到成品目录。跨系统只搬运单个压缩包，避免大量
+  压缩在 WSL 侧完成；只做必要的跨系统搬运。**CRITICAL（MUST）——处理
+  文件必须用「文件所在系统」的原生应用**：Windows 侧文件（`C:\`/`D:\`、
+  WSL 里的 `/mnt/*`）一律用 Windows 侧应用处理（Windows `7z.exe`、
+  `python.exe`、PowerShell，从 WSL 经 `powershell.exe` 调用、路径用
+  Windows 格式）；WSL 侧文件（`/tmp` 等）才用 WSL 内工具。**禁止 WSL
+  内 7zz 解压/压缩 Windows 侧文件，禁止 WSL 内 python 脚本直接操作
+  Windows 侧文件** —— 曾因此发生电脑花屏事故（2026-08）。跨系统只
+  搬运单个压缩包：
+  1. 开工前先检查系统临时文件夹（`deliverables.temp`，WSL 侧）：已有该
+     游戏的工作副本 → 直接基于它继续，不重复解压/复制；
+  2. 没有 → 把源压缩包（`deliverables.archives`，Windows 侧）**单个文件
+     复制**到系统临时文件夹，再在 WSL 侧解压；
+  3. 在 WSL 侧处理（流水线/翻译等）；
+  4. 收尾用 `pipeline.py deliver <成品目录>`：先在 WSL 侧压缩成本地 7z，
+     再把压缩包**单个文件复制**到压缩包目录（`deliverables.archives`，
+     覆盖旧包——通常就是源压缩包）；
+  5. 删除成品目录（`deliverables.games`，Windows 侧）同名旧文件夹 + 从
+     压缩包解压到成品目录：**必须用 Windows 侧工具完成**（经
+     `powershell.exe` 调 Windows `7z.exe` / `Remove-Item`）；WSL 下
+     `deliver` 的最后解压会用 WSL 内 7z 处理 Windows 侧文件（被禁），
+     该步改由 Windows 侧命令执行。跨系统只搬运单个压缩包，避免大量
      小文件走 9P。
 
 ## 2. 一键流水线
@@ -314,6 +325,24 @@ python $tk\pipeline.py deliver $out
 3. 若成品目录（`deliverables.games`）已有同名 `<Game>\` 文件夹，**先删除**；
 4. 再从压缩包目录的 7z **解压到成品目录**（解压只读一个文件 +
    顺序写小文件，比整棵树跨系统拷贝快得多）。
+
+**WSL 下（CRITICAL，MUST）**：上面第 3/4 步处理的是 **Windows 侧文件**，
+必须由 **Windows 侧工具**完成——不能靠 WSL 内 7z 操作 `/mnt/*` 文件
+（WSL 内 python 的 `shutil.rmtree` 删 Windows 侧目录同样被禁）。
+`rpgmz/deliver.py` 已内置**自动桥接**：WSL 下对 `/mnt/*` 的删除与解压
+自动改用 Windows 7z.exe / PowerShell `Remove-Item`（经 `powershell.exe`
+调用，路径自动转 Windows 格式），压缩与压缩包复制照常走 WSL 侧；仅当
+Windows 7z（默认 `C:\Program Files\7-Zip-Zstandard\7z.exe`，可用
+`SEVENZ_WIN` 环境变量或 `env_config.json` 的 `tools.win7z` 覆盖）缺失、
+或 archive 与 dest 跨两侧混用时才拒绝。手动等价命令（路径用 Windows
+格式）供参考：
+
+```powershell
+powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<games_dir>\<Game>'; & 'C:\Program Files\7-Zip-Zstandard\7z.exe' x -y '-o<games_dir>' '<archives_dir>\<Game>.7z' '<Game>'"
+```
+
+（`<games_dir>`/`<archives_dir>`/`<Game>` 换成 `env_config.json` 里的实际
+值；`<Game>` 为成品目录名，与压缩包内根目录名一致。）
 
 完成后 Temp 工作目录即可删除。
 

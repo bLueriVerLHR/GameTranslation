@@ -17,7 +17,7 @@ import os
 import re
 import shutil
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOCAL_ENV_FILE = REPO_ROOT / "docs" / "table" / "env_config.json"
@@ -47,11 +47,16 @@ NWJS_RUNTIME = [
 IMG_JUNK_EXTS = {".txt", ".clip", ".tmx", ".bak"}
 
 # Legacy Windows defaults, kept as last-resort fallbacks on native Windows.
-DEFAULT_FFMPEG_DIR = os.path.join(
-    os.environ.get("LOCALAPPDATA", os.path.join(os.path.expanduser("~"), "AppData", "Local")),
-    "Temp", "opencode", "ffmpeg_x", "ffmpeg-8.1.2-essentials_build", "bin",
+DEFAULT_FFMPEG_DIR = str(
+    Path(os.environ.get(
+        "LOCALAPPDATA",
+        os.path.join(os.path.expanduser("~"), "AppData", "Local"),
+    )) / "Temp" / "opencode" / "ffmpeg_x" / "ffmpeg-8.1.2-essentials_build" / "bin"
 )
 DEFAULT_SEVENZ = r"C:\Program Files\7-Zip-Zstandard\7z.exe"
+# Windows-side 7z, used when files live on the Windows side (see
+# is_windows_side / the AGENTS.md CRITICAL cross-system rule).
+DEFAULT_WIN_SEVENZ = DEFAULT_SEVENZ
 
 
 # ---------------------------------------------------------------- platform
@@ -75,6 +80,58 @@ def platform_key():
     if sys.platform == "win32":
         return "win32"
     return "linux"
+
+
+def is_windows_side(path):
+    """True when `path` points at a Windows-side file from inside WSL.
+
+    Windows-side files (/mnt/*) must be processed by the Windows-side tools
+    only - WSL-native tools (7zz, python) touching them is forbidden
+    (AGENTS.md, "跨系统文件处理" CRITICAL rule).
+    """
+    if not is_wsl():
+        return False
+    return _posix(path).startswith("/mnt/")
+
+
+def _posix(path):
+    """Normalize a path string to forward-slash form (accepts both Windows
+    and POSIX separators via pathlib, no manual separator handling)."""
+    return PureWindowsPath(str(path)).as_posix()
+
+
+def to_windows_path(path):
+    """Convert a /mnt/<drive>/... path to Windows form (D:\\...); anything
+    else is returned unchanged."""
+    parts = PurePosixPath(_posix(path)).parts
+    if len(parts) < 4 or parts[1] != "mnt" or len(parts[2]) != 1:
+        return str(path)
+    # "\\" segment = drive root (pathlib semantics, not string joining).
+    return str(PureWindowsPath(parts[2].upper() + ":", "\\", *parts[3:]))
+
+
+def to_wsl_path(path):
+    """Map a Windows-form path (C:\\... or /mnt/...) to the WSL mount view
+    (/mnt/c/...) so it can be stat/read from WSL. Relative inputs are
+    returned unchanged."""
+    pw = PureWindowsPath(str(path))
+    if not pw.drive:
+        return str(path)
+    return str(Path("/mnt") / pw.drive[0].lower() / Path(*pw.parts[1:]).as_posix())
+
+
+def win_7z():
+    """Windows-side 7z binary, for processing files stored on the Windows
+    side. Resolution: SEVENZ_WIN env -> env_config tools.win7z ->
+    DEFAULT_WIN_SEVENZ; None when the binary is not present."""
+    p = os.environ.get("SEVENZ_WIN")
+    if not p:
+        p = _expand(_pick(_load_env_config().get("tools"), "win7z") or "")
+    if not p:
+        p = DEFAULT_WIN_SEVENZ
+    if os.path.isfile(to_wsl_path(p)):
+        return str(p)
+    return None
 
 
 def recorded_platform():
@@ -117,7 +174,7 @@ def _expand(path):
     if not path:
         return path
     path = re.sub(r"%([^%]+)%", lambda m: os.environ.get(m.group(1), m.group(0)), path)
-    return path.replace("\\", "/")
+    return _posix(path)
 
 
 def _resolve(env_var, cfg_section, cfg_name, default=""):

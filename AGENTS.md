@@ -164,6 +164,15 @@ docs/table/
 - **失败模式记录进 docs/experience.md**：踩过的格式坑、错误 key 的特征
   （解出的头部不是可读字节流等）要留档，避免后人重走弯路。
 
+## 运行验证截图（窗口级，2026-08 定案）
+
+需要截取**指定 app 窗口**（游戏运行画面、对话框、报错弹窗）时用
+`tools/wsl_capture.py`（自动部署 `tools/capture_window.ps1` 到 Windows
+临时目录；窗口自动移入可视区 + PrintWindow 捕获，被遮挡也能截）。
+完整流程/前提/排查见 `docs/screenshot.md`；截图后交给 vision-analyzer
+子代理分析（主模型不支持图片输入）。互操作失效（`WSLInterop` binfmt
+条目缺失）时的修复命令也写在 docs/screenshot.md。
+
 
 ## 转换目标
 

@@ -70,7 +70,11 @@ GameTranslation/
 │   ├── augment_adv_resources.py  # MZ TextResource 插件/ADV/SNS 文本资源：
 │   │                             #   增强工作包（故事顺序）+ 原地烘焙（含低覆盖率闸门）
 │   ├── unlock_gallery.py         # 可选：解锁 CG 回想（启动插件）
-│   ├── patch_names.py            # 用规则文件统一字典里的角色名写法
+│   ├── patch_names.py           # 用规则文件统一字典里的角色名写法
+│   ├── wsl_capture.py           # WSL 侧窗口级截图 CLI（互操作检查、脚本部署、
+│   │                            #   路径转换，见 docs/screenshot.md）
+│   ├── capture_window.ps1       # Windows 侧窗口捕获脚本（PrintWindow，窗口
+│   │                            #   自动移入可视区，被遮挡也能截）
 │   └── ...（旧版：translate_rpgmaker、extract_text、plain_to_translated、
 │           qc_translation_chunks、CSV 流程工具 — 旧块格式）
 ├── tests/                # 单元 + 集成测试（pytest，fake 工具，全流程无外部依赖）
@@ -85,6 +89,8 @@ GameTranslation/
     ├── wolfrpg.md       # Wolf RPG 翻译指南（解包/提取/分块/编码/运行，含坑）
     ├── kirikiri.md      # KiriKiri 翻译指南（解包/提取/写回/patch.xp3/QC）
     ├── experience.md    # 会话经验日志（坑、失败模式）
+    ├── screenshot.md    # 截图验证流程（窗口级：指定 app 精确截图，配合
+    │                    #   vision-analyzer 分析运行画面）
     └── table/           # 本地名词表/翻译资料库/游戏特定特征记录（glossary/
                          #   tone/notes + 词表）— LOCAL ONLY, gitignored,
                          #   绝不推送（游戏名 + 成人词表留本地）

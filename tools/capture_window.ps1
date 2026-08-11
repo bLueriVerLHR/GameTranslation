@@ -52,10 +52,11 @@ public static class CapApi {
     [DllImport("user32.dll")] public static extern bool GetWindowPlacement(IntPtr hWnd, ref WINDOWPLACEMENT placement);
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] public struct WINDOWPLACEMENT {
         public int length, flags, showCmd;
-        public System.Drawing.Point ptMinPosition, ptMaxPosition;
-        public System.Drawing.Rectangle rcNormalPosition;
+        public POINT ptMinPosition, ptMaxPosition;
+        public RECT rcNormalPosition;
     }
 }
 "@

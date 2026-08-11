@@ -76,8 +76,9 @@ def build_args(args, out_dir_win, script_win):
     """Assemble the powershell.exe command line for the capture script."""
     cmd = [
         "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script_win,
-        "-OutDir", out_dir_win,
     ]
+    if args.dir:
+        cmd += ["-OutDir", out_dir_win]
     if args.full:
         cmd.append("-Full")
     else:
@@ -102,7 +103,7 @@ def run_capture(args, powershell):
     """Deploy + invoke powershell; return (exit_code, output_lines)."""
     win_temp = config.win_temp_dir()
     script_win = deploy_script(win_temp)
-    out_dir_win = config.to_windows_path(args.dir)
+    out_dir_win = config.to_windows_path(args.dir) if args.dir else None
     cmd = [powershell] + build_args(args, out_dir_win, script_win)
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=args.timeout)
     out = [line.strip() for line in (r.stdout or "").splitlines()
@@ -123,10 +124,9 @@ def main(argv=None):
     ap.add_argument("--process", help="target process name (without .exe)")
     ap.add_argument("--title", help="window title substring filter")
     ap.add_argument("--out", help="output file name (default <proc>_<ts>.png)")
-    ap.add_argument("--dir", default=os.path.join("/mnt", "c", "Users",
-                                                  os.environ.get("USER", "user"),
-                                                  "Pictures"),
-                    help="output directory, WSL form (default /mnt/c/Users/<user>/Pictures)")
+    ap.add_argument("--dir", default=None,
+                    help="output directory, WSL form (default: the Windows "
+                         "user's Pictures folder)")
     ap.add_argument("--full", action="store_true", help="capture whole screen")
     ap.add_argument("--window-only", action=argparse.BooleanOptionalAction,
                     default=True,

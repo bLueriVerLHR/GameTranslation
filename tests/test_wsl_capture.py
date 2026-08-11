@@ -26,6 +26,7 @@ SCRIPT_SRC = os.path.join(REPO_ROOT, "tools", "capture_window.ps1")
 @pytest.fixture
 def fake_env(monkeypatch, tmp_path):
     """Point the wrapper at the fake powershell + a hermetic Windows temp."""
+    os.chmod(FAKE, os.stat(FAKE).st_mode | 0o111)  # mode bits may be stripped
     monkeypatch.setenv("POWERSHELL_EXE", FAKE)
     monkeypatch.setattr(wsl_capture.config, "win_temp_dir", lambda: str(tmp_path))
     return tmp_path
@@ -100,6 +101,7 @@ def test_args_window_mode():
         force_visible = True
         width = 0
         height = 0
+        dir = r"C:\tmp\shots"
     cmd = wsl_capture.build_args(A(), r"C:\tmp", r"C:\tmp\capture_window.ps1")
     assert cmd[:4] == ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]
     assert cmd[4] == r"C:\tmp\capture_window.ps1"
@@ -122,6 +124,7 @@ def test_args_full_mode():
         force_visible = True
         width = 1280
         height = 720
+        dir = "/tmp/out"
     cmd = wsl_capture.build_args(A(), "/tmp/out", "/tmp/cap.ps1")
     assert "-Full" in cmd
     assert "-ProcessName" not in cmd
@@ -139,6 +142,7 @@ def test_args_flags_false():
         force_visible = False
         width = 0
         height = 0
+        dir = "/tmp/out"
     cmd = wsl_capture.build_args(A(), "/tmp/out", "/tmp/cap.ps1")
     assert "-WindowOnly:$false" in cmd
     assert "-ForceVisible:$false" in cmd
@@ -174,6 +178,23 @@ def test_capture_full_screen(fake_env, tmp_path, monkeypatch):
     code = run_main(["--full", "--dir", str(out_dir)], monkeypatch, tmp_path)
     assert code == 0
     assert len(list(out_dir.iterdir())) == 1
+
+
+def test_args_no_outdir_default():
+    # --dir omitted -> the capture script uses its own Pictures default
+    class A:
+        process = "GamePro"
+        title = None
+        out = None
+        full = False
+        window_only = True
+        force_visible = True
+        width = 0
+        height = 0
+        dir = None
+    cmd = wsl_capture.build_args(A(), None, "/tmp/cap.ps1")
+    assert "-OutDir" not in cmd
+    assert "-ProcessName" in cmd
 
 
 def test_capture_no_process_without_full(fake_env, tmp_path, monkeypatch):

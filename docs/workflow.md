@@ -19,12 +19,15 @@
 - ripgrep（`rg`）在 PATH 上，用于快速内容搜索（如预扫插件）。
 - Everything（`es` CLI）在 PATH 上，用于跨盘即时文件名查找。
 - PowerShell 5.1（无 `?.`、无 `&&`；用 `;` / `if ($?)`）。
-- **本机环境配置**：交付目录（成品游戏 / 压缩包）、工具路径、venv 等
-  本机专用信息写进本地私有配置 `docs/table/env_config.json`
-  （gitignored，不入库；记录当前平台）。**所有工具用当前平台内部的
-  版本**：7z = 7-Zip-Zstandard（`docs/table/3rd/`，负责解压压缩包到系统
-  临时文件夹、在成品/压缩包目录间压缩），ffmpeg/rg/git 等在 PATH 中的
-  自动发现、不写路径；只有文件存储位置是机器相关的。工具安装/下载由
+- **本机环境配置**：交付目录（成品游戏 / 压缩包 / 系统临时文件夹 /
+  Windows 侧临时目录）、工具路径、venv 等本机专用信息写进本地私有配置
+  `docs/table/env_config.json`（gitignored，不入库；记录当前平台）。
+  **所有工具用当前平台内部的版本**：7z = 7-Zip-Zstandard
+  （`docs/table/3rd/`，负责解压压缩包到系统临时文件夹、在成品/压缩包
+  目录间压缩），ffmpeg/rg/git 等在 PATH 中的自动发现、不写路径；只有
+  文件存储位置是机器相关的。**Windows 端需要下载/暂存的内容一律用
+  `deliverables.win_temp`（Windows 的 `%TEMP%`，代码里
+  `win_temp_dir()`），绝不放进 `games` / `archives`**。工具安装/下载由
   owner 执行（如系统包管理器、`3rd/` 内二进制）。
 - **工作流（2026-08 定案）**：源压缩包在存储侧（Windows），解压/处理/
   压缩在 WSL 侧完成；只做必要的跨系统搬运。**CRITICAL（MUST）——处理

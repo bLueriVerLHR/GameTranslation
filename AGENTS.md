@@ -410,6 +410,10 @@ KiriKiri 游戏（`Game.exe` + `data.xp3` 等，无 `index.html`/`js/`）不走
 - 工作/解压副本一律放**系统临时文件夹**（如 Windows 的 `Temp`、Linux 的
   `/tmp`；本机具体路径见本地私有配置 `docs/table/env_config.json` 的
   `deliverables.temp`），绝不放源目录旁边。
+- **Windows 端下载/暂存**（Windows-only 工具、待处理内容）一律放
+  `deliverables.win_temp`（Windows 的 `%TEMP%`，代码里
+  `rpgmz/config.py` 的 `win_temp_dir()`），**绝不放进 `deliverables.games`
+  或 `deliverables.archives`**。
 - 成品放专门交付目录，命名 `<Game>` / `<Game>.7z`，与其他转换过的游戏一致。
 - 绝不修改原版游戏目录。
 - **工作流（2026-08 定案）**：源压缩包在存储侧（Windows），处理在

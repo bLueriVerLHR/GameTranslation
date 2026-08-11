@@ -207,6 +207,13 @@ def temp_dir():
                     else "/tmp/opencode")
 
 
+def win_temp_dir():
+    """Windows-side temp for downloads and Windows-only tools (the Windows
+    %TEMP% folder); only meaningful on Windows / from WSL via /mnt/c."""
+    return _resolve("WIN_TEMP_DIR", _load_env_config().get("deliverables"),
+                    "win_temp", "%LOCALAPPDATA%/Temp")
+
+
 # ---------------------------------------------------------------- venv
 
 def venv_dir():

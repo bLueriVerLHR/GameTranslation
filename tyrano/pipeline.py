@@ -161,7 +161,8 @@ def main():
 
     p = sub.add_parser("audio", help="mp3 -> ogg + rewrite script refs")
     p.add_argument("out", help="built game folder")
-    p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--workers", type=int, default=None,
+                   help="parallel ffmpeg processes (default: auto-tuned)")
     p.add_argument("--keep", action="store_true", help="keep original mp3")
     p.add_argument("--sample", type=int, default=None,
                    help="convert at most N files (trial run)")

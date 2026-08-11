@@ -177,6 +177,20 @@ class TestAudio:
         assert counts == {"converted": 1, "failed": 0, "total": 1}
         assert os.path.isfile(os.path.join(root, "data", "sound", "se1.ogg"))
 
+    def test_convert_all_parallel_all_files(self, tmp_path, fake_tools):
+        """Every mp3 must be converted even with a wider worker pool (a
+        too-small pool or an uncollected future would silently drop files)."""
+        root = make_asar_game(str(tmp_path))
+        for i in range(2, 8):
+            with open(os.path.join(root, "data", "sound", "se%d.mp3" % i),
+                      "wb") as f:
+                f.write(b"\xff\xfb" + b"M" * 1000)
+        counts = ta.convert_all(root, workers=4)
+        assert counts == {"converted": 7, "failed": 0, "total": 7}
+        oggs = [fn for _d, _s, fns in os.walk(root)
+                for fn in fns if fn.endswith(".ogg")]
+        assert len(oggs) == 7
+
     def test_convert_rewrites_before_conversion(self, tmp_path, fake_tools):
         """convert() must rewrite script refs BEFORE deleting mp3 files,
         otherwise every ref becomes dangling (the mp3 no longer exists

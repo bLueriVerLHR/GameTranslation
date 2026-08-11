@@ -13,10 +13,12 @@ import os
 import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from rpgmaker import config as rpg_config  # noqa: E402
+from rpgmaker import runtime as rpg_runtime  # noqa: E402
 from .tyrano_extract import load_ks  # noqa: E402
 
 log = logging.getLogger("tyrano.audio")
@@ -64,21 +66,28 @@ def convert_one(ffmpeg, path, keep=False):
     return ogg
 
 
-def convert_all(web_root, workers=4, keep=False, sample=None):
-    """Transcode every mp3 under bgm/ and sound/ to ogg.  Returns counts."""
+def convert_all(web_root, workers=None, keep=False, sample=None):
+    """Transcode every mp3 under bgm/ and sound/ to ogg.  Returns counts.
+
+    ffmpeg runs are heavyweight subprocesses; a modest thread pool keeps
+    the CPU/disk busy without thrashing.  `workers=None` auto-tunes from
+    the machine (see rpgmaker/runtime.py)."""
     files = list(iter_mp3(web_root))
     if sample:
         files = files[:sample]
+    workers = rpg_runtime.resolve_workers("encode", workers, path=web_root)
     ffmpeg = rpg_config.find_ffmpeg()
     done = ok = failed = 0
-    for path in files:
-        done += 1
-        if convert_one(ffmpeg, path, keep=keep):
-            ok += 1
-        else:
-            failed += 1
-        if done % 100 == 0 or done == len(files):
-            log.info("...%d/%d", done, len(files))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = {ex.submit(convert_one, ffmpeg, p, keep): p for p in files}
+        for fut in as_completed(futures):
+            done += 1
+            if fut.result():
+                ok += 1
+            else:
+                failed += 1
+            if done % 100 == 0 or done == len(files):
+                log.info("...%d/%d", done, len(files))
     log.info("audio: %d converted, %d failed (%d files)", ok, failed, len(files))
     return {"converted": ok, "failed": failed, "total": len(files)}
 
@@ -132,7 +141,7 @@ def rewrite_script_refs(web_root):
     return rewritten_files, rewritten_refs, dangling
 
 
-def convert(web_root, workers=4, keep=False, sample=None):
+def convert(web_root, workers=None, keep=False, sample=None):
     # Rewrite script refs FIRST: conversion removes the mp3 files, and the
     # ref rewrite only touches refs whose source file exists (or whose ogg
     # already exists).  Running conversion first would orphan every ref.
@@ -154,7 +163,8 @@ def main():
                     help="keep the original mp3 files")
     ap.add_argument("--sample", type=int, default=None,
                     help="convert at most N files (trial run)")
-    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--workers", type=int, default=None,
+                    help="parallel ffmpeg processes (default: auto-tuned)")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,

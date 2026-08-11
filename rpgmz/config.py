@@ -134,6 +134,30 @@ def win_7z():
     return None
 
 
+def win_ffmpeg():
+    """Windows-side ffmpeg binary (WinGet install), for processing files
+    stored on the Windows side. Resolution: WIN_FFMPEG env ->
+    env_config tools.win_ffmpeg; None when not configured/absent."""
+    p = os.environ.get("WIN_FFMPEG") or ""
+    if not p:
+        p = _expand(_pick(_load_env_config().get("tools"), "win_ffmpeg") or "")
+    if p and os.path.isfile(to_wsl_path(p)):
+        return str(p)
+    return None
+
+
+def win_rg():
+    """Windows-side ripgrep binary (WinGet install), for searching files
+    stored on the Windows side. Resolution: WIN_RG env ->
+    env_config tools.win_rg; None when not configured/absent."""
+    p = os.environ.get("WIN_RG") or ""
+    if not p:
+        p = _expand(_pick(_load_env_config().get("tools"), "win_rg") or "")
+    if p and os.path.isfile(to_wsl_path(p)):
+        return str(p)
+    return None
+
+
 def recorded_platform():
     """Platform recorded in env_config.json (informational only; the code
     still detects the actual platform at runtime)."""

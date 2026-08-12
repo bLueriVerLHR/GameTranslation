@@ -162,6 +162,36 @@ class TestDeliverable:
         monkeypatch.setattr(config, "is_wsl", lambda: True)
         assert config.win_temp_dir() == "/mnt/c/Users/me/AppData/Local/Temp"
 
+    def test_temp_nested_dict_persist_on_wsl(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path,
+                  {"temp": {"persist": "/home/me/forge/tmp",
+                            "tmpfs": "/tmp/opencode",
+                            "win32": "%LOCALAPPDATA%/Temp"}})
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        assert config.temp_dir() == "/home/me/forge/tmp"
+
+    def test_temp_nested_dict_win32_on_windows(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path,
+                  {"temp": {"persist": "/home/me/forge/tmp",
+                            "tmpfs": "/tmp/opencode",
+                            "win32": "C:/Users/me/AppData/Local/Temp"}})
+        monkeypatch.setattr(config, "is_wsl", lambda: False)
+        assert config.temp_dir() == "C:/Users/me/AppData/Local/Temp"
+
+    def test_temp_nested_dict_win_temp_dir(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path,
+                  {"temp": {"persist": "/home/me/forge/tmp",
+                            "tmpfs": "/tmp/opencode",
+                            "win32": "C:/Users/me/AppData/Local/Temp"}})
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        assert config.win_temp_dir() == "/mnt/c/Users/me/AppData/Local/Temp"
+
+    def test_temp_missing_nested_falls_back_to_legacy(self, monkeypatch,
+                                                      tmp_path):
+        self._cfg(monkeypatch, tmp_path, {})
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        assert config.temp_dir() == "/tmp/opencode"
+
 
 class TestWinTools:
     """Windows-side tools resolve from env_config tools.win32.<name>."""
@@ -195,6 +225,25 @@ class TestWinTools:
         self._cfg(monkeypatch, tmp_path, {"ffmpeg": str(tmp_path / "other.exe")})
         monkeypatch.setenv("WIN_FFMPEG", str(exe))
         assert config.win_ffmpeg() == str(exe)
+
+    def test_unresolvable_config_falls_back_to_default(self, monkeypatch,
+                                                       tmp_path):
+        # %ProgramFiles% tokens cannot expand on WSL: the configured value
+        # is truthy but points nowhere; the working default must win.
+        self._cfg(monkeypatch, tmp_path,
+                  {"7z": "%ProgramFiles%/7-Zip-Zstandard/7z.exe"})
+        monkeypatch.delenv("SEVENZ_WIN", raising=False)
+        if os.path.isfile(config.to_wsl_path(config.DEFAULT_WIN_SEVENZ)):
+            assert config.win_7z() == config.DEFAULT_WIN_SEVENZ
+        else:
+            assert config.win_7z() is None
+
+    def test_unresolvable_config_no_default_returns_none(self, monkeypatch,
+                                                         tmp_path):
+        self._cfg(monkeypatch, tmp_path,
+                  {"ffmpeg": "%ProgramFiles%/nope/ffmpeg.exe"})
+        monkeypatch.delenv("WIN_FFMPEG", raising=False)
+        assert config.win_ffmpeg() is None
 
     def test_rg_resolved(self, monkeypatch, tmp_path):
         exe = tmp_path / "rg.exe"

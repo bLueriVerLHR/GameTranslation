@@ -518,3 +518,62 @@ false，因为 `$gameMap.isEventRunning()` 恒 true；地图解释器空闲
   `Get-NetTCPConnection -State Listen | Where LocalPort -in 8101,8102`
   再 `Stop-Process`，防复用端口残留服务器服务旧目录（§8 老坑重犯）。
 
+## 13. 大型 MZ 插桩游戏的翻译会话（2026-08）
+
+### 13.1 分块工具的估算 bug（已修复 + 单测）
+
+- **多行键膨胀**：`[K]` 行打印含真实换行的键时展开成多物理行，context.md
+  实测为估算 2.3 倍。修复：transcript 输出一律把 `\n` 转义为字面 `\\n`
+  （与 ja.txt 转义一致，且让估算可精确）。
+- **字符 vs 字节**：估算按 Python 字符数，预算阈值是文件字节数 — 日文
+  content 的 UTF-8 字节为字符数 2~2.5 倍，90KB 预算下实测 219KB。
+  修复：`_chunk_context` 按 UTF-8 字节计。
+- **全局块切分不一致**：估算按字符切全局键，实际写入按键数（600）切 —
+  巨型插件键会把首块撑到 294KB。修复：估算镜像写入器的按键数切分。
+- 三处修复后 auto sizing 从"20 块 220KB"变为诚实的"40 块 ≤93KB"。
+- 教训：新的工具修完必须在本游戏数据上跑一遍验证估算==实际，再启动
+  subagent；此前"误差 <3%"的说法只在短键游戏上成立。
+
+### 13.2 插件参数巨型 JSON（>300 字符的 kind=plugin 键）
+
+- 18 个键占 20.6 万字符（最大 83KB）：技能动画表、菜单模板等。
+  整串翻译不可行 → 从模板剔除，走 `plugin_json_leaves.py`：
+  extract（204 叶子）→ 叶子翻译（1 个 subagent）→ rebuild（23 个 blob
+  变更）→ `plugin_blobs_translated.json` 后合并覆盖进 translated.json
+  （blob 重建必须覆盖模板整串译文）。
+- 插件 JSON 的功能键（`位置X`/`テキスト名`/`条件`/`アニメ名` 等）必须
+  保持日文；叶子收集只取 VALUE，但最终 kana 残留扫描会报这些"键里的
+  假名" — 属正常，勿修。
+- 字体名/样本文件名字面值（`07鉄瓶ゴシック.woff`、`サンプル/一言_1`）
+  必须进 `--exempt`，否则叶子翻译改坏引用。
+- 事件 note 带插件标签（`<BFC_座標:...>`/`<CounterExt:...>`）是功能数据，
+  从模板剔除，bake 后保持原样。
+
+### 13.3 code 357 插件命令消息正文不在全量提取范围
+
+- Money Get!/Item Get! 等弹窗正文在 357 命令的 `parameters[3].message`
+  dict 与 122/355 脚本字符串里，`build_translation.py` 不提取 →
+  第一遍 bake 后残留 ~789 条。用 `extract_remaining_text.py` 补翻
+  （~311 键 / 5 块）即可，覆盖率从 93.9% → 99.7%。
+- 顺序：全量 bake → 补翻 → 合并 dict → 在原始 build 上重 bake（不要
+  在已烘焙目录上叠加）。
+
+### 13.4 config 层两个交付阻塞 bug（已修复 + 单测）
+
+- `deliverables.temp` 改为嵌套 `{persist, tmpfs, win32}` 后，
+  `temp_dir()`/`win_temp_dir()` 把 dict 传给 re.sub 崩溃。
+  修复：`_deliverable` 跳过非标量，新增 `_temp_dir_cfg()` 按平台取子键
+  （WSL→persist，Windows→win32），兼容旧平铺格式。
+- `tools.win32.*` 配置含 `%ProgramFiles%` 等 WSL 无法展开的 token 时，
+  `_win_tool` 拿到非空但不可用的路径直接返回 None（默认路径从不尝试）。
+  修复：解析失败回退默认路径。
+- 两个 bug 都让 `deliver` 直接崩 — 集成测试 `test_integration.py` 在
+  修复前是红着的（Python 3.14 下同样复现），修完 375 测试全绿。
+
+### 13.5 serve 常驻（WSL 侧补充）
+
+- `rpgmaker/serve.py` 的 `start_server()` 用 daemon 线程，主进程一退
+  线程即死 — 后台 `nohup python -c "start_server(...)"` 起来的是个空壳，
+  端口根本没监听。必须用阻塞的 `serve()`（serve_forever）做常驻。
+- 绑 `0.0.0.0` 时 WSL 局域网地址（`ip -4 addr` 的 eth1）可直连；本机
+  curl 被 7890 代理截获（502）是代理行为，加 `--noproxy '*'` 验证。

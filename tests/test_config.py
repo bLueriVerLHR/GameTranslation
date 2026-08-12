@@ -244,7 +244,6 @@ class TestWinTools:
                   {"ffmpeg": "%ProgramFiles%/nope/ffmpeg.exe"})
         monkeypatch.delenv("WIN_FFMPEG", raising=False)
         assert config.win_ffmpeg() is None
-        assert config.win_ffmpeg() == str(exe)
 
     def test_rg_resolved(self, monkeypatch, tmp_path):
         exe = tmp_path / "rg.exe"

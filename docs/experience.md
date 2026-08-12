@@ -577,3 +577,20 @@ false，因为 `$gameMap.isEventRunning()` 恒 true；地图解释器空闲
   端口根本没监听。必须用阻塞的 `serve()`（serve_forever）做常驻。
 - 绑 `0.0.0.0` 时 WSL 局域网地址（`ip -4 addr` 的 eth1）可直连；本机
   curl 被 7890 代理截获（502）是代理行为，加 `--noproxy '*'` 验证。
+
+## 9. 文件大小写坑（2026-08，MZ repack）
+
+- **症状**：试玩报 `Failed to load img/system/Window.png`，但文件明明在
+  （小写 `window.png`）。Windows 开发机上一切正常。
+- **根因**：MZ 引擎固定 `ImageManager.loadSystem("Window")` 加载大写
+  `Window.png`；repacker 在 Windows（NTFS 大小写不敏感）打包时把文件
+  打成小写 `window.png`。Windows 上跑没事，**Linux/Android 文件系统
+  大小写敏感 → 加载失败**。
+- **排查**：`rg -n 'loadSystem\\("([^"]+)"\\)' js/*.js` 列引擎引用，
+  与 `img/system/` 实际文件名逐字比对。
+- **修复**：补正确大小写的副本（`cp window.png Window.png`）；**删除
+  错误大小写的文件**（只留引擎引用的大小写），否则归档内同名双文件
+  在 Windows 解压时（NTFS 不敏感）互相覆盖，交付目录残留错误大小写。
+- **预防**：打包前对 `img/`、`audio/` 与引擎引用/数据引用做
+  大小写敏感的存在性检查；交付后在**归档内** `7zz l | grep -i` 复查
+  同名文件。

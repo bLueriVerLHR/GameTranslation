@@ -102,6 +102,7 @@ GameTranslation/
     ├── wolfrpg.md       # Wolf RPG 翻译指南（解包/提取/分块/编码/运行，含坑）
     ├── kirikiri.md      # KiriKiri 翻译指南（解包/提取/写回/patch.xp3/QC）
     ├── kirikiri-html.md # KiriKiri→HTML5 移植调研（JoiPlay 插件 / TyranoScript 转换 / WASM 对比）
+    ├── kirikiri-tyrano.md # KiriKiri→TyranoScript 转换调研（路线 B 深化：支持程度分档 + 所需软件清单）
     ├── tyrano.md        # TyranoScript/TyranoBuilder 指南（JoiPlay 构建 + 翻译）
     ├── experience.md    # 会话经验日志（坑、失败模式）
     ├── screenshot.md    # 截图验证流程（窗口级：指定 app 精确截图，配合

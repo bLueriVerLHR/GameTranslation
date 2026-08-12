@@ -226,6 +226,26 @@ class TestWinTools:
         monkeypatch.setenv("WIN_FFMPEG", str(exe))
         assert config.win_ffmpeg() == str(exe)
 
+    def test_unresolvable_config_falls_back_to_default(self, monkeypatch,
+                                                       tmp_path):
+        # %ProgramFiles% tokens cannot expand on WSL: the configured value
+        # is truthy but points nowhere; the working default must win.
+        self._cfg(monkeypatch, tmp_path,
+                  {"7z": "%ProgramFiles%/7-Zip-Zstandard/7z.exe"})
+        monkeypatch.delenv("SEVENZ_WIN", raising=False)
+        if os.path.isfile(config.to_wsl_path(config.DEFAULT_WIN_SEVENZ)):
+            assert config.win_7z() == config.DEFAULT_WIN_SEVENZ
+        else:
+            assert config.win_7z() is None
+
+    def test_unresolvable_config_no_default_returns_none(self, monkeypatch,
+                                                         tmp_path):
+        self._cfg(monkeypatch, tmp_path,
+                  {"ffmpeg": "%ProgramFiles%/nope/ffmpeg.exe"})
+        monkeypatch.delenv("WIN_FFMPEG", raising=False)
+        assert config.win_ffmpeg() is None
+        assert config.win_ffmpeg() == str(exe)
+
     def test_rg_resolved(self, monkeypatch, tmp_path):
         exe = tmp_path / "rg.exe"
         exe.write_bytes(b"x")

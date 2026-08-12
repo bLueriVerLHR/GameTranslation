@@ -124,15 +124,19 @@ def _win_tool(name, env_var, default=""):
     """Windows-side tool binary by name: <ENV_VAR> env ->
     env_config tools.win32.<name> -> default; None when absent.  The win32
     section is read explicitly because these tools serve Windows-side
-    files even when the current platform is WSL."""
+    files even when the current platform is WSL.  A configured path that
+    cannot be resolved (e.g. %ProgramFiles% tokens unexpandable on WSL)
+    falls through to the default."""
     p = os.environ.get(env_var)
     if not p:
         p = _expand(_pick(_win32_section(_load_env_config().get("tools")),
                           name) or "")
-    if not p:
-        p = default
     if p and os.path.isfile(to_wsl_path(p)):
         return str(p)
+    # configured value absent OR unresolvable (e.g. %ProgramFiles% tokens
+    # unexpandable on WSL) -> fall back to the default
+    if default and os.path.isfile(to_wsl_path(default)):
+        return str(default)
     return None
 
 

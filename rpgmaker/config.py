@@ -230,11 +230,36 @@ def _expand(path):
 def _deliverable(env_var, cfg_name, default=""):
     """Environment variable -> env_config deliverables.<name> -> default;
     the stored/default path is native-form and gets localized for the
-    current platform."""
+    current platform.  Plain (scalar) values only: the nested
+    deliverables.temp dict is handled by _temp_dir_cfg()."""
     p = os.environ.get(env_var)
     if not p:
         p = _pick(_load_env_config().get("deliverables"), cfg_name)
+    if isinstance(p, dict):
+        p = None
     return _localize(_expand(p or default))
+
+
+def _temp_dir_cfg(key):
+    """A deliverables.temp sub-path (persist / tmpfs / win32), accepting
+    both the nested dict format {persist, tmpfs, win32} and the legacy
+    plain-string format (all keys fall back to the same value)."""
+    t = _pick(_load_env_config().get("deliverables"), "temp")
+    if isinstance(t, dict):
+        p = t.get(key)
+    else:
+        p = t if isinstance(t, str) else None
+    return _localize(_expand(p or ""))
+
+
+def temp_dir():
+    """Work directory for temp copies: the persistent large-work dir on
+    WSL (deliverables.temp.persist), the Windows %TEMP% on Windows
+    (deliverables.temp.win32)."""
+    return _temp_dir_cfg("persist" if is_wsl() else "win32") \
+        or _deliverable("TEMP_DIR", "temp",
+                        "%LOCALAPPDATA%/Temp/opencode"
+                        if sys.platform == "win32" else "/tmp/opencode")
 
 
 # ---------------------------------------------------------------- deliverables
@@ -251,18 +276,14 @@ def archives_dir():
     return _deliverable("ARCHIVES_DIR", "archives", "D:/GamesCompress")
 
 
-def temp_dir():
-    """Work directory for temp copies (stored native: /tmp/opencode on this
-    machine; win32 default is %LOCALAPPDATA%/Temp/opencode)."""
-    return _deliverable("TEMP_DIR", "temp",
-                        "%LOCALAPPDATA%/Temp/opencode"
-                        if sys.platform == "win32" else "/tmp/opencode")
-
-
 def win_temp_dir():
     """Windows-side temp for downloads and Windows-only tools (the Windows
-    %TEMP% folder; stored native: C:/Users/<user>/AppData/Local/Temp,
-    localized to /mnt/c/... on WSL)."""
+    %TEMP% folder; stored native: %LOCALAPPDATA%/Temp, localized to
+    /mnt/c/... on WSL).  Reads the nested deliverables.temp.win32 key
+    (legacy plain deliverables.win_temp accepted)."""
+    p = _temp_dir_cfg("win32")
+    if p:
+        return p
     return _deliverable("WIN_TEMP_DIR", "win_temp", "%LOCALAPPDATA%/Temp")
 
 

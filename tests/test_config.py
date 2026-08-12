@@ -162,6 +162,36 @@ class TestDeliverable:
         monkeypatch.setattr(config, "is_wsl", lambda: True)
         assert config.win_temp_dir() == "/mnt/c/Users/me/AppData/Local/Temp"
 
+    def test_temp_nested_dict_persist_on_wsl(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path,
+                  {"temp": {"persist": "/home/me/forge/tmp",
+                            "tmpfs": "/tmp/opencode",
+                            "win32": "%LOCALAPPDATA%/Temp"}})
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        assert config.temp_dir() == "/home/me/forge/tmp"
+
+    def test_temp_nested_dict_win32_on_windows(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path,
+                  {"temp": {"persist": "/home/me/forge/tmp",
+                            "tmpfs": "/tmp/opencode",
+                            "win32": "C:/Users/me/AppData/Local/Temp"}})
+        monkeypatch.setattr(config, "is_wsl", lambda: False)
+        assert config.temp_dir() == "C:/Users/me/AppData/Local/Temp"
+
+    def test_temp_nested_dict_win_temp_dir(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path,
+                  {"temp": {"persist": "/home/me/forge/tmp",
+                            "tmpfs": "/tmp/opencode",
+                            "win32": "C:/Users/me/AppData/Local/Temp"}})
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        assert config.win_temp_dir() == "/mnt/c/Users/me/AppData/Local/Temp"
+
+    def test_temp_missing_nested_falls_back_to_legacy(self, monkeypatch,
+                                                      tmp_path):
+        self._cfg(monkeypatch, tmp_path, {})
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
+        assert config.temp_dir() == "/tmp/opencode"
+
 
 class TestWinTools:
     """Windows-side tools resolve from env_config tools.win32.<name>."""

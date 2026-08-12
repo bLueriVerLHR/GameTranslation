@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """patch_contexts.py - Inject the game-specific Tone block into chunk context
-files and upgrade their Rules to the write-first zh.txt contract.
+files and upgrade their Rules to the batch-append zh.txt contract.
 
 Consolidated from the long-run session patch_contexts.py (docs/translation.md):
 the tone must NEVER be hardcoded in gen_translation_shards.py; it lives
@@ -9,8 +9,9 @@ in <work>/tone.md (or --tone FILE) and is applied here to ALREADY-GENERATED
 chunks.
 
 Rules upgrade: replaces the old "Output: chunk_NN.translated.json" block with
-the write-first contract (write chunk_NN.zh.txt first, one translation per
-line, 1:1 with chunk_NN.ja.txt - proven 2026-08, experience.md 7.2).
+the batch-append contract (write chunk_NN.zh.txt in ~100-130-line batches,
+append with edit, self-check each batch - proven 2026-08, replaces the
+write-first one-shot contract for large chunks).
 
 Usage:
     python tools\\patch_contexts.py <work_dir> [--tone tone.md]
@@ -28,14 +29,21 @@ NEUTRAL_TONE = """## Tone (from the game owner)
 - Length: keep the original meaning; if the translation would clearly overflow the message window (4 lines per window), shorten it with a more compact phrasing.
 """
 
-RULES_NEW = """## Rules (write-first contract, mandatory)
-- 执行顺序: 先写, 后思考, 再改 — 读完本文件与 chunk_NN.ja.txt 后, 第一动作就是
-  Write chunk_NN.zh.txt 第一遍, 严禁在思考/计划里结束:
+RULES_NEW = """## Rules (batch-append contract, mandatory)
+- 执行顺序: 先写, 后思考, 再改 — 但整块必须拆成小批, 严禁一次性 Write
+  全文件, 严禁在思考/计划里结束:
   1. Read the rules once, read chunk_NN.ja.txt once.
-  2. IMMEDIATELY write chunk_NN.zh.txt with a first-pass translation for ALL keys
-     (unsure: best guess + 【?】marker). Never end before the file exists.
-  3. Read it back, improve with a second Write.
-  4. Final reply = file path + entry count ONLY.
+  2. Translate IN BATCHES: each batch ~100-130 lines. Write chunk_NN.zh.txt
+     with the FIRST batch (Write tool), then APPEND each following batch to
+     the file end with the edit tool (oldString = current last line,
+     newString = last line + new batch). Each batch must be 1:1 with the
+     corresponding ja batch. Never end before the file exists.
+  3. SELF-CHECK after EVERY batch: read back the zh.txt segment and verify
+     line count, literal \\n count, control codes (preserved, same count),
+     no kana residue. Fix within the batch before continuing.
+  4. After all batches: read back the whole file, final line count MUST
+     equal chunk_NN.ja.txt line count.
+  5. Final reply = file path + entry count ONLY.
 - zh.txt format: EXACTLY ONE TRANSLATION PER LINE, SAME ORDER and SAME LINE
   COUNT as chunk_NN.ja.txt (line N of zh.txt = translation of line N of
   ja.txt).  No quotes, no JSON, no ===KEY=== separators.

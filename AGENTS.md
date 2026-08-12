@@ -269,7 +269,7 @@ bundle，见下方 FAILURE 记录）——正确路线是 **MelonLoader 运行�
 - **Unity Localization 字符串表**：`localization-string-tables-japanese(ja)_assets_all.bundle`
   里的小表（通用文本，名字/地名等）。
 
-分片：写优先契约下 **~250 键 / ~9k 字符** 的大块完全可行，QC 保证不丢行。
+分片：分批追加契约下 **~250 键 / ~9k 字符** 的大块完全可行，QC 保证不丢行。
 
 ### 2. 运行时注入（MelonLoader 0.7.3 + Harmony）
 
@@ -545,7 +545,7 @@ Android WebView/PixiJS 把 WebGL 贴图限制在**每边 4096 像素**；PNG 超
 ## Subagent 分块 & prompt 契约 (mandatory — 2026-08 验证)
 
 **统一翻译流程见 `docs/translation.md`**（全量/补翻合并为一套参数：10
-并行、auto 分块 ~11,000 字符/块、90KB context 预算、写优先契约）——
+并行、auto 分块 ~11,000 字符/块、90KB context 预算、分批追加契约）——
 完整失败模式目录、术语一致性审计清单、QC 关卡清单、修复脚本用法都在
 里面。
 
@@ -632,18 +632,26 @@ context.md 场景时间线;上下文本身不参与翻译,只为 agent 提供语
 控制码没翻而事件名被翻"的失配类)——失配逐一 WARN,无需再手工
 `rg -o "<TE:[^>]+>" data/` 抽查(可作二次确认)。
 
-### Write-first prompt 契约 (mandatory)
+### 分批追加 prompt 契约 (mandatory — 2026-08 定案, 取代旧 Write-first)
 
-**执行顺序必须明写为"先写,后思考,再改"** — 读完材料后第一动作就是
-Write 译文进文件,严禁在思考/计划里结束(一轮 10-11 个 agent 常有 3-5 个
-死于无文件;同会话重试基本全恢复)。Write-first prompt contract
-(每个 agent prompt 原样包含):
+旧 Write-first 契约("先写,后思考,再改"、一次性 Write 全文件)在
+700+ 行的大 chunk 上失败率高(一轮 10 个 agent 常 3-5 个死于无文件;
+同会话重试基本全恢复)。**2026-08 定案: 分批追加 + 分步自检**,
+一轮 10 个 agent 首轮成功率实测 ~100%(连续 3 轮 0 失败)。
+
+**执行顺序必须明写为"先写,后思考,再改",且整块拆成小批** —
+每个 agent prompt 原样包含:
 
 1. Read rules once, read chunk_NN.ja.txt keys once.
-2. **Immediately** Write `chunk_NN.zh.txt` first pass for ALL keys
-   (unsure: best guess + `【?】`).
-3. Read back, improve with a second Write.
-4. Final reply = file path + entry count only.
+2. **分批翻译**: 每批约 100-130 行(键数更少的 chunk 可一批全译)。
+   第一批用 Write 创建 `chunk_NN.zh.txt`; 后续每批用 edit 把新译文
+   追加到文件末尾(oldString = 当前最后一行, newString = 最后一行 +
+   新批译文)。每批译文行数必须与该批 ja 行数一致。
+3. **分步自检 (per-batch)**: 每追加一批后读回 zh.txt 对应段, 核对:
+   ① 行数与 ja 对应段一致 ② 字面 `\n` 数量一致 ③ 控制码原样保留且
+   数量一致 ④ 无假名残留。发现错误立即在批内修正再继续下一批。
+4. 全部批次完成后最终读回全文核对行数 = ja.txt 行数。
+5. Final reply = file path + entry count only.
 Plus: "Never end before the file exists. Write first, polish later."
 prompt 里再加三条明令:
 值必须是译文(不得把日文原文写进值)、zh.txt 每行一个译文且行数与 ja.txt
@@ -651,9 +659,10 @@ prompt 里再加三条明令:
 控制码写完要数。
 
 - **每个返回的 zh.txt 立即用 `merge_plain_chunks.py` 验证**;可恢复滑落:
-  缺行(行数不匹配)、把字面 `\n` 写成真实换行。
+  缺行(行数不匹配)、把字面 `\n` 写成真实换行、agent 漏掉个别键
+  (行数少 1 时从 `chunks_translated.json` 重建该文件再对齐)。
 - **agent 结束后跑值卫生修复**:折叠双反斜杠、剥离 `【?...】`、diff
-  控制码 token 键值两侧。
+  控制码 token 键值两侧、按词表替换残留的【日文人名】前缀。
 - **若之后修复了值,构建里已经是旧值** — 按键匹配的补丁不会重新生效;
   用 旧→新 值映射反向打补丁。
 - **残留检测**:在**最终构建**上测假名;walker 必须让顶层列表 JSON

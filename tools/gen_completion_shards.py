@@ -5,7 +5,7 @@
 - chunks/chunk_NN.ja.txt     keys ONLY: one Japanese key per line, no quotes,
                              no JSON (escaping via tools/plain_io.py: \\n =
                              real newline, \\\\ = one literal backslash).
-- chunks/chunk_NN.context.md rules (write-first zh.txt contract) + glossary +
+- chunks/chunk_NN.context.md rules (batch-append zh.txt contract) + glossary +
                              carry-over + per-key context windows (the agent
                              sees the scene around each key)
 - chunks/chunk_NN.meta.json  which maps/events the chunk spans (parallelism)
@@ -30,14 +30,21 @@ NAMEISH = re.compile(
     r"^[A-Za-z0-9\u3040-\u30ff\u4e00-\u9fff\u00b7・〜\- ]{1,14}$")
 CARRY_OVER = 8
 
-RULES = """## Rules (write-first contract, mandatory)
-- 执行顺序: 先写, 后思考, 再改 — 读完本文件与 chunk_NN.ja.txt 后, 第一动作就是
-  Write chunk_NN.zh.txt 第一遍, 严禁在思考/计划里结束:
+RULES = """## Rules (batch-append contract, mandatory)
+- 执行顺序: 先写, 后思考, 再改 — 但整块必须拆成小批, 严禁一次性 Write
+  全文件, 严禁在思考/计划里结束:
   1. Read these rules once, read chunk_NN.ja.txt once.
-  2. IMMEDIATELY write chunk_NN.zh.txt with a first-pass translation for ALL keys
-     (unsure: best guess + 【?】marker). Never end before the file exists.
-  3. Read it back, improve with a second Write.
-  4. Final reply = file path + entry count ONLY.
+  2. Translate IN BATCHES: each batch ~100-130 lines. Write chunk_NN.zh.txt
+     with the FIRST batch (Write tool), then APPEND each following batch to
+     the file end with the edit tool (oldString = current last line,
+     newString = last line + new batch). Each batch must be 1:1 with the
+     corresponding ja batch.
+  3. SELF-CHECK after EVERY batch: read back the zh.txt segment and verify
+     line count, literal \\n count, control codes (preserved, same count),
+     no kana residue. Fix within the batch before continuing.
+  4. After all batches: read back the whole file, final line count MUST
+     equal chunk_NN.ja.txt line count.
+  5. Final reply = file path + entry count ONLY.
 - zh.txt format: EXACTLY ONE TRANSLATION PER LINE, SAME ORDER and SAME LINE
   COUNT as chunk_NN.ja.txt (line N of zh.txt = translation of line N of
   ja.txt).  No quotes, no JSON, no ===KEY=== separators.
@@ -66,9 +73,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("work_dir")
     ap.add_argument("--max-chars", type=int, default=11000,
-                    help="cap each chunk by total key char length (default "
-                         "11000; the proven write-first size under the 90 KB "
-                         "context budget)")
+                     help="cap each chunk by total key char length (default "
+                          "11000; the proven batch-append size under the 90 KB "
+                          "context budget)")
     ap.add_argument("--dict", default="",
                     help="MTool/AI translation dict (root <title>.json) for the "
                          "terminology glossary; optional, auto-detected from "

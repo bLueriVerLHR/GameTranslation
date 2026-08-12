@@ -65,7 +65,7 @@ python3 tools/gen_translation_shards.py <work_dir> --max-chars 11000 --context-b
 
 ## 5. Subagent 翻译
 
-- 与 MZ 相同：10 并行、写优先契约、`merge_plain_chunks.py` QC。
+- 与 MZ 相同：10 并行、分批追加契约、`merge_plain_chunks.py` QC。
 - **wolfrpg 特有转义**：控制码在数据里是**双反斜杠**（`\\s[9]`），
   `merge_plain_chunks.py` 的 double-backslash 检测已改为
   `v.count("\\") > k.count("\\")`（相对比较，非绝对判断）。

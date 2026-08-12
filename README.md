@@ -72,7 +72,7 @@ GameTranslation/
 │   ├── gen_completion_shards.py  # 补翻流程分块（同布局、同尺寸）
 │   ├── merge_plain_chunks.py     # 合并 ja/zh 对 -> chunks_translated.json + QC
 │   ├── merge_translation.py      # 最终合并：chunks + prefilled + sweep 规则 -> translated.json
-│   ├── patch_contexts.py         # 向 context.md 注入语气段 + 写优先规则
+│   ├── patch_contexts.py         # 向 context.md 注入语气段 + 分批追加规则
 │   ├── bake_translation.py       # 精确匹配静态烘焙（data + 插件参数 + 字体策略）
 │   ├── plugin_json_leaves.py     # 插件参数内嵌 JSON 的叶子级翻译：extract 收集
 │   │                             #   显示叶子（含深层 JSON 递归），rebuild 按叶子
@@ -173,7 +173,7 @@ RPG Maker 静态翻译（提取 → 词表 → subagent 分块 → 精确匹配�
 `docs/kirikiri.md`、`AGENTS.md`）。共同路线：解包/提取 → 标准工作包 →
 subagent 翻译 → `translated.json` → 注入。
 
-- **Subagent**：每轮 10 个并行，写优先 prompt 契约，auto 分块
+- **Subagent**：每轮 10 个并行，分批追加 prompt 契约，auto 分块
   （约 11,000 字符）配 90KB 上下文预算。
 - **本地名词表 + 游戏特定特征**（`docs/table/`，gitignored，仅本地使用）：
   每游戏子目录的 `glossary.json`（术语/人名表）+ `tone.md`（语气/风格）+

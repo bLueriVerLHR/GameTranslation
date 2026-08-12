@@ -478,6 +478,16 @@ KiriKiri 游戏（`Game.exe` + `data.xp3` 等，无 `index.html`/`js/`）不走
   方便后续修改/重译。**bake_translation.py 现在自动写入
   `translation_kv.json`** (out_dir 根目录,`--no-kv` 关闭) — 无需手工改名;
   未翻译的游戏不打此文件。
+- **打包前必架服务器供 owner 试玩 (mandatory, 2026-08 定案)**: 收尾
+  `deliver` 之前,必须用 `serve` 起 HTTP 服务器(绑 `0.0.0.0` 以便 owner
+  从本机/手机访问,端口避开近期用过的),让 owner 实际试玩确认(翻译、
+  字体、运行无报错)。owner 确认后才能 `compress`/`deliver`。
+- **统一字体 (mandatory, 2026-08 定案)**: 汉化构建必须应用统一字体
+  策略——中文/拉丁/日文假名统一走项目标准中文字体,避免中文回退系统
+  字体导致字形不统一。具体字体名与各引擎改动点见本地
+  `docs/table/font_rollback.md`(不入库);MZ/MV 走 `bake_translation.py`
+  标准字体策略,Tyrano 按 `font_rollback.md` 的 Tyrano 改动点
+  (font.css @font-face + Config.tjs `;userFace=`)。
 - **bake 低覆盖率闸门 (mandatory, 2026-08 定案)**: bake 前先做一次只读
   扫描(不复制、不写盘),统计游戏内 kana 显示字符串被 dict 命中的比例
   (`coverage: N hit / M missed = X%`)。**X < 50% (`--min-coverage`,默认

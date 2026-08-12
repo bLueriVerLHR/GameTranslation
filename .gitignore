@@ -10,3 +10,6 @@ __pycache__/
 
 # per-game translation assets stay local (glossary/tone/notes, incl. adult word table)
 docs/table/
+
+# persistent work copies (per-game temp dirs, machine-local)
+tmp/

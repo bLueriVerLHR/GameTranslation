@@ -169,7 +169,13 @@ def done_keys(chunks_dir):
 
 def transcript(keys, ctx, truncate=45, window=2):
     """Scene transcript lines for the chunk: [K] = key to translate, | =
-    context line (from context.json windows), deduplicated."""
+    context line (from context.json windows), deduplicated.  Every output
+    line is ONE physical line: keys and windows with embedded newlines are
+    shown escaped (\\n) so the written context.md size matches the estimator
+    (a raw multi-line key would otherwise expand to many physical lines and
+    blow past the context budget)."""
+    def flat(s):
+        return s.replace("\r", "").replace("\n", "\\n")
     out = []
     win_cap = 2 * window + 1
     last_win = []
@@ -177,10 +183,10 @@ def transcript(keys, ctx, truncate=45, window=2):
         info = ctx.get(k, {})
         where = info.get("where", "")
         win = (info.get("window") or [])[:win_cap]
-        out.append("[K] %s   <= %s" % (k, where))
+        out.append("[K] %s   <= %s" % (flat(k), where))
         for w in win:
             if w != k and w not in last_win:
-                out.append("  | %s" % (w[:truncate]))
+                out.append("  | %s" % flat(w)[:truncate])
         last_win = [w for w in win if w != k]
     return out
 
@@ -475,8 +481,13 @@ def _chunk_context(keys, ctx, tone, glossary, macros, args):
     tr = transcript(keys, ctx or {}, getattr(args, "truncate", 45),
                     getattr(args, "window", 2))
     head = "## Scene transcript (dialogue in story order; [K] = key to translate; | = context line)"
-    return (sum(len(l) + 1 for l in prefix) + len(head) + 2
-            + sum(len(l) + 1 for l in tr))
+    # count UTF-8 BYTES, not code points: the context-budget threshold is a
+    # real file size (90KB+ context.md chunks are the flaky no-file
+    # failures), and Japanese-heavy transcript lines encode to ~2-3x their
+    # char count.  A char-based estimate silently allows ~250KB files.
+    def b(s):
+        return len(s.encode("utf-8")) + 1
+    return sum(b(l) for l in prefix) + len(head) + 2 + sum(b(l) for l in tr)
 
 
 def _auto_sizing(map_keys, global_keys, ctx, tone, glossary, macros, args):
@@ -493,7 +504,8 @@ def _auto_sizing(map_keys, global_keys, ctx, tone, glossary, macros, args):
     def count_for(mc):
         n = len(build_buckets(map_keys, mc))
         if global_keys:
-            n += len(_split_by_len(list(global_keys), mc))
+            n += (len(global_keys) + args.global_per_chunk - 1) \
+                // args.global_per_chunk
         return n
 
     def ctx_for(mc):
@@ -503,7 +515,11 @@ def _auto_sizing(map_keys, global_keys, ctx, tone, glossary, macros, args):
             best = max(best, _chunk_context(keys, ctx, tone, glossary,
                                             macros, args))
         if global_keys:
-            for part in _split_by_len(list(global_keys), mc):
+            # the writer caps global chunks by KEY COUNT (global_per_chunk),
+            # not by chars - mirror that split exactly so the estimate
+            # matches what will actually be written.
+            for i in range(0, len(global_keys), args.global_per_chunk):
+                part = list(global_keys)[i:i + args.global_per_chunk]
                 best = max(best, _chunk_context(part, ctx, tone, glossary,
                                                 macros, args))
         return best

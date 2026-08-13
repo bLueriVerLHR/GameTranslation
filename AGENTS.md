@@ -164,11 +164,40 @@ docs/table/
 - **失败模式记录进 docs/experience.md**：踩过的格式坑、错误 key 的特征
   （解出的头部不是可读字节流等）要留档，避免后人重走弯路。
 
+## 任务执行规则（mandatory — 2026-08 定案）
+
+1. **批处理前先采样测性能（mandatory）**：任何批量任务（解包、解码、
+   重编码、翻译注入等）开工前，先采样处理 3-5 个代表性文件并测量
+   耗时（per-file 时间、总量预估），向 owner 报告预计总时长与瓶颈；
+   判断是否需要优化（JIT、C++ binding、并行、缓存等均可），确认后再
+   全量跑。
+2. **新功能必须带单元测试（mandatory）**：新工具/新功能写
+   `tests/`（pytest），**正例、反例、边缘情况都要覆盖**，提交前
+   `.venv/bin/python -m pytest tests/` 全绿。
+3. **排查问题用只读子代理并行（mandatory）**：多个独立疑点时，开多个
+   只读子代理（explore/general 只读模式）并行排查，缩短排查时间；
+   各自结论汇总后交叉验证，不要串行逐个试。
+4. **随机采样代替定点抽查（mandatory）**：检查文件质量（解码正确性、
+   残留、格式异常等）时用**随机采样**（`random.sample`/`shuf`），
+   绝不反复检查同一个已知正确的文件，也不在特例中挑文件——否则会
+   系统性漏掉坏文件。
+5. **速度优先，近源处理（mandatory）**：数据在 WSL 侧就用 WSL 内软件
+   处理，在 Windows 侧就用 Windows 处理，只搬运必要的最小数据（优先
+   单个压缩包）。**当前研究重点：打造一套 WSL 内的工具链**（解包/
+   解码/转换），减少对 Windows 侧工具的依赖。
+6. **截图 = WSL 内控制外部应用（mandatory）**：需要验证画面时，由 WSL
+   内脚本（如 `tools/wsl_capture.py`）控制外部浏览器/应用执行对应操作
+   （启动、点击、推进）后对窗口截图；**无法完成的截图/操作任务必须
+   停下请求 owner 参与**，不得假装完成。
+
 ## 运行验证截图（窗口级，2026-08 定案）
 
 需要截取**指定 app 窗口**（游戏运行画面、对话框、报错弹窗）时用
 `tools/wsl_capture.py`（自动部署 `tools/capture_window.ps1` 到 Windows
 临时目录；窗口自动移入可视区 + PrintWindow 捕获，被遮挡也能截）。
+**操作步骤（点击/推进/输入）由 WSL 内脚本控制外部应用执行**（如
+PowerShell `AppActivate` + SendKeys、浏览器 CDP/命令行参数），操作后
+再截图；无法自动化的步骤停下请 owner 手动完成并告知。
 完整流程/前提/排查见 `docs/screenshot.md`；截图后交给 vision-analyzer
 子代理分析（主模型不支持图片输入）。互操作失效（`WSLInterop` binfmt
 条目缺失）时的修复命令也写在 docs/screenshot.md。

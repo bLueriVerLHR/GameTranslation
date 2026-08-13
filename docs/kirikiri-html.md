@@ -58,7 +58,7 @@
   - 素材引用路径映射（`data/image`、`data/fgimage` 等目录约定差异）。
 - **素材**：图片（jpg/png/tlg→png）、音频（ogg 保留、mp3 按需重编码、
   走 `tyrano/audio.py` 的 ogg 策略）、字体（复用 `kirikiri/merge_font.py`
-  思路）、视频（kmv/mpg→mp4）。
+  思路）、视频（wmv/mpg→webm，ffmpeg 原生支持；amv 需专用解码器）。
 - **存档**：krkr savedata → `configSave=webstorage`（浏览器 localStorage）。
 - **坑**：KAG3 的 `cond` 属性（几乎所有标签可用）、`[quake]` 时间单位、
   插件 DLL（krkr 插件无 HTML 等价物，需替换或裁剪）——具体差异按游戏

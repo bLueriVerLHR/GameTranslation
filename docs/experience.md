@@ -594,3 +594,30 @@ false，因为 `$gameMap.isEventRunning()` 恒 true；地图解释器空闲
 - **预防**：打包前对 `img/`、`audio/` 与引擎引用/数据引用做
   大小写敏感的存在性检查；交付后在**归档内** `7zz l | grep -i` 复查
   同名文件。
+
+## 10. KAG3 → TyranoScript 移植：停车标签与可点击地图（2026-08，KiriKiri 引擎移植）
+
+- **KAG3 `[s]` 不是点击等待**：本作（改版 KAG3 系统）的 `s` 处理器是
+  `inSleep=true; return -1` = 场景结束，点击不做任何事；流程恢复只靠
+  `window.process()/goToLabel`、链接、地图。移植到 Tyrano 时若映射成 `[l]`
+  （点击推进），标题/菜单死区点击会误推进、串标签。正确做法：自定义
+  `[kag3stop]` = stronglyStop + hideEventLayer（事件层隐藏，点击无效），
+  地图/链接/jump 不依赖流程状态照常工作。转换期需确认目标游戏所有 `[s]`
+  后跟的是标签/endmacro（抽样全量统计，而不是凭经验）。
+- **KAG3 可点击地图的生命周期**：地图挂在图层上，`window.process()`/jump
+  **不清地图**；只有「该图层加载新图片」（`loadImages` →
+  `clearProvinceActions`）或显式 `[mapdisable]` 才清。挂接方式有两种：
+  显式 `[mapaction]`，以及 loadImages 的**自动挂接**（`X.ma` 与图片同名时
+  自动加载）。移植时若在跳转时清地图，标题 hover（onenter → process 跳转）
+  会把地图清掉 → 之后点击全部失效。按原语义只在该图层换图/显式 disable 时清。
+- **`[s]` 等标签映射的正则要保行尾**：`re.sub(r'^\[s\]\s*$', ...)` 的 `\s*$`
+  会吞掉 `\r\n`，下一行标签被并到上一行（`[s]` + `*label` → `[kag3stop]*label`，
+  标签行变成文本）。改成 `r'^\[s\](\s*)$'` + lambda 保留 group(1)。
+- **KAG3 `[ch]` 是正文渲染标签**：名字窗、选择肢文字、菜单项全靠它
+  （`[ch text=%n]`、`[ch text=&sentaku[0].txt]`）。移植时转发给目标引擎的
+  文本标签（Tyrano 的 text 标签自己 nextOrder，shim 不要再推进）。no-op
+  shim 会让名字/选择肢/菜单文字全部空白——这类"看似无害"的 no-op 名单要
+  逐个核对用途。
+- **右击推进的屏幕**：`[rclick jump=true storage=X target=Y]` 驱动的屏
+  （coming soon/lineup 等）在移动端没有右击会卡死。移植时实现 rclick 标签
+  + 触摸兜底（无活动地图时左键也触发）。

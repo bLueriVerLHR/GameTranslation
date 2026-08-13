@@ -84,6 +84,80 @@ def build_tlg6(w, h, colors=4):
     return wrap_tlg0(header + make_tlg6_payload(w, h, colors))
 
 
+# ---------------------------------------------------------------------------
+# Synthetic TLG6 with real filter types and non-zero pixels.
+# Regression for two historical bugs:
+#   1. LZSS literal branch forgot `o += 1` (filter_types corrupted after any
+#      literal run -> every image corrupted).
+#   2. TLG6 filter value was computed once per block instead of per pixel
+#      (GARbro applies the color-correlation filter to the *current* inbuf
+#      value on every pixel).
+# Both were invisible to all-zero synthetic images and are verified against
+# the GARbro C# decoder output below.
+# ---------------------------------------------------------------------------
+
+GOLOMB_N = 4
+
+
+def _golomb_stream(values):
+    """Encode non-zero pixel values with the TLG6 Golomb codec (mirrors
+    tlg._decode_golomb: zero flag bit0=1, unary run count, k-bit values)."""
+    bits = [1]  # bit0: segment is non-zero
+    count = len(values)
+    bit_count = count.bit_length() - 1
+    bits += [0] * bit_count + [1]
+    bits += [(count - (1 << bit_count)) >> i & 1 for i in range(bit_count)]
+    a = 0
+    n = GOLOMB_N - 1
+    for val in values:
+        if val <= 128:
+            v = 2 * val - 1
+        else:
+            v = 2 * (256 - val)
+        k = tlg._golomb_table[a * GOLOMB_N + n]
+        bc = v >> k
+        extra = v & ((1 << k) - 1)
+        bits += [0] * bc + [1]
+        bits += [(extra >> i) & 1 for i in range(k)]
+        a += v >> 1
+        n -= 1
+        if n < 0:
+            a >>= 1
+            n = GOLOMB_N - 1
+    nbytes = (len(bits) + 7) // 8
+    out = bytearray(nbytes)
+    for bi, b in enumerate(bits):
+        out[bi // 8] |= b << (bi % 8)
+    return bytes(out)
+
+
+def _lzss_literals(data):
+    """LZSS stream with all-literal tokens (flags byte 0x00 per 8 bytes)."""
+    out = bytearray()
+    for i in range(0, len(data), 8):
+        chunk = data[i:i + 8]
+        out += b"\x00" + chunk + b"\x00" * (8 - len(chunk))
+    return bytes(out)
+
+
+def build_tlg6_filtered(w, h, colors, filter_types, pixel_values):
+    """Synthetic TLG6 with explicit per-block filter types and non-zero
+    pixel values (one shared value sequence per channel)."""
+    xbc = (w - 1) // 8 + 1
+    ybc = (h - 1) // 8 + 1
+    assert len(filter_types) == xbc * ybc
+    header = b"TLG6.0\x00raw\x1a" + bytes([colors, 0, 0, 0]) + struct.pack("<II", w, h)
+    payload = bytearray()
+    stream = _golomb_stream(pixel_values)
+    payload += struct.pack("<i", len(stream) * 8 + 64)
+    ft = _lzss_literals(bytes(filter_types))
+    payload += struct.pack("<i", len(ft)) + ft
+    for _ in range(ybc):
+        for _c in range(colors):
+            payload += struct.pack("<i", len(stream) * 8) + stream
+    return wrap_tlg0(header + bytes(payload))
+
+
 class TestHeader:
     def test_parse_tlg0_wrapped_tlg6(self):
         data = build_tlg6(8, 8)
@@ -147,6 +221,166 @@ class TestDecode:
         assert out.exists()
         assert out.stat().st_size > 0
         assert (w, h) == (8, 8)
+
+
+class TestRegressionBugs:
+    """Regression tests for the two historical decoder bugs that corrupted
+    every real game image while all synthetic tests stayed green.
+
+    Reference outputs were produced by compiling GARbro's ImageTLG.cs TLG6
+    path verbatim (dotnet) and decoding the same synthetic files.
+    """
+
+    def _filtered_image(self, w=64, h=8, ftype=2, colors=3):
+        xbc = (w - 1) // 8 + 1
+        ybc = (h - 1) // 8 + 1
+        filter_types = [ftype] * (xbc * ybc)
+        pixel_values = [(i % 253) + 1 for i in range(h * w)]
+        return build_tlg6_filtered(w, h, colors, filter_types, pixel_values)
+
+    def test_lzss_literal_advances_output(self):
+        # Bug 1: literal branch omitted `o += 1`; every literal overwrote
+        # outbuf[0] and filter_types after the first literal was garbage.
+        outbuf = bytearray(16)
+        text = bytearray(4096)
+        # flags=0x00 (8 literal tokens) + 8 literal bytes "ABCDEFGH"
+        inbuf = b"\x00ABCDEFGH"
+        out, _ = tlg._lzss_decompress_slide(outbuf, inbuf, text, 0)
+        assert bytes(out[:8]) == b"ABCDEFGH"
+        # literal after copy also advances
+        out2 = bytearray(16)
+        text2 = bytearray(4096)
+        # flags=0b00000001: token0=copy(mpos=0,mlen=3 from zeroed text),
+        # then 7 literal tokens; copy writes 3 zero bytes, then literals
+        inbuf2 = b"\x01\x00\x00XYZ"
+        out2, _ = tlg._lzss_decompress_slide(out2, inbuf2, text2, 0)
+        assert bytes(out2[:6]) == b"\x00\x00\x00XYZ"
+
+    def test_filter_type_applied_per_pixel(self):
+        # Bug 2: filter value was computed once per block; GARbro computes
+        # it from the current inbuf pixel on every pixel (inbuf_index steps).
+        # With per-pixel values 1,2,3.. and filter type 2 the two behaviors
+        # diverge immediately; the C#-verified expected output is below.
+        data = self._filtered_image()
+        rgba = tlg.decode(data)
+        assert len(rgba) == 64 * 8 * 4
+        # pixels are BGRA bytes: [B, G, R, A]
+        # filter 2: r=r0+g0, g=g0, b=b0+g0 with MED prediction from
+        # zeroline (3-color, alpha=0xFF); verified against C# GARbro decode.
+        assert bytes(rgba[0:4]) == b"\x02\x01\x02\xff"
+        assert bytes(rgba[4:8]) == b"\x06\x03\x06\xff"
+        assert bytes(rgba[8:12]) == b"\x0c\x06\x0c\xff"
+
+    def test_filtered_decode_matches_garbro_reference(self):
+        # Decode the C#-verified reference (hex dump produced by compiling
+        # GARbro ImageTLG.cs TLG6 path verbatim) for the same synthetic file.
+        data = self._filtered_image()
+        rgba = tlg.decode(data)
+        ref_hex = (
+            "020102ff060306ff0c060cff140a14ff1e0f1eff2a152aff381c38ff"
+            "482448ff3a9d3aff2e172eff249224ff1c0e1cff168b16ff120912ff"
+            "108810ff100810ff"
+        )
+        assert rgba[:64].hex() == ref_hex
+
+    def test_filtered_various_filters(self):
+        # Every filter type 0..31 must decode without error and differ from
+        # the all-zero case (filter transforms applied per pixel).
+        for ftype in range(32):
+            data = self._filtered_image(ftype=ftype)
+            rgba = tlg.decode(data)
+            assert len(rgba) == 64 * 8 * 4
+            # filter 0/1 are identity on the value: output must be non-zero
+            assert any(rgba[::4])
+
+    def test_filtered_various_colors(self):
+        for colors in (3, 4):
+            data = self._filtered_image(colors=colors)
+            rgba = tlg.decode(data)
+            assert len(rgba) == 64 * 8 * 4
+
+    def test_filtered_narrow_width(self):
+        # Fractional last block (width not a multiple of 8) exercises the
+        # second line_generic call path with per-pixel filters.
+        for w in (8, 15, 16, 20):
+            data = self._filtered_image(w=w, h=8)
+            rgba = tlg.decode(data)
+            assert len(rgba) == w * 8 * 4
+
+    def test_numba_path_matches_pure_filtered(self):
+        if not tlg._USE_NUMBA:
+            pytest.skip("numba not available")
+        data = self._filtered_image()
+        ver, w, h, colors, off = tlg.parse_header(data)
+        fast = bytes(tlg._decode_tlg6_fast(data, w, h, colors, off))
+        pure = tlg._decode_tlg6(data, w, h, colors, off)
+        assert fast == pure
+
+
+class TestGarbroFixture:
+    """Real-file regression against GARbro-decoded BMP fixtures.
+
+    The .tlg/.bmp pairs under tests/fixtures/tlg/ were produced by GARbro
+    (authoritative TLG decoder): tlg = original game file, bmp = GARbro
+    export. GARbro GUI exports alpha-flattened 32bpp BMP (bottom-up rows),
+    so we compare RGB only after flipping rows and channel-swapping
+    (decoder output is BGRA bytes).
+    """
+
+    FIXTURE = Path(__file__).resolve().parent / "fixtures" / "tlg"
+
+    def _fixtures(self):
+        if not self.FIXTURE.is_dir():
+            return []
+        return sorted(self.FIXTURE.glob("*.tlg"))
+
+    def test_fixtures_exist(self):
+        assert self._fixtures(), "tests/fixtures/tlg missing"
+
+    def test_each_fixture_matches_garbro_bmp(self):
+        from PIL import Image
+        import struct as _struct
+
+        for tlg_path in self._fixtures():
+            name = tlg_path.stem
+            bmp_path = tlg_path.with_suffix(".bmp")
+            assert bmp_path.exists(), bmp_path
+            data = tlg_path.read_bytes()
+            ver, w, h, colors, _ = tlg.parse_header(data)
+            rgba = tlg.decode(data)
+            assert len(rgba) == w * h * 4
+            # BGRA bytes -> RGBA planes
+            import array
+            px = array.array("B", rgba)
+            rows = []
+            for y in range(h):
+                row = px[y * w * 4:(y + 1) * w * 4]
+                rows.append([(row[x + 2], row[x + 1], row[x]) for x in range(0, w * 4, 4)])
+            got_rgb = [c for r in rows for c in r]
+
+            with bmp_path.open("rb") as f:
+                bmp = f.read()
+            off = _struct.unpack_from("<I", bmp, 10)[0]
+            bw, bh = _struct.unpack_from("<ii", bmp, 18)
+            assert (bw, bh) == (w, h), (name, (bw, bh), (w, h))
+            stride = w * 4
+            # BMP rows are bottom-up; unpack BGRX per row
+            ref_rgb = []
+            for y in range(h):
+                row = bmp[off + (h - 1 - y) * stride: off + (h - 1 - y) * stride + stride]
+                for x in range(0, w * 4, 4):
+                    ref_rgb.append((row[x + 2], row[x + 1], row[x]))
+            assert got_rgb == ref_rgb, f"RGB mismatch: {name}"
+
+    def test_fixture_numba_matches_pure(self):
+        if not tlg._USE_NUMBA:
+            pytest.skip("numba not available")
+        for tlg_path in self._fixtures():
+            data = tlg_path.read_bytes()
+            ver, w, h, colors, off = tlg.parse_header(data)
+            fast = bytes(tlg._decode_tlg6_fast(data, w, h, colors, off))
+            pure = tlg._decode_tlg6(data, w, h, colors, off)
+            assert fast == pure, tlg_path.name
 
 
 class TestNumbaPath:

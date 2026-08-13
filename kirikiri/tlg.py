@@ -111,6 +111,7 @@ def _lzss_decompress_slide(outbuf, inbuf, text, initialr):
             c = inbuf[i]
             i += 1
             outbuf[o] = c
+            o += 1
             text[r] = c
             r += 1
             r &= 4095
@@ -305,83 +306,46 @@ def _avg(a, b, c, v):
 
 
 def _filter_value(ftype, v):
-    """Apply the per-channel rearrange for filter types 2..31."""
-    r = (v >> 16) & 0xFF
-    g = (v >> 8) & 0xFF
-    b = v & 0xFF
+    """Apply the per-channel rearrange for filter types 2..31.
+
+    All expressions read the ORIGINAL channel values of v (GARbro/krkrz
+    compute each output channel from the untouched input; sequential
+    updates corrupt filters 6/7, 18/19, 24/25, 26/27, 28/29).
+    """
+    r0 = (v >> 16) & 0xFF
+    g0 = (v >> 8) & 0xFF
+    b0 = v & 0xFF
     a = v & 0xFF000000
     if ftype in (2, 3):
-        r = (r + g) & 0xFF
-        b = (b + g) & 0xFF
-        return (r << 16) | (g << 8) | b | a
-    if ftype in (4, 5):
-        r = (r + b + g) & 0xFF
-        g = (g + b) & 0xFF
-        return (r << 16) | (g << 8) | b | a
-    if ftype in (6, 7):
-        r = r
-        g = (g + r) & 0xFF
-        b = (b + r + g) & 0xFF
-        return (r << 16) | (g << 8) | b | a
-    if ftype in (8, 9):
-        r = (r + b + r + g) & 0xFF
-        g = (g + b + r) & 0xFF
-        b = (b + r) & 0xFF
-        return (r << 16) | (g << 8) | b | a
-    if ftype in (10, 11):
-        r = r
-        g = (g + b + r) & 0xFF
-        b = (b + r) & 0xFF
-        return (r << 16) | (g << 8) | b | a
-    if ftype in (12, 13):
-        r = r
-        g = g
-        b = (b + g) & 0xFF
-        return (r << 16) | (g << 8) | b | a
-    if ftype in (14, 15):
-        r = r
-        g = (g + b) & 0xFF
-        b = b
-        return (r << 16) | (g << 8) | b | a
-    if ftype in (16, 17):
-        r = (r + g) & 0xFF
-        g = g
-        b = b
-        return (r << 16) | (g << 8) | b | a
-    if ftype in (18, 19):
-        r = (r + b) & 0xFF
-        g = (g + r + b) & 0xFF
-        b = (b + g + r + b) & 0xFF
-        return (r << 16) | (g << 8) | b | a
-    if ftype in (20, 21):
-        r = r
-        g = (g + r) & 0xFF
-        b = (b + r) & 0xFF
-        return (r << 16) | (g << 8) | b | a
-    if ftype in (22, 23):
-        r = (r + b) & 0xFF
-        g = (g + b) & 0xFF
-        b = b
-        return (r << 16) | (g << 8) | b | a
-    if ftype in (24, 25):
-        r = (r + b) & 0xFF
-        g = (g + r + b) & 0xFF
-        b = b
-        return (r << 16) | (g << 8) | b | a
-    if ftype in (26, 27):
-        r = (r + b + g) & 0xFF
-        g = (g + r + b + g) & 0xFF
-        b = (b + g) & 0xFF
-        return (r << 16) | (g << 8) | b | a
-    if ftype in (28, 29):
-        r = (r + b + g + r) & 0xFF
-        g = (g + r) & 0xFF
-        b = (b + g + r) & 0xFF
-        return (r << 16) | (g << 8) | b | a
-    # 30, 31
-    r = (r + b * 2) & 0xFF
-    g = (g + b * 2) & 0xFF
-    b = b
+        r, g, b = (r0 + g0) & 0xFF, g0, (b0 + g0) & 0xFF
+    elif ftype in (4, 5):
+        r, g, b = (r0 + b0 + g0) & 0xFF, (g0 + b0) & 0xFF, b0
+    elif ftype in (6, 7):
+        r, g, b = r0, (g0 + r0) & 0xFF, (b0 + r0 + g0) & 0xFF
+    elif ftype in (8, 9):
+        r, g, b = (r0 + b0 + r0 + g0) & 0xFF, (g0 + b0 + r0) & 0xFF, (b0 + r0) & 0xFF
+    elif ftype in (10, 11):
+        r, g, b = r0, (g0 + b0 + r0) & 0xFF, (b0 + r0) & 0xFF
+    elif ftype in (12, 13):
+        r, g, b = r0, g0, (b0 + g0) & 0xFF
+    elif ftype in (14, 15):
+        r, g, b = r0, (g0 + b0) & 0xFF, b0
+    elif ftype in (16, 17):
+        r, g, b = (r0 + g0) & 0xFF, g0, b0
+    elif ftype in (18, 19):
+        r, g, b = (r0 + b0) & 0xFF, (g0 + r0 + b0) & 0xFF, (b0 + g0 + r0 + b0) & 0xFF
+    elif ftype in (20, 21):
+        r, g, b = r0, (g0 + r0) & 0xFF, (b0 + r0) & 0xFF
+    elif ftype in (22, 23):
+        r, g, b = (r0 + b0) & 0xFF, (g0 + b0) & 0xFF, b0
+    elif ftype in (24, 25):
+        r, g, b = (r0 + b0) & 0xFF, (g0 + r0 + b0) & 0xFF, b0
+    elif ftype in (26, 27):
+        r, g, b = (r0 + b0 + g0) & 0xFF, (g0 + r0 + b0 + g0) & 0xFF, (b0 + g0) & 0xFF
+    elif ftype in (28, 29):
+        r, g, b = (r0 + b0 + g0 + r0) & 0xFF, (g0 + r0) & 0xFF, (b0 + g0 + r0) & 0xFF
+    else:  # 30, 31
+        r, g, b = (r0 + b0 * 2) & 0xFF, (g0 + b0 * 2) & 0xFF, b0
     return (r << 16) | (g << 8) | b | a
 
 
@@ -444,8 +408,11 @@ def _decode_golomb(bit_pool, pixel_count, offset=None):
                 sign = (v & 1) - 1
                 v >>= 1
                 a += v
+                # GARbro/krkrz store the value byte-truncated per channel
+                # ((byte)val << offset): high bits must never bleed across
+                # channels (missing this corrupts images with values > 255)
                 val = (v ^ sign) + sign + 1
-                out[pixel] = val if offset is None else val << offset
+                out[pixel] = (val & 0xFF) if offset is None else ((val & 0xFF) << offset)
                 pixel += 1
                 bit_pos += b
                 bit_pos += k
@@ -589,16 +556,17 @@ def _decode_line_generic(prevline, prevline_index, curline, curline_index, width
         ftype = filtertypes[filtertypes_index + i]
         if ftype > 31:
             return
-        if ftype >= 2:
-            use_filter = _filter_value(ftype, inbuf[inbuf_index])
-        else:
-            use_filter = inbuf[inbuf_index]
+        even = ftype in (0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30)
         while w:
             u = prevline[prevline_index]
-            if ftype in (0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30):
-                p = _med(p, u, up, use_filter)
+            if ftype >= 2:
+                v = _filter_value(ftype, inbuf[inbuf_index])
             else:
-                p = _avg(p, u, up, use_filter)
+                v = inbuf[inbuf_index]
+            if even:
+                p = _med(p, u, up, v)
+            else:
+                p = _avg(p, u, up, v)
             up = u
             curline[curline_index] = p
             curline_index += 1
@@ -862,56 +830,40 @@ if _USE_NUMBA:
 
     @_njit(cache=True)
     def _nb_filter(ftype, v):
-        r = (v >> 16) & 0xFF
-        g = (v >> 8) & 0xFF
-        b = v & 0xFF
+        r0 = (v >> 16) & 0xFF
+        g0 = (v >> 8) & 0xFF
+        b0 = v & 0xFF
         a = v & 0xFF000000
         if ftype == 2 or ftype == 3:
-            r = (r + g) & 0xFF
-            b = (b + g) & 0xFF
+            r, g, b = (r0 + g0) & 0xFF, g0, (b0 + g0) & 0xFF
         elif ftype == 4 or ftype == 5:
-            r = (r + b + g) & 0xFF
-            g = (g + b) & 0xFF
+            r, g, b = (r0 + b0 + g0) & 0xFF, (g0 + b0) & 0xFF, b0
         elif ftype == 6 or ftype == 7:
-            g = (g + r) & 0xFF
-            b = (b + r + g) & 0xFF
+            r, g, b = r0, (g0 + r0) & 0xFF, (b0 + r0 + g0) & 0xFF
         elif ftype == 8 or ftype == 9:
-            r = (r + b + r + g) & 0xFF
-            g = (g + b + r) & 0xFF
-            b = (b + r) & 0xFF
+            r, g, b = (r0 + b0 + r0 + g0) & 0xFF, (g0 + b0 + r0) & 0xFF, (b0 + r0) & 0xFF
         elif ftype == 10 or ftype == 11:
-            g = (g + b + r) & 0xFF
-            b = (b + r) & 0xFF
+            r, g, b = r0, (g0 + b0 + r0) & 0xFF, (b0 + r0) & 0xFF
         elif ftype == 12 or ftype == 13:
-            b = (b + g) & 0xFF
+            r, g, b = r0, g0, (b0 + g0) & 0xFF
         elif ftype == 14 or ftype == 15:
-            g = (g + b) & 0xFF
+            r, g, b = r0, (g0 + b0) & 0xFF, b0
         elif ftype == 16 or ftype == 17:
-            r = (r + g) & 0xFF
+            r, g, b = (r0 + g0) & 0xFF, g0, b0
         elif ftype == 18 or ftype == 19:
-            r = (r + b) & 0xFF
-            g = (g + r + b) & 0xFF
-            b = (b + g + r + b) & 0xFF
+            r, g, b = (r0 + b0) & 0xFF, (g0 + r0 + b0) & 0xFF, (b0 + g0 + r0 + b0) & 0xFF
         elif ftype == 20 or ftype == 21:
-            g = (g + r) & 0xFF
-            b = (b + r) & 0xFF
+            r, g, b = r0, (g0 + r0) & 0xFF, (b0 + r0) & 0xFF
         elif ftype == 22 or ftype == 23:
-            r = (r + b) & 0xFF
-            g = (g + b) & 0xFF
+            r, g, b = (r0 + b0) & 0xFF, (g0 + b0) & 0xFF, b0
         elif ftype == 24 or ftype == 25:
-            r = (r + b) & 0xFF
-            g = (g + r + b) & 0xFF
+            r, g, b = (r0 + b0) & 0xFF, (g0 + r0 + b0) & 0xFF, b0
         elif ftype == 26 or ftype == 27:
-            r = (r + b + g) & 0xFF
-            g = (g + r + b + g) & 0xFF
-            b = (b + g) & 0xFF
+            r, g, b = (r0 + b0 + g0) & 0xFF, (g0 + r0 + b0 + g0) & 0xFF, (b0 + g0) & 0xFF
         elif ftype == 28 or ftype == 29:
-            r = (r + b + g + r) & 0xFF
-            g = (g + r) & 0xFF
-            b = (b + g + r) & 0xFF
-        elif ftype == 30 or ftype == 31:
-            r = (r + b + b) & 0xFF
-            g = (g + b + b) & 0xFF
+            r, g, b = (r0 + b0 + g0 + r0) & 0xFF, (g0 + r0) & 0xFF, (b0 + g0 + r0) & 0xFF
+        else:
+            r, g, b = (r0 + b0 + b0) & 0xFF, (g0 + b0 + b0) & 0xFF, b0
         return (r << 16) | (g << 8) | b | a
 
     @_njit(cache=True)
@@ -947,6 +899,7 @@ if _USE_NUMBA:
                 c = inbuf[i]
                 i += 1
                 outbuf[o] = c
+                o += 1
                 text[r] = c
                 r += 1
                 r &= 4095
@@ -977,13 +930,17 @@ if _USE_NUMBA:
             ftype = filtertypes[filtertypes_index + i]
             if ftype > 31:
                 return
-            use_filter = _nb_filter(ftype, inbuf[inbuf_index]) if ftype >= 2 else inbuf[inbuf_index]
+            even = ftype in (0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30)
             while w:
                 u = prevline[prevline_index]
-                if ftype in (0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30):
-                    p = _nb_med(p, u, up, use_filter)
+                if ftype >= 2:
+                    v = _nb_filter(ftype, inbuf[inbuf_index])
                 else:
-                    p = _nb_avg(p, u, up, use_filter)
+                    v = inbuf[inbuf_index]
+                if even:
+                    p = _nb_med(p, u, up, v)
+                else:
+                    p = _nb_avg(p, u, up, v)
                 up = u
                 curline[curline_index] = p
                 curline_index += 1

@@ -58,6 +58,16 @@ class TestFullPipeline:
         with open(archive, "rb") as f:
             assert b"FAKE-7Z-ARCHIVE" in f.read()
 
+    def test_compress_raises_when_7z_missing(self, tmp_path, monkeypatch):
+        from rpgmaker import config
+        root = str(tmp_path / "src")
+        web = make_game(root)
+        out = str(tmp_path / "out")
+        build.build_joiplay(web, out, workers=2)
+        monkeypatch.setattr(config, "find_7z", lambda: None)
+        with pytest.raises(FileNotFoundError):
+            compress.compress(out, str(tmp_path / "g.7z"))
+
 
 class TestDeliver:
     def test_deliver_roundtrip(self, tmp_path, fake_tools):
@@ -88,6 +98,12 @@ class TestDeliver:
         from rpgmaker import deliver
         deliver.deliver(out, games=games, archives=archives)
         assert not os.path.exists(os.path.join(games, "build", "stale.txt"))
+
+    def test_extract_wsl_side_raises_when_7z_missing(self, monkeypatch):
+        from rpgmaker import config, deliver
+        monkeypatch.setattr(config, "find_7z", lambda: None)
+        with pytest.raises(FileNotFoundError):
+            deliver._extract_wsl_side("a.7z", "dest", "name")
 
 
 class TestCli:

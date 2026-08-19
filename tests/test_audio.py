@@ -3,6 +3,8 @@
 """Unit tests for rpgmaker/audio.py probing and re-encoding policy."""
 import os
 
+import pytest
+
 from conftest import make_game
 
 from rpgmaker import audio, config
@@ -79,3 +81,20 @@ class TestReencode:
         audio.write_probe_csv(infos, out)
         with open(out, encoding="utf-8-sig") as f:
             assert "file" in f.read()
+
+
+class TestToolMissing:
+    """Missing tool binaries raise FileNotFoundError with an install hint."""
+
+    def test_probe_all_raises_when_ffprobe_missing(self, game_dir, monkeypatch):
+        _root, web = game_dir
+        monkeypatch.setattr(config, "find_ffprobe", lambda: None)
+        with pytest.raises(FileNotFoundError):
+            audio.probe_all(web, workers=1)
+
+    def test_reencode_all_raises_when_ffmpeg_missing(self, game_dir,
+                                                     monkeypatch):
+        _root, web = game_dir
+        monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
+        with pytest.raises(FileNotFoundError):
+            audio.reencode_all(web, {}, workers=1)

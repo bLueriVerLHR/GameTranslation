@@ -87,7 +87,7 @@ def is_windows_side(path):
 
     Windows-side files (/mnt/*) must be processed by the Windows-side tools
     only - WSL-native tools (7zz, python) touching them is forbidden
-    (AGENTS.md, "跨系统文件处理" CRITICAL rule).
+    (AGENTS.md, "cross-system file handling" CRITICAL rule).
     """
     if not is_wsl():
         return False
@@ -309,7 +309,9 @@ def venv_python():
 
 def _find_tool(env_var, cfg_name, win_default="", names=()):
     """Resolve a tool binary: env var -> env_config.json (current platform
-    section) -> default -> PATH."""
+    section) -> default -> PATH.  Returns None when no binary is found, so
+    callers can distinguish "found" from "not found" (a missing tool is a
+    caller error, not a silently-usable tool-name string)."""
     p = os.environ.get(env_var)
     if p and os.path.isfile(p):
         return p
@@ -325,7 +327,7 @@ def _find_tool(env_var, cfg_name, win_default="", names=()):
         q = shutil.which(name)
         if q:
             return q
-    return cfg or (names[0] if names else (win_default or cfg_name))
+    return None
 
 
 def find_ffmpeg():

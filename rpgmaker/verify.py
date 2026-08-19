@@ -174,6 +174,9 @@ def verify_decode(web_root, workers=None, sample=None):
     """
     workers = runtime.resolve_workers("decode", workers, path=web_root)
     ffmpeg = config.find_ffmpeg()
+    if not ffmpeg:
+        raise FileNotFoundError(
+            "ffmpeg not found - install ffmpeg or set the FFMPEG env var")
     errors = []
     files = list(audio_mod.iter_audio_files(web_root))
     if sample:

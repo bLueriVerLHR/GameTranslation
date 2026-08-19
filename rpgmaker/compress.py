@@ -32,6 +32,9 @@ def compress(folder, archive, level=15, threads=None):
         os.remove(archive)
         log.info("removed stale archive %s", archive)
     sevenz = config.find_7z()
+    if not sevenz:
+        raise FileNotFoundError(
+            "7-Zip not found - install 7-Zip-Zstandard or set the SEVENZ env var")
     cmd = [sevenz, "a", "-t7z", "-m0=zstd", "-mx=%d" % level]
     if threads is None:
         threads = runtime.auto_workers("compress", path=folder)
@@ -53,6 +56,9 @@ def compress(folder, archive, level=15, threads=None):
 def test_archive(archive):
     """Verify archive integrity with `7z t`. Returns True on success."""
     sevenz = config.find_7z()
+    if not sevenz:
+        raise FileNotFoundError(
+            "7-Zip not found - install 7-Zip-Zstandard or set the SEVENZ env var")
     r = subprocess.run([sevenz, "t", archive], capture_output=True, text=True)
     ok = r.returncode == 0 and "Everything is Ok" in r.stdout
     log.info("archive test: %s", "OK" if ok else "FAILED")

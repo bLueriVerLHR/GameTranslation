@@ -4,9 +4,11 @@
 import json
 import os
 
+import pytest
+
 from conftest import make_game
 
-from rpgmaker import verify
+from rpgmaker import config, verify
 
 
 class TestPngSignatures:
@@ -143,3 +145,9 @@ class TestVerifyAll:
     def test_decode_mode_with_fake_tools(self, game_dir, fake_tools):
         _root, web = game_dir
         assert verify.verify_all(web, decode=True, workers=1) == []
+
+    def test_decode_raises_when_ffmpeg_missing(self, game_dir, monkeypatch):
+        _root, web = game_dir
+        monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
+        with pytest.raises(FileNotFoundError):
+            verify.verify_all(web, decode=True, workers=1)

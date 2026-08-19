@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Unit tests for tyrano/tyrano_extract.py TyranoScript .ks parsing."""
-import os
-
 from tyrano import tyrano_extract as te
 
 SAMPLE_BLOCK = """[tb_start_text mode=2 ]
@@ -148,13 +146,11 @@ class TestEncoding:
         raw = "本文です。\n".encode("utf-16")
         assert te.detect_encoding(raw) == "utf-16"
 
-    def test_load_ks_strips_bom(self):
-        p = os.path.join("/tmp", "t_bom.ks")
+    def test_load_ks_strips_bom(self, tmp_path):
+        # use tmp_path so the test runs even when /tmp is read-only
+        p = str(tmp_path / "t_bom.ks")
         with open(p, "wb") as f:
             f.write(b"\xef\xbb\xbf" + "本文です。".encode("utf-8"))
-        try:
-            text, enc = te.load_ks(p)
-            assert enc == "utf-8"
-            assert text == "本文です。" and not text.startswith("\ufeff")
-        finally:
-            os.remove(p)
+        text, enc = te.load_ks(p)
+        assert enc == "utf-8"
+        assert text == "本文です。" and not text.startswith("\ufeff")

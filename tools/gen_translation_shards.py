@@ -72,6 +72,8 @@ GLOBAL_KINDS = {"db-name", "db-description", "db-message1", "db-message2",
 
 CARRY_OVER = 8
 
+DEFAULT_CONTEXT_BUDGET_KB = 90  # max context.md size per chunk (KB)
+
 NEUTRAL_TONE = """## Tone (from the game owner)
 - Faithful to the original (忠于原文): translate the meaning faithfully, do not invent or censor.
 - Translate into natural, fluent Simplified Chinese the way a native speaker would write it.
@@ -215,9 +217,10 @@ def main():
     ap.add_argument("--global-per-chunk", type=int, default=600,
                     help="cap GLOBAL/DB/UI chunks by key count (default 600; "
                          "short keys, transcript lines dominate the context)")
-    ap.add_argument("--context-budget-kb", type=int, default=90,
+    ap.add_argument("--context-budget-kb", type=int,
+                    default=DEFAULT_CONTEXT_BUDGET_KB,
                     help="auto: keep every chunk's context.md under this many "
-                         "KB (default 90; 90KB+ chunks are flaky)")
+                         "KB (default %(default)s; 90KB+ chunks are flaky)")
     args = ap.parse_args()
 
     work = os.path.abspath(args.work_dir)

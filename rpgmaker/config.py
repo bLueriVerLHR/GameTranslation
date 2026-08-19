@@ -29,6 +29,11 @@ RPGMV_HEADER = bytes.fromhex("5250474d560000000003010000000000")
 MONO_BITRATE_THRESHOLD = 64000
 STEREO_BITRATE_THRESHOLD = 112000
 
+# Android WebView/PixiJS cap WebGL textures at 4096 px per side; PNGs beyond
+# this (usually tall standing art) render as black blocks on phones.  Used by
+# tools/downscale_images.py as the default per-side limit.
+PNG_MAX_DIMENSION = 4096
+
 # Web folders that JoiPlay actually needs (MZ root deploy).
 WEB_DIRS = [
     "audio", "css", "data", "data_encrypted", "dataEx", "effects", "fonts",

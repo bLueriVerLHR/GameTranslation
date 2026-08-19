@@ -18,6 +18,8 @@ BENIGN_DECODE = re_ignore = (
     "Application provided invalid, non monotonically increasing dts to muxer"
 )
 
+FFMPEG_DECODE_TIMEOUT = 600  # per-file decode-check timeout (seconds)
+
 
 def _iter_png_files(web_root):
     img_dir = os.path.join(web_root, "img")
@@ -182,7 +184,7 @@ def verify_decode(web_root, workers=None, sample=None):
     def work(p):
         r = subprocess.run([ffmpeg, "-v", "error", "-i", p, "-map", "0:a:0",
                             "-f", "null", "-"],
-                           capture_output=True, text=True, timeout=600)
+                           capture_output=True, text=True, timeout=FFMPEG_DECODE_TIMEOUT)
         if r.returncode != 0:
             return p, r.stderr.strip()[:200]
         bad = [ln for ln in r.stderr.splitlines()

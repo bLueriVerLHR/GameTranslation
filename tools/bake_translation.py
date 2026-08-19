@@ -65,6 +65,10 @@ QUOTED = re.compile(r"['\"`][^'\"`]*[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e][^'
 # Coverage stats, filled by exact() during a translate_data pass.
 STATS = {"hit": 0, "miss": 0}
 
+# Bake coverage gate: refuse to bake when the dict translates less than this
+# fraction of the game's kana-bearing display strings (see --min-coverage).
+DEFAULT_MIN_COVERAGE = 0.5
+
 DISPLAY_KEYS = {"name", "nickname", "profile", "description",
                 "message1", "message2", "message3", "message4", "text"}
 EVENT_TEXT_IDX = {101: [4], 402: [0, 1], 320: [1], 324: [1], 325: [1]}
@@ -486,8 +490,8 @@ def main():
     ap.add_argument("out_dir")
     ap.add_argument("--trs", required=True, help="filled template JSON")
     ap.add_argument("--glossary", default="", help="name overrides JSON")
-    ap.add_argument("--min-coverage", type=float, default=0.5,
-                    help="refuse to bake below this coverage (default 0.5)")
+    ap.add_argument("--min-coverage", type=float, default=DEFAULT_MIN_COVERAGE,
+                    help="refuse to bake below this coverage (default %(default)s)")
     ap.add_argument("--force", action="store_true",
                     help="bake anyway when coverage is below --min-coverage")
     ap.add_argument("--no-kv", action="store_true",

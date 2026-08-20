@@ -31,6 +31,7 @@ Typical usage:
   python3 tyrano/pipeline.py deliver  out_dir
 """
 import argparse
+import http.client
 import logging
 import os
 import sys
@@ -110,7 +111,9 @@ def _smoke_test(folder, port, host="127.0.0.1"):
             try:
                 with urllib.request.urlopen(url, timeout=10) as r:
                     results[path] = r.status
-            except Exception as e:
+            except (OSError, http.client.HTTPException, ValueError) as e:
+                # OSError: URLError/HTTPError/socket (incl. timeouts & 404s);
+                # HTTPException: malformed HTTP responses; ValueError: bad URL.
                 results[path] = str(e)
     finally:
         rpg_serve.stop_server(srv)

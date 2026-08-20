@@ -26,7 +26,8 @@ def _read_text(path):
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as f:
             return f.read()
-    except Exception:
+    except OSError:
+        # errors="replace" suppresses decode errors; only I/O can fail here.
         return ""
 
 
@@ -147,7 +148,7 @@ def _referenced_tilesets(web_root):
     try:
         with open(tilesets_path, encoding="utf-8-sig") as f:
             data = json.load(f)
-    except Exception:
+    except (OSError, ValueError):
         log.warning("data/Tilesets.json not plain JSON (custom runtime-decryption); "
                     "tileset cleanup skipped")
         return set()

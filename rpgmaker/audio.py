@@ -36,7 +36,9 @@ def probe_one(ffprobe, path, timeout=FFPROBE_TIMEOUT):
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         j = json.loads(r.stdout)
-    except Exception as e:
+    except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+        # OSError: probe spawn/read; TimeoutExpired: slow file; ValueError:
+        # JSONDecodeError on empty/non-JSON output or UnicodeDecodeError.
         return {"error": str(e)}
     fmt = j.get("format", {})
     st = next((s for s in j.get("streams", [])
@@ -99,7 +101,10 @@ def transcode_one(ffmpeg, path, info):
             return path, "reencoded", fsize - newsize
         os.remove(tmp)
         return path, "no-gain", 0
-    except Exception as e:
+    except (KeyError, TypeError, ValueError, OSError, subprocess.TimeoutExpired) as e:
+        # Per-file transcode guard: malformed probe info (KeyError/TypeError/
+        # ValueError), file I/O (OSError), ffmpeg timeout (TimeoutExpired).
+        # A failure is recorded as the status so the batch keeps going.
         return path, "exc: %s" % e, 0
 
 

@@ -39,7 +39,9 @@ def load_encryption_key(web_root):
         key = sys_json.get("encryptionKey") or ""
         b = bytes.fromhex(key)
         return b if len(b) == 16 else None
-    except Exception:
+    except (OSError, ValueError):
+        # OSError: file I/O; ValueError: JSONDecodeError/UnicodeDecodeError on
+        # custom-encrypted System.json, and bad hex from bytes.fromhex().
         return None
 
 
@@ -208,7 +210,7 @@ def clear_encryption_flags(web_root):
     try:
         with open(path, encoding="utf-8-sig") as f:
             sys_json = json.load(f)
-    except Exception:
+    except (OSError, ValueError):
         log.warning("data/System.json is not plain JSON (custom runtime-decryption, e.g. "
                     "Aqua/AES plugins); leaving it untouched")
         return

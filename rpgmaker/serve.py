@@ -7,6 +7,7 @@ Exposed as plain functions + a CLI subcommand so you can test the build
 before (or instead of) compressing it.
 """
 import functools
+import http.client
 import http.server
 import logging
 import mimetypes
@@ -106,7 +107,9 @@ def smoke_test(folder, port=8100, host="127.0.0.1"):
             try:
                 with urllib.request.urlopen(url, timeout=10) as r:
                     results[path] = r.status
-            except Exception as e:
+            except (OSError, http.client.HTTPException, ValueError) as e:
+                # OSError: URLError/HTTPError/socket (incl. timeouts & 404s);
+                # HTTPException: malformed HTTP responses; ValueError: bad URL.
                 results[path] = str(e)
     finally:
         stop_server(srv)

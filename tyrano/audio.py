@@ -56,7 +56,9 @@ def convert_one(ffmpeg, path, keep=False):
     try:
         r = subprocess.run(cmd, capture_output=True, text=True,
                            timeout=rpg_audio.FFMPEG_TIMEOUT)
-    except Exception as exc:
+    except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+        # OSError: spawn failure; TimeoutExpired: slow file; ValueError:
+        # UnicodeDecodeError on non-UTF-8 ffmpeg output (text=True).
         log.error("%s: ffmpeg failed: %s", path, exc)
         return None
     if r.returncode != 0 or not os.path.isfile(ogg):

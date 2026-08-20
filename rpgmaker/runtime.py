@@ -73,7 +73,9 @@ def memory_available_bytes():
             m.dwLength = ctypes.sizeof(_MS)
             if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):
                 return int(m.ullAvailPhys)
-        except Exception:
+        except (OSError, AttributeError):
+            # Best-effort probe: OSError = DLL/function load failure, AttributeError
+            # = missing windll attribute; both mean "cannot detect, use defaults".
             pass
     return None
 

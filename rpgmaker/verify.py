@@ -63,9 +63,11 @@ def verify_data_json(web_root):
         try:
             with open(os.path.join(data_dir, fn), encoding="utf-8-sig") as f:
                 json.load(f)
-        except Exception as e:
+        except (OSError, ValueError) as e:
             # Non-JSON data files are expected when a plugin (e.g. Aqua.js +
             # CryptoJS AES) decrypts data at runtime - the file is encrypted.
+            # OSError covers file I/O, ValueError covers JSONDecodeError and
+            # UnicodeDecodeError (binary/encrypted bytes).
             with open(os.path.join(data_dir, fn), "rb") as f:
                 head = f.read(1)
             if head in (b"{", b"["):
@@ -89,7 +91,7 @@ def verify_system_flags(web_root):
     try:
         with open(path, encoding="utf-8-sig") as f:
             s = json.load(f)
-    except Exception:
+    except (OSError, ValueError):
         log.warning("System.json not plain JSON (custom runtime-decryption); flags check skipped")
         return []
     issues = []
@@ -135,7 +137,7 @@ def verify_audio_refs(web_root, source_dir=None):
     try:
         with open(path, encoding="utf-8-sig") as f:
             s = json.load(f)
-    except Exception:
+    except (OSError, ValueError):
         log.warning("System.json not plain JSON (custom runtime-decryption); audio refs check skipped")
         return missing
 

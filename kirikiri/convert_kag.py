@@ -1115,7 +1115,9 @@ def _layer_map(unpacked):
     raw = open(p, "rb").read()
     try:
         txt = raw.decode(detect_encoding(raw), errors="replace")
-    except Exception:
+    except (UnicodeDecodeError, LookupError):
+        # errors="replace" already suppresses decode errors; this guards the
+        # theoretical unknown-codec / truncated-input cases only.
         return lm
     for m in re.finditer(r'sf\.(lay_[a-z0-9_]+)\s*=\s*(\d+)', txt):
         lm[m.group(1)] = m.group(2)
@@ -1498,7 +1500,7 @@ def convert_scenario_file(src_path, unpacked, out_path, macros, stats):
     enc = detect_encoding(raw)
     try:
         text = raw.decode(enc, errors="replace")
-    except Exception:
+    except (UnicodeDecodeError, LookupError):
         text = raw.decode("utf-8", errors="replace")
     out_lines = []
     dropped = 0
@@ -1674,6 +1676,9 @@ def _convert_region_image(src, dst, stats):
             im.convert("RGB").save(dst, "PNG")
         stats["region"] += 1
     except Exception as e:
+        # Per-image best-effort fallback: PIL open/convert/save on arbitrary
+        # game assets can raise OSError/ValueError/KeyError/DecompressionBomb-
+        # Error etc. - not enumerable, so a failure just counts and continues.
         log.warning("region convert failed %s: %s", os.path.relpath(src), e)
         stats["region_fail"] += 1
 
@@ -1762,6 +1767,9 @@ def _convert_tlg(src, dst, stats):
         tlg.decode_to_png(data, dst)
         stats["tlg"] += 1
     except Exception as e:
+        # Per-image best-effort fallback: tlg.decode_to_png is a binary
+        # format parser; malformed TLG files can raise any parser error, so
+        # a failure just counts and continues the conversion.
         log.warning("tlg convert failed %s: %s", os.path.relpath(src), e)
         stats["tlg_fail"] += 1
 
@@ -1772,6 +1780,9 @@ def _convert_bmp(src, dst, stats):
         Image.open(src).convert("RGBA").save(dst, "PNG")
         stats["bmp"] += 1
     except Exception as e:
+        # Per-image best-effort fallback: PIL open/convert/save on arbitrary
+        # game assets can raise OSError/ValueError/KeyError/DecompressionBomb-
+        # Error etc. - not enumerable, so a failure just counts and continues.
         log.warning("bmp convert failed %s: %s", os.path.relpath(src), e)
         stats["bmp_fail"] += 1
 

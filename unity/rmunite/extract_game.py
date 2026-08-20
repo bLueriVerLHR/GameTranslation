@@ -57,6 +57,10 @@ def main():
             try:
                 env = UnityPy.load(bf)
             except Exception:
+                # External parser boundary: UnityPy.load on a malformed/
+                # unsupported bundle can raise any of its internal errors
+                # (zlib, struct, IndexError, ValueError...). Skip the bundle
+                # and keep extracting the rest.
                 continue
             smap = {}
             for obj in env.objects:
@@ -68,6 +72,8 @@ def main():
                         if cname:
                             smap[obj.path_id] = f"{ns}.{cname}" if ns else cname
                     except Exception:
+                        # read_typetree is UnityPy's parser: failures on odd
+                        # MonoScripts are not enumerable; skip just this one.
                         pass
             for obj in env.objects:
                 if obj.type.name != "MonoBehaviour":
@@ -75,6 +81,8 @@ def main():
                 try:
                     tt = obj.read_typetree()
                 except Exception:
+                    # read_typetree is UnityPy's parser: failures on odd
+                    # MonoBehaviours are not enumerable; skip just this one.
                     continue
                 script = tt.get("m_Script") or {}
                 classname = smap.get(script.get("m_PathID"), "?")

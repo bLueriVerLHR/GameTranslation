@@ -378,6 +378,10 @@ def translate_plugins(root, D, write=True):
             log.info("plugins.js parsed, no plugin strings translated")
         return n
     except Exception as e:  # noqa: BLE001
+        # Intentional catch-all: parse_plugins_js() is a heuristic JS parser
+        # and may raise any of ValueError/IndexError/TypeError/KeyError on
+        # malformed plugin params. Any failure degrades to a textual
+        # (regex) replacement fallback instead of aborting the bake.
         log.warning("plugins.js parse failed (%s) - textual fallback", e)
         n = 0
 

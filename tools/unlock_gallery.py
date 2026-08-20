@@ -82,7 +82,9 @@ def game_title(web_root):
     try:
         s = load_json(os.path.join(web_root, "data", "System.json"))
         return s.get("gameTitle") or os.path.basename(web_root)
-    except Exception:
+    except (OSError, ValueError):
+        # OSError: file I/O; ValueError: JSONDecodeError/UnicodeDecodeError on
+        # custom-encrypted System.json -> degrade to the folder name.
         return os.path.basename(web_root)
 
 
@@ -90,7 +92,7 @@ def switch_names(web_root):
     try:
         s = load_json(os.path.join(web_root, "data", "System.json"))
         return {i: n for i, n in enumerate(s.get("switches") or [])}
-    except Exception:
+    except (OSError, ValueError):
         return {}
 
 
@@ -101,7 +103,7 @@ def find_gallery_maps(web_root):
         return []
     try:
         infos = load_json(path)
-    except Exception:
+    except (OSError, ValueError):
         return []
     cands = []
     for m in infos:
@@ -124,7 +126,7 @@ def scan_page_switches(web_root, map_id):
         return {}, set()
     try:
         d = load_json(path)
-    except Exception:
+    except (OSError, ValueError):
         return {}, set()
     usage = {}
     events = set()

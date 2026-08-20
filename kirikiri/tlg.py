@@ -701,6 +701,9 @@ def decode(data, load_base=None):
         try:
             rgba = bytes(_decode_tlg6_fast(data, width, height, colors, data_offset))
         except Exception:
+            # Broad catch on purpose: the numba JIT fast path is an optional
+            # accelerator. Any JIT/numa error on edge data must fall back to
+            # the proven pure-Python decoder (same algorithm).
             rgba = _decode_tlg6(data, width, height, colors, data_offset)
     elif version == 6:
         rgba = _decode_tlg6(data, width, height, colors, data_offset)
@@ -748,6 +751,9 @@ try:
 
     _USE_NUMBA = True
 except Exception:
+    # Optional-dependency guard: if numpy/numba are missing or fail to
+    # initialise for any reason, the pure-Python decoder is used instead.
+    # Import-time failures are not enumerable, so the guard stays broad.
     _USE_NUMBA = False
 
 

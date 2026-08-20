@@ -285,6 +285,9 @@ def extract_plugin_text(game_dir, collector):
         plugins = plugins_io.parse_plugins_js(
             open(path, encoding="utf-8-sig").read())
     except Exception as e:  # noqa: BLE001 - keep the build going
+        # Intentional catch-all: parse_plugins_js() is a heuristic JS parser;
+        # on any failure (ValueError/IndexError/TypeError/KeyError from
+        # malformed plugin params) we skip plugin text rather than abort.
         log("WARN: plugins.js parse failed (%s) - plugin text skipped" % e)
         return 0
     n = 0

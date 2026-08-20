@@ -90,7 +90,8 @@ def story_order(scenario_dir, entry):
         path = os.path.join(scenario_dir, name)
         try:
             text, _enc = load_ks(path)
-        except Exception as exc:
+        except (OSError, UnicodeDecodeError) as exc:
+            # OSError: unreadable file; UnicodeDecodeError: undecodable bytes.
             log.error("%s: cannot read: %s", path, exc)
             continue
         refs, has_next = scenario_storage_refs(text)

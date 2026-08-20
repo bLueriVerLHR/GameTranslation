@@ -166,7 +166,9 @@ def decrypt_dir(root):
         try:
             sys_json = json.load(open(system_path, encoding="utf-8"))
             enc_key = sys_json.get("encryptionKey") or ""
-        except Exception as e:
+        except (OSError, ValueError) as e:
+            # OSError: file I/O; ValueError: JSONDecodeError/UnicodeDecodeError
+            # on a custom-encrypted System.json -> warn and skip decryption.
             log("WARN: could not read encryptionKey: %s" % e)
 
     key_bytes = None
@@ -189,7 +191,8 @@ def decrypt_dir(root):
             try:
                 with open(path, "rb") as f:
                     head = f.read(16)
-            except Exception:
+            except OSError:
+                # Skip files that cannot be read (deleted mid-walk, no perms).
                 continue
             if len(head) < 16 or head != RPGMV_HEADER:
                 continue

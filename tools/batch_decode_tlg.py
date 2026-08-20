@@ -28,6 +28,10 @@ def decode_one(args):
         tlg.decode_to_png(data, dst)
         return (name, True, "")
     except Exception as exc:
+        # Broad catch on purpose: tlg.decode_to_png is a binary-format
+        # parser and malformed TLG files can raise any of struct.error,
+        # ValueError, zlib.error, IndexError, MemoryError etc. The worker
+        # must record the failure and let the batch continue.
         return (name, False, str(exc))
 
 

@@ -402,6 +402,7 @@ def translate_data(root, D, write=True):
     event_names = set()
     refs = []
     for path in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
+        fname = os.path.basename(path)
         with open(path, encoding="utf-8-sig") as f:
             data = json.load(f)
         if is_event_container(data):
@@ -435,7 +436,6 @@ def translate_data(root, D, write=True):
                         lists.append(pg["list"])
                 for li, lst in enumerate(lists):
                     process_commands(lst, D, eloc + "#pg%d" % li)
-        fname = os.path.basename(path)
         if fname == "System.json":
             process_system(data, D)
         else:

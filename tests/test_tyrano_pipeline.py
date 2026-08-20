@@ -17,6 +17,8 @@ sys.path.insert(0, os.path.join(REPO, "tools"))
 
 import pytest  # noqa: E402
 
+from rpgmaker import config as rpg_config  # noqa: E402
+
 from tyrano import audio as ta  # noqa: E402
 from tyrano import build as tb  # noqa: E402
 from tyrano import clean as tc  # noqa: E402
@@ -190,6 +192,12 @@ class TestAudio:
         oggs = [fn for _d, _s, fns in os.walk(root)
                 for fn in fns if fn.endswith(".ogg")]
         assert len(oggs) == 7
+
+    def test_convert_all_raises_when_ffmpeg_missing(self, tmp_path, monkeypatch):
+        root = make_asar_game(str(tmp_path))
+        monkeypatch.setattr(rpg_config, "find_ffmpeg", lambda: None)
+        with pytest.raises(FileNotFoundError):
+            ta.convert_all(root, workers=1)
 
     def test_convert_rewrites_before_conversion(self, tmp_path, fake_tools):
         """convert() must rewrite script refs BEFORE deleting mp3 files,

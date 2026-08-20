@@ -9,6 +9,7 @@ Tools are indexed [platform][tool] because the binaries differ per side.
 """
 import json
 import os
+import shutil
 import sys
 
 import pytest
@@ -287,10 +288,22 @@ class TestConfigLookups:
         monkeypatch.setenv("FFMPEG", str(p))
         assert config.find_ffmpeg() == str(p)
 
-    def test_path_fallback(self, monkeypatch):
+    def test_path_fallback(self, monkeypatch, tmp_path):
+        cfg = tmp_path / "env_config.json"
+        cfg.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
         monkeypatch.delenv("FFMPEG", raising=False)
-        q = config.find_ffmpeg()
-        assert isinstance(q, str) and q
+        monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/ffmpeg")
+        assert config.find_ffmpeg() == "/usr/bin/ffmpeg"
+
+    def test_find_tool_not_found_returns_none(self, monkeypatch, tmp_path):
+        cfg = tmp_path / "env_config.json"
+        cfg.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+        monkeypatch.delenv("FFMPEG", raising=False)
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+        assert config.find_ffmpeg() is None
+        assert config._find_tool("FFMPEG", "ffmpeg", "", ("ffmpeg",)) is None
 
     def test_expand_env_tokens(self, monkeypatch):
         monkeypatch.setenv("TESTVAR", "value")

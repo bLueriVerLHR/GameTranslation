@@ -46,7 +46,7 @@ def kana_left_in(v):
     """True when a value still carries translatable kana, after exempting
     Wolf RPG specifics: <>-tagged functional labels (status-name refs),
     BGM/asset paths, Woditor internal command lines, the kana-teaching UI
-    (single kana char followed by 汉字), and the kana middle dot ・."""
+    (single kana char followed by a CJK ideograph), and the kana middle dot ・."""
     if KANA.search(CTRL_TOK.sub("", v)) is None:
         return False
     if re.search(r"<[^>]*[\u3040-\u30ff]", v):
@@ -62,7 +62,7 @@ def kana_left_in(v):
     if re.fullmatch(r"[\u3040-\u30ff\uff71-\uff9e]{1,4}", v.strip()):
         return False
     # Kana inside parens used as ruby / name-puzzle readings
-    # (はなさない（永不放手） style): the reading itself must stay.
+    # (はなさない ("never let go") style): the reading itself must stay.
     if re.search(r"（[^）]*[\u3040-\u30ff][^）]*）", v):
         return False
     # Honorific / self-reference suffixes kept as the character's speech

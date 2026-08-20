@@ -27,7 +27,7 @@ def translate_line(text, names):
     # exact match first
     if text in base:
         return base[text]
-    # [名字] prefix replacement
+    # [Name] prefix replacement
     m = re.match(r"^(【([^】]+)】)(.*)$", text)
     if m:
         prefix, name, rest = m.group(1), m.group(2), m.group(3)

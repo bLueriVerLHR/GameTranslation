@@ -15,7 +15,7 @@ Only one big file ever crosses the boundary. The delete/extract touch the
 storage side; when that side is Windows (/mnt/*) from inside WSL, the work
 is delegated to the Windows-side tools via powershell.exe (Windows 7z.exe /
 Remove-Item) - a WSL-native tool must never process Windows-side files
-(AGENTS.md, "跨系统文件处理" CRITICAL rule).
+(AGENTS.md, "cross-system file handling" CRITICAL rule).
 """
 import logging
 import os
@@ -124,6 +124,9 @@ def _extract(archive, dest, name):
 
 def _extract_wsl_side(archive, dest, name):
     sevenz = config.find_7z()
+    if not sevenz:
+        raise FileNotFoundError(
+            "7-Zip not found - install 7-Zip-Zstandard or set the SEVENZ env var")
     if config.is_windows_side(sevenz):
         _refuse_cross_side(
             "extract", archive,

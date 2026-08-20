@@ -116,6 +116,10 @@ def probe_all(web_root, workers=None, sample=None):
     """
     workers = runtime.resolve_workers("probe", workers, path=web_root)
     ffprobe = config.find_ffprobe()
+    if not ffprobe:
+        raise FileNotFoundError(
+            "ffprobe not found - install ffmpeg (includes ffprobe) or set "
+            "the FFPROBE/FFMPEG env var")
     files = list(iter_audio_files(web_root))
     if sample:
         files = files[:sample]
@@ -148,6 +152,9 @@ def reencode_all(web_root, infos, workers=None):
     """
     workers = runtime.resolve_workers("encode", workers, path=web_root)
     ffmpeg = config.find_ffmpeg()
+    if not ffmpeg:
+        raise FileNotFoundError(
+            "ffmpeg not found - install ffmpeg or set the FFMPEG env var")
     counts = {}
     saved = 0
     done = 0

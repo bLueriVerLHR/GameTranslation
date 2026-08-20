@@ -77,6 +77,9 @@ def convert_all(web_root, workers=None, keep=False, sample=None):
         files = files[:sample]
     workers = rpg_runtime.resolve_workers("encode", workers, path=web_root)
     ffmpeg = rpg_config.find_ffmpeg()
+    if not ffmpeg:
+        raise FileNotFoundError(
+            "ffmpeg not found - install ffmpeg or set the FFMPEG env var")
     done = ok = failed = 0
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {ex.submit(convert_one, ffmpeg, p, keep): p for p in files}

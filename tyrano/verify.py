@@ -14,8 +14,12 @@ import logging
 import os
 import re
 import struct
+import sys
 
-from .tyrano_extract import load_ks
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from rpgmaker import config as rpg_config  # noqa: E402
+from .tyrano_extract import load_ks  # noqa: E402
 
 log = logging.getLogger("tyrano.verify")
 
@@ -108,7 +112,9 @@ def _png_size(path):
 
 
 def check_png_limits(web_root):
-    """Android WebView textures cap at 4096 px per side; report over-limit."""
+    """Android WebView textures cap at PNG_MAX_DIMENSION px per side; report
+    over-limit."""
+    limit = rpg_config.PNG_MAX_DIMENSION
     over = []
     count = 0
     for dp, _dn, fns in os.walk(web_root):
@@ -121,10 +127,10 @@ def check_png_limits(web_root):
                 continue
             count += 1
             w, h = size
-            if w > 4096 or h > 4096:
+            if w > limit or h > limit:
                 over.append("%s (%dx%d)" % (_rel(path, web_root), w, h))
     log.info("png: %d checked", count)
-    return ["png over 4096: %s" % o for o in over[:10]]
+    return ["png over %d: %s" % (limit, o) for o in over[:10]]
 
 
 def verify(web_root, source=None, check_png=True):

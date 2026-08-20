@@ -38,12 +38,14 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bake_translation  # noqa: E402
 import japanese_utils  # noqa: E402
 
 # ADV text-resource detection uses the coarser hiragana+katakana block range
 # (U+3040-30FF, no half-width) - keep it distinct from the canonical KANA so
 # the extraction/bake detection behavior is unchanged.
 KANA = japanese_utils.KANA_BLOCKS
+DEFAULT_MIN_COVERAGE = bake_translation.DEFAULT_MIN_COVERAGE
 DEFAULT_DIRS = ["ja-JP"]
 DEFAULT_TWEETS = ["hiroka_tweet_list.json"]
 
@@ -265,7 +267,7 @@ def main():
     ap.add_argument("--window", type=int, default=2)
     ap.add_argument("--bake", action="store_true")
     ap.add_argument("--trs", default="translated.json")
-    ap.add_argument("--min-coverage", type=float, default=0.5)
+    ap.add_argument("--min-coverage", type=float, default=DEFAULT_MIN_COVERAGE)
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--lang-dirs", default=",".join(DEFAULT_DIRS))
     ap.add_argument("--tweet-files", default=",".join(DEFAULT_TWEETS))

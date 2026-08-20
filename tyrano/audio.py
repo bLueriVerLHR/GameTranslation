@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from rpgmaker import audio as rpg_audio  # noqa: E402
 from rpgmaker import config as rpg_config  # noqa: E402
 from rpgmaker import runtime as rpg_runtime  # noqa: E402
 from .tyrano_extract import load_ks  # noqa: E402
@@ -53,7 +54,8 @@ def convert_one(ffmpeg, path, keep=False):
     cmd = [ffmpeg, "-y", "-v", "error", "-i", path, "-map", "0:a:0",
            "-c:a", "libvorbis", "-q:a", "3", ogg]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           timeout=rpg_audio.FFMPEG_TIMEOUT)
     except Exception as exc:
         log.error("%s: ffmpeg failed: %s", path, exc)
         return None

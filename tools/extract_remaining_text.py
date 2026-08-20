@@ -14,7 +14,7 @@ Also extracts:
   log-window lines, shop names...; the Japanese command NAME is functional
   and never extracted),
 - 122 script operands (string literals stored in variables and shown via
-  \V[n] control codes),
+  \\V[n] control codes),
 - 355/655 script lines whose quoted string literal contains kana
   (BattleManager._logWindow.addText('...') style display lines),
 

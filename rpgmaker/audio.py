@@ -24,8 +24,11 @@ log = logging.getLogger("rpgmaker.audio")
 DEFAULT_PROBE_WORKERS = 8   # legacy fallbacks; None = auto-tuned (runtime.py)
 DEFAULT_ENCODE_WORKERS = 4
 
+FFMPEG_TIMEOUT = 900   # per-file transcode timeout (seconds)
+FFPROBE_TIMEOUT = 120  # per-file probe timeout (seconds)
 
-def probe_one(ffprobe, path, timeout=120):
+
+def probe_one(ffprobe, path, timeout=FFPROBE_TIMEOUT):
     cmd = [ffprobe, "-v", "error", "-print_format", "json",
            "-show_entries",
            "format=duration,size,bit_rate,tags:stream=codec_name,codec_type,channels,sample_rate",
@@ -86,7 +89,7 @@ def transcode_one(ffmpeg, path, info):
         fd, tmp = tempfile.mkstemp(suffix=".ogg", dir=os.path.dirname(path))
         os.close(fd)
         cmd = [ffmpeg, "-y", "-v", "error", "-i", path, "-map", "0:a:0"] + args + [tmp]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=FFMPEG_TIMEOUT)
         if r.returncode != 0:
             os.remove(tmp)
             return path, "error", 0

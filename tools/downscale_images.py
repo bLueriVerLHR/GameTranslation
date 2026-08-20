@@ -9,8 +9,10 @@ The single-build policy: every build downscales any PNG whose width or height
 exceeds the limit (aspect ratio + alpha preserved) so the same folder runs on
 both PC and Android. No separate LowRes sibling build is produced anymore.
 
+The default per-side limit is PNG_MAX_DIMENSION (rpgmaker/config.py).
+
 Usage:
-  python downscale_images.py <web_root> [--limit 4096] [--dry-run] [--workers N]
+  python downscale_images.py <web_root> [--limit N] [--dry-run] [--workers N]
 """
 import argparse
 import glob
@@ -23,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import config  # noqa: E402
 from rpgmaker import runtime  # noqa: E402
 
 log = logging.getLogger("downscale_images")
@@ -85,8 +88,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("web_root", help="game web root (contains img/)")
-    ap.add_argument("--limit", type=int, default=4096,
-                    help="max pixels per side (default 4096)")
+    ap.add_argument("--limit", type=int, default=config.PNG_MAX_DIMENSION,
+                    help="max pixels per side (default %(default)s)")
     ap.add_argument("--dry-run", action="store_true", help="report only, write nothing")
     ap.add_argument("--workers", type=int, default=None,
                     help="parallel workers (default: auto-tuned to the machine)")

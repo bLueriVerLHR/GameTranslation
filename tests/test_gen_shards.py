@@ -8,6 +8,7 @@ estimate for global chunks mirrors the writer's key-count split.
 """
 import importlib.util
 import os
+import random
 
 import pytest
 
@@ -156,3 +157,91 @@ class TestAutoSizingGlobalSplit:
                                            None, args)
         assert n >= 2
         assert mx <= args.context_budget_kb * 1024
+
+
+class TestRandomSampleBuckets:
+    """Random key sets must chunk with the documented constraints always
+    holding (AGENTS.md task-rule 4: random sampling instead of a fixed spot
+    check):
+      - bucket order preserves key order,
+      - every bucket's total key-char length stays <= max_chars, except a
+        single overlong key which forms its own bucket,
+      - within a bucket, consecutive keys of one map stay grouped (adjacent
+        groups have distinct labels),
+      - chunk files written through _write_split round-trip the same keys
+        (line count == key count, char constraint holds after the plain_io
+        escape/unescape round-trip).
+    Every assert is an invariant for ANY random input, so the fixed seeds
+    only make the run reproducible - never flaky."""
+
+    @staticmethod
+    def _rand_keys(n):
+        """Random keys from the module-level random stream (each caller
+        seeds it first with random.seed, keeping the run deterministic)."""
+        return ["".join(random.choice("abcあいう你好 ")
+                        for _ in range(random.randrange(1, 20)))
+                for _ in range(n)]
+
+    def test_random_split_by_len_constraints(self):
+        random.seed(20260850)
+        for _ in range(30):
+            keys = self._rand_keys(random.randrange(0, 60))
+            max_chars = random.randrange(1, 25)
+            buckets = gts._split_by_len(keys, max_chars)
+            assert [k for b in buckets for k in b] == keys
+            for b in buckets:
+                total = sum(len(k) for k in b)
+                if len(b) == 1:
+                    assert total <= max_chars or len(b[0]) > max_chars, \
+                        (max_chars, b)
+                else:
+                    assert total <= max_chars, (max_chars, b)
+
+    def test_random_build_buckets_constraints(self):
+        random.seed(20260851)
+        for _ in range(25):
+            map_keys = []
+            for m in range(random.randrange(1, 8)):
+                map_keys.append(("Map%03d" % m,
+                                 self._rand_keys(random.randrange(0, 25))))
+            max_chars = random.randrange(2, 40)
+            buckets = gts.build_buckets(map_keys, max_chars)
+            flat = [k for b in buckets for _l, ks in b for k in ks]
+            orig = [k for _l, ks in map_keys for k in ks]
+            assert flat == orig, "bucket order must preserve key order"
+            for b in buckets:
+                total = sum(len(k) for _l, ks in b for k in ks)
+                single = len(b) == 1 and len(b[0][1]) == 1
+                if single:
+                    assert total <= max_chars or len(b[0][1][0]) > max_chars, \
+                        (max_chars, b)
+                else:
+                    assert total <= max_chars, (max_chars, b)
+                labels = [_l for _l, _ks in b]
+                assert all(labels[i] != labels[i + 1]
+                           for i in range(len(labels) - 1)), labels
+
+    def test_random_written_chunks_roundtrip(self, tmp_path):
+        """Random keys written through _write_split then read back must keep
+        line count == key count and the char constraint (covers the plain_io
+        escape/unescape round-trip end to end)."""
+        random.seed(20260852)
+        for _ in range(6):
+            chunks_dir = str(tmp_path / ("c%d" % random.randrange(1000)))
+            os.makedirs(chunks_dir, exist_ok=True)
+            max_chars = random.randrange(5, 40)
+            keys = self._rand_keys(random.randrange(0, 80))
+            if random.random() < 0.5:
+                keys.append("長" * (max_chars + 5))  # overlong -> own bucket
+            if random.random() < 0.4 and keys:
+                keys.append("ctrl\\N[1] and\nnewline")  # escape round-trip
+            num = gts._write_split(chunks_dir, 0, {k: "" for k in keys},
+                                   "random", 0, max_chars, "", None, None,
+                                   {}, _Args())
+            buckets = gts._split_by_len(keys, max_chars)
+            assert num == len(buckets), "one chunk file per bucket"
+            back = []
+            for i in range(len(buckets)):
+                back += gts.plain_io.load_lines(
+                    gts.plain_io.ja_path(chunks_dir, i))
+            assert back == keys, "written keys must round-trip exactly"

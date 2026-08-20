@@ -1,5 +1,6 @@
 """Unit tests for kirikiri/tlg.py (TLG5/TLG6 decoder)."""
 
+import random
 import struct
 import sys
 from pathlib import Path
@@ -405,3 +406,151 @@ class TestNumbaPath:
         fast = bytes(tlg._decode_tlg6_fast(data, w, h, colors, off))
         pure = tlg._decode_tlg6(data, w, h, colors, off)
         assert fast == pure
+
+
+class TestRandomSampleDecode:
+    """Random-sampled TLG6 dimension/color/filter combinations must decode to
+    the correct output (AGENTS.md task-rule 4: sample randomly instead of
+    re-checking one fixed image).  The asserts are invariants that hold for
+    ANY sampled combination, so the fixed seeds never make them flaky.
+
+    Note: the filtered builder here writes each block's Golomb stream with
+    exactly its own pixel count AND the filter-type LZSS stream without
+    trailing padding.  The shared _lzss_literals helper pads to 8 bytes, which
+    silently overflows the pure decoder when the block count is not a multiple
+    of 8 (the numba path masks that overflow); the correct stream below works
+    for arbitrary block counts on both paths.
+    """
+
+    H = 8
+    W = 8
+
+    @classmethod
+    def _lzss_exact_literals(cls, data):
+        """All-literal LZSS stream: 0x00 flag per 8 literals, NO padding."""
+        out = bytearray()
+        for i in range(0, len(data), 8):
+            out += b"\x00" + data[i:i + 8]
+        return bytes(out)
+
+    @classmethod
+    def _build_filtered(cls, w, h, colors, filter_types, pixel_values):
+        xbc = (w - 1) // cls.W + 1
+        ybc = (h - 1) // cls.H + 1
+        assert len(filter_types) == xbc * ybc
+        header = (b"TLG6.0\x00raw\x1a" + bytes([colors, 0, 0, 0])
+                  + struct.pack("<II", w, h))
+        block_streams = []
+        for y in range(0, h, cls.H):
+            ylim = min(y + cls.H, h)
+            pc = (ylim - y) * w
+            pv_block = pixel_values[y * w: y * w + pc]
+            block_streams.append(_golomb_stream(pv_block))
+        max_bits = max(len(s) * 8 for s in block_streams)
+        payload = bytearray()
+        payload += struct.pack("<i", max_bits + 64)
+        ft = cls._lzss_exact_literals(bytes(filter_types))
+        payload += struct.pack("<i", len(ft)) + ft
+        for s in block_streams:
+            for _c in range(colors):
+                payload += struct.pack("<i", len(s) * 8) + s
+        return wrap_tlg0(header + bytes(payload))
+
+    def test_random_dimensions_and_colors(self):
+        rng = random.Random(20260821)
+        for _ in range(25):
+            colors = rng.choice([1, 3, 4])
+            if colors == 1:
+                # colors==1 keeps one stream per block, so the wrapped file
+                # needs a large enough area to exceed the 64-byte parse min
+                # (16x16 would stay under it -> use a verified-safe pool)
+                w, h = rng.choice([(16, 24), (24, 16), (24, 24), (32, 16),
+                                   (16, 32), (40, 40), (32, 32), (40, 24),
+                                   (24, 40), (40, 16), (16, 40)])
+            else:
+                # verified-safe for colors 3/4 (w=1/h=1 slim cases can stay
+                # under the 64-byte parse minimum -> separate edge test)
+                w = rng.choice([7, 8, 9, 15, 16, 24, 40])
+                h = rng.choice([7, 8, 9, 16, 17, 24])
+            data = build_tlg6_blocks(w, h, colors)
+            rgba = tlg.decode(data)
+            assert len(rgba) == w * h * 4, (w, h, colors)
+            if colors == 3:
+                # 3-color zero buffers -> RGB 0, alpha pinned to 0xFF
+                assert rgba[0::4] == b"\x00" * (w * h)
+                assert rgba[1::4] == b"\x00" * (w * h)
+                assert rgba[2::4] == b"\x00" * (w * h)
+                assert rgba[3::4] == b"\xff" * (w * h)
+            else:
+                assert rgba == b"\x00" * (w * h * 4)
+
+    def test_slim_edge_dimensions(self):
+        """w=1 / h=1 images (single column/row, fractional blocks) still
+        decode to the exact size; uses dims that stay above the 64-byte
+        parse minimum."""
+        for colors in (3, 4):
+            for w, h in [(1, 9), (1, 16), (1, 24), (9, 1), (16, 1), (40, 1)]:
+                data = build_tlg6_blocks(w, h, colors)
+                rgba = tlg.decode(data)
+                assert len(rgba) == w * h * 4, (w, h, colors)
+                if colors == 3:
+                    assert rgba[3::4] == b"\xff" * (w * h)
+                else:
+                    assert rgba == b"\x00" * (w * h * 4)
+
+    def test_random_filter_types_decode(self):
+        rng = random.Random(20260822)
+        for _ in range(20):
+            w = rng.choice([7, 8, 9, 15, 16, 24, 40])
+            h = rng.choice([7, 8, 9, 16, 17, 24])
+            colors = rng.choice([3, 4])
+            xbc = (w - 1) // 8 + 1
+            ybc = (h - 1) // 8 + 1
+            filter_types = [rng.randrange(32) for _ in range(xbc * ybc)]
+            pixel_values = [(i % 253) + 1 for i in range(h * w)]
+            data = self._build_filtered(w, h, colors, filter_types,
+                                        pixel_values)
+            rgba = tlg.decode(data)
+            assert len(rgba) == w * h * 4, (w, h, colors)
+            # non-zero pixels must survive the per-pixel filter path
+            assert (any(rgba[0::4]) or any(rgba[1::4])
+                    or any(rgba[2::4])), (w, h, colors)
+
+    def test_random_numba_matches_pure(self):
+        if not tlg._USE_NUMBA:
+            pytest.skip("numba not available")
+        rng = random.Random(20260823)
+        for _ in range(15):
+            w = rng.choice([7, 8, 9, 15, 16, 24, 40])
+            h = rng.choice([7, 8, 9, 16, 17, 24])
+            colors = rng.choice([3, 4])
+            xbc = (w - 1) // 8 + 1
+            ybc = (h - 1) // 8 + 1
+            filter_types = [rng.randrange(32) for _ in range(xbc * ybc)]
+            pixel_values = [(i % 253) + 1 for i in range(h * w)]
+            data = self._build_filtered(w, h, colors, filter_types,
+                                        pixel_values)
+            ver, ww, hh, cc, off = tlg.parse_header(data)
+            fast = bytes(tlg._decode_tlg6_fast(data, ww, hh, cc, off))
+            pure = tlg._decode_tlg6(data, ww, hh, cc, off)
+            assert fast == pure, (w, h, colors)
+
+    def test_random_short_truncations_raise(self):
+        """Edge: ANY file shorter than 64 bytes must raise TlgError."""
+        rng = random.Random(20260824)
+        good = build_tlg6_blocks(24, 24, 4)
+        for _ in range(10):
+            n = rng.randrange(0, 64)
+            with pytest.raises(tlg.TlgError):
+                tlg.parse_header(good[:n])
+
+    def test_random_bad_magic_raises(self):
+        """Edge: corrupting any magic byte must raise TlgError."""
+        rng = random.Random(20260825)
+        good = build_tlg6_blocks(24, 24, 4)
+        for _ in range(10):
+            data = bytearray(good)
+            pos = rng.randrange(0, 8)
+            data[pos] = (data[pos] + 1) % 256
+            with pytest.raises(tlg.TlgError):
+                tlg.parse_header(bytes(data))

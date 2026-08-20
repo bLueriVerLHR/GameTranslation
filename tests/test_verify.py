@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Unit tests for rpgmaker/verify.py build integrity checks."""
+import glob
 import json
 import os
+import random
 
 import pytest
 
@@ -151,3 +153,58 @@ class TestVerifyAll:
         monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
         with pytest.raises(FileNotFoundError):
             verify.verify_all(web, decode=True, workers=1)
+
+
+class TestRandomSamplePng:
+    """Random-sampled PNG batches must verify cleanly, and random corruption
+    must be found (AGENTS.md task-rule 4: sample randomly instead of
+    re-checking one fixed file).  All asserts are invariants for ANY sample,
+    so the fixed seeds only make the run reproducible - never flaky."""
+
+    @staticmethod
+    def _make_many_pngs(tmp_path, n):
+        import io
+        from PIL import Image
+        web = make_game(str(tmp_path / "g"))
+        for i in range(n):
+            p = os.path.join(web, "img", "pictures", "rand_%03d.png" % i)
+            buf = io.BytesIO()
+            Image.new("RGBA", (1 + i % 8, 1 + i % 6), (i % 256, 0, 0, 255)) \
+                .save(buf, "PNG")
+            with open(p, "wb") as f:
+                f.write(buf.getvalue())
+        return web
+
+    @staticmethod
+    def _all_pngs(web):
+        return sorted(glob.glob(os.path.join(web, "img", "**", "*.png"),
+                                recursive=True))
+
+    def test_png_signatures_random_sample(self, tmp_path, fake_tools):
+        """Sample a random subset of a generated batch and assert the PNG
+        magic directly on each sampled file; the batch must verify clean."""
+        web = self._make_many_pngs(tmp_path, 40)
+        all_pngs = self._all_pngs(web)
+        assert len(all_pngs) >= 40
+        random.seed(20260860)
+        for p in random.sample(all_pngs, k=12):
+            with open(p, "rb") as f:
+                assert f.read(8) == b"\x89PNG\r\n\x1a\n", p
+        assert verify.verify_pngs(web, workers=2) == []
+
+    def test_verify_finds_random_corruption(self, tmp_path, fake_tools):
+        """Corrupt a random subset; verify_pngs must find exactly those, and
+        a random sample of the findings must still be real corruption."""
+        web = self._make_many_pngs(tmp_path, 40)
+        all_pngs = self._all_pngs(web)
+        random.seed(20260861)
+        bad_pool = set(random.sample(all_pngs, k=random.randrange(5, 15)))
+        for p in bad_pool:
+            with open(p, "wb") as f:
+                f.write(b"BROKEN" + bytes(random.randrange(256)
+                                          for _ in range(20)))
+        bad = verify.verify_pngs(web, workers=1)
+        assert set(bad) == bad_pool
+        for p in random.sample(list(bad), k=min(5, len(bad))):
+            with open(p, "rb") as f:
+                assert f.read(8) != b"\x89PNG\r\n\x1a\n"

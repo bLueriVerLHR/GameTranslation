@@ -8,6 +8,7 @@ header MSB-first, payload path-bits packed LSB-first).  They build valid
 streams from scratch, so the tests run without any .wolf fixture file.
 """
 import os
+import random
 import struct
 import zlib
 
@@ -432,3 +433,89 @@ class TestUnpackArchive:
         dx.unpack_archive(str(arch), str(out), b"DXLIBARC",
                           skip_protection_cleanup=True)
         assert (out / "game.dat").read_bytes() == content
+
+
+class TestRandomRoundtrip:
+    """Random content + random key strings must round-trip through the LZ,
+    Huffman and key codecs (AGENTS.md task-rule 4: random sampling instead of
+    a fixed spot check).  Every assert is an invariant for ANY input, so the
+    fixed seeds are just for reproducibility - never flaky."""
+
+    def test_random_lz_roundtrip(self):
+        rng = random.Random(20260830)
+        for _ in range(25):
+            n = rng.randrange(0, 400)
+            data = bytes(rng.randrange(256) for _ in range(n))
+            enc = lz_encode(data)
+            assert dx.lz_decode(enc, len(data)) == data, n
+
+    def test_random_lz_repetitive_and_keycode(self):
+        rng = random.Random(20260831)
+        # highly compressible patterns exercise the backreference path
+        for _ in range(10):
+            pattern = bytes(rng.randrange(256)
+                            for _ in range(rng.randrange(1, 16)))
+            data = pattern * rng.randrange(1, 30)
+            assert dx.lz_decode(lz_encode(data), len(data)) == data
+        # keycode (0xFF) - heavy data exercises the literal-escape path
+        for _ in range(10):
+            data = bytes([0xFF]) * rng.randrange(0, 200)
+            assert dx.lz_decode(lz_encode(data), len(data)) == data
+        for _ in range(10):
+            n = rng.randrange(0, 200)
+            data = bytes([0xFF if rng.random() < 0.4 else rng.randrange(256)
+                          for _ in range(n)])
+            assert dx.lz_decode(lz_encode(data), len(data)) == data
+
+    def test_random_huffman_roundtrip(self):
+        rng = random.Random(20260832)
+        for _ in range(15):
+            data = bytes(rng.randrange(256)
+                         for _ in range(rng.randrange(0, 400)))
+            assert dx.huffman_decode(huffman_encode(data, [1] * 256)) == data
+
+    def test_random_huffman_unbalanced(self):
+        rng = random.Random(20260833)
+        for _ in range(8):
+            weights = [rng.randint(1, 500) for _ in range(256)]
+            paths = _build_tree(weights)
+            assert max(len(v) for v in paths.values()) > 0
+            data = bytes(rng.randrange(256)
+                         for _ in range(rng.randrange(0, 350)))
+            assert dx.huffman_decode(huffman_encode(data, weights)) == data
+
+    def test_random_key_conv_involution(self):
+        rng = random.Random(20260834)
+        for _ in range(25):
+            n = rng.randrange(0, 200)
+            data = bytearray(bytes(rng.randrange(256) for _ in range(n)))
+            key = bytes(rng.randrange(256) for _ in range(rng.randrange(1, 17)))
+            orig = bytes(data)
+            dx.key_conv(data, 0, key)
+            dx.key_conv(data, 0, key)
+            assert bytes(data) == orig
+
+    def test_random_archive_roundtrip(self, tmp_path):
+        rng = random.Random(20260835)
+        for trial in range(6):
+            key_str = bytes(rng.choice(b"abcdefghijklmnopqrstuvwxyz")
+                            for _ in range(rng.randrange(1, 12)))
+            files = []
+            for i in range(rng.randrange(1, 8)):
+                content = bytes(rng.randrange(256)
+                                for _ in range(rng.randrange(0, 600)))
+                files.append(("f%d.dat" % i, content))
+            arch = tmp_path / ("rand_%d.wolf" % trial)
+            arch.write_bytes(make_wolf_archive(files, key_string=key_str))
+            out = tmp_path / ("out_%d" % trial)
+            n = dx.unpack_archive(str(arch), str(out), key_str)
+            assert n == len(files)
+            for name, content in files:
+                assert (out / name).read_bytes() == content
+
+    def test_edge_empty_and_single_byte(self):
+        """Empty and single-byte payloads are the codec edge cases."""
+        assert dx.lz_decode(lz_encode(b""), 0) == b""
+        assert dx.lz_decode(lz_encode(b"\x00"), 1) == b"\x00"
+        assert dx.huffman_decode(huffman_encode(b"", [1] * 256)) == b""
+        assert dx.huffman_decode(huffman_encode(b"\xab", [1] * 256)) == b"\xab"

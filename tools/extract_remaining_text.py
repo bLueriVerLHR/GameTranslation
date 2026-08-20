@@ -31,8 +31,11 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import japanese_utils  # noqa: E402
 import plain_io  # noqa: E402
 import plugins_io  # noqa: E402
+import rpgmaker_common  # noqa: E402
+import rpgmaker_constants  # noqa: E402
 
 CTRL = re.compile(r"\\[A-Za-z]+\[[^\]]*\]|:[a-z]+(?:\[[^\]]*\])?")
 # A line that is ONLY control codes (e.g. \M[お], \V[5], \C[27]) is a lookup
@@ -41,8 +44,8 @@ CTRL = re.compile(r"\\[A-Za-z]+\[[^\]]*\]|:[a-z]+(?:\[[^\]]*\])?")
 CTRL_ONLY = re.compile(r"^(?:\\[A-Za-z]+\[[^\]]*\]|:[a-z]+(?:\[[^\]]*\])?)+[\s\u3000]*$")
 # Kana detection: EXCLUDE U+30FB (・) / U+30FC (ー) / U+30A0 - punctuation that
 # appears in already-translated Chinese lines (・ prefixed conditions) and
-# floods the template with false keys. Canonical form from docs/translation.md.
-KANA = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e]")
+# floods the template with false keys. Canonical form shared via japanese_utils.
+KANA = japanese_utils.KANA
 # A script line (355/655, or a 122 script operand) qualifies as display text
 # only when kana appears INSIDE a quoted string literal - comments and
 # identifiers (// ダメージ計算, variable names) are never display text.
@@ -59,9 +62,8 @@ WINDOW = 2
 DISPLAY_KEYS = {"name", "nickname", "profile", "description",
                 "message1", "message2", "message3", "message4", "text"}
 EVENT_TEXT_IDX = {101: [4], 402: [0], 320: [1], 324: [1], 325: [1]}
-SYSTEM_TEXT_FIELDS = ["terms", "message", "commands", "equipTypes",
-                      "weaponTypes", "armorTypes", "skillTypes", "element"]
-SYSTEM_TEXT_ARRAYS = ["variables", "switches"]
+SYSTEM_TEXT_FIELDS = rpgmaker_constants.SYSTEM_TEXT_FIELDS
+SYSTEM_TEXT_ARRAYS = rpgmaker_constants.SYSTEM_TEXT_ARRAYS
 TALK_CODES = (401, 405, 101, 102)
 
 
@@ -70,22 +72,11 @@ def log(msg):
 
 
 def ev_containers(data):
-    out = []
-    if isinstance(data, list):
-        return [x for x in data if isinstance(x, dict)]
-    for key in ("events", "commonEvents"):
-        arr = data.get(key) or []
-        out.extend(x for x in arr if isinstance(x, dict))
-    return out
+    return rpgmaker_common.ev_containers(data)
 
 
 def is_event_container(data):
-    if isinstance(data, dict):
-        return "events" in data or "commonEvents" in data
-    if isinstance(data, list):
-        return any(isinstance(x, dict) and ("list" in x or "pages" in x)
-                   for x in data)
-    return False
+    return rpgmaker_common.is_event_container(data)
 
 
 def talk_lines(lst):

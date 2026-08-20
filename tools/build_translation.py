@@ -44,6 +44,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import plain_io  # noqa: E402
 import plugins_io  # noqa: E402
+import rpgmaker_common  # noqa: E402
+import rpgmaker_constants  # noqa: E402
 
 SPLIT = re.compile(r"\n")
 CTRL = re.compile(r"\\[A-Za-z]+\[[^\]]*\]|:[a-z]+(?:\[[^\]]*\])?")
@@ -55,9 +57,8 @@ WINDOW = 2
 DISPLAY_KEYS = {"name", "nickname", "profile", "description",
                 "message1", "message2", "message3", "message4", "text"}
 EVENT_TEXT_IDX = {101: [4], 402: [0], 320: [1], 324: [1], 325: [1]}
-SYSTEM_TEXT_FIELDS = ["terms", "message", "commands", "equipTypes",
-                      "weaponTypes", "armorTypes", "skillTypes", "element"]
-SYSTEM_TEXT_ARRAYS = ["variables", "switches"]
+SYSTEM_TEXT_FIELDS = rpgmaker_constants.SYSTEM_TEXT_FIELDS
+SYSTEM_TEXT_ARRAYS = rpgmaker_constants.SYSTEM_TEXT_ARRAYS
 
 
 def log(msg):
@@ -68,13 +69,7 @@ def log(msg):
 # Walkers
 # ---------------------------------------------------------------------------
 def ev_containers(data):
-    out = []
-    if isinstance(data, list):
-        return [x for x in data if isinstance(x, dict)]
-    for key in ("events", "commonEvents"):
-        arr = data.get(key) or []
-        out.extend(x for x in arr if isinstance(x, dict))
-    return out
+    return rpgmaker_common.ev_containers(data)
 
 
 def command_lists(data):
@@ -87,12 +82,7 @@ def command_lists(data):
 
 
 def is_event_container(data):
-    if isinstance(data, dict):
-        return "events" in data or "commonEvents" in data
-    if isinstance(data, list):
-        return any(isinstance(x, dict) and ("list" in x or "pages" in x)
-                   for x in data)
-    return False
+    return rpgmaker_common.is_event_container(data)
 
 
 def talk_lines(lst):

@@ -8,11 +8,17 @@ treated as untranslatable so a broken key can never corrupt a jump target
 or a control code.
 """
 
+import os
 import re
+import sys
+
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
+import japanese_utils  # noqa: E402
 
 # Kana (incl. half-width katakana) marks Japanese text.  CJK kanji alone is
 # not enough (Chinese shares the block), so residuals are checked with KANA.
-KANA = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e]")
+KANA = japanese_utils.KANA
 JA = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
 TEXT_ATTR = re.compile(r'\btext\s*=\s*"([^"]*)"')
 STORAGE_ATTR = re.compile(r'\bstorage\s*=\s*"([^"]+)"')

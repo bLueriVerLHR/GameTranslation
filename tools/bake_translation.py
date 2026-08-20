@@ -44,8 +44,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import japanese_utils  # noqa: E402
 import plain_io  # noqa: E402
 import plugins_io  # noqa: E402
+import rpgmaker_common  # noqa: E402
+import rpgmaker_constants  # noqa: E402
 from rpgmaker import config  # noqa: E402
 from translate_rpgmaker import (  # noqa: E402
     apply_font_policy, clear_encryption_flags, decrypt_dir,
@@ -54,9 +57,9 @@ from translate_rpgmaker import (  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(message)s")
 log = logging.getLogger("bake")
 
-# Kana detection (canonical, same as extract_remaining_text.py): ・/ー/・ are
+# Kana detection (canonical, shared via japanese_utils): ・/ー/・ are
 # punctuation that also appears in translated Chinese lines, never counted.
-KANA = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e]")
+KANA = japanese_utils.KANA
 
 # A script line (355/655, or a 122 script operand) is display text only when
 # kana appears INSIDE a quoted string literal (comments stay raw).
@@ -72,28 +75,16 @@ DEFAULT_MIN_COVERAGE = 0.5
 DISPLAY_KEYS = {"name", "nickname", "profile", "description",
                 "message1", "message2", "message3", "message4", "text"}
 EVENT_TEXT_IDX = {101: [4], 402: [0, 1], 320: [1], 324: [1], 325: [1]}
-SYSTEM_TEXT_FIELDS = ["terms", "message", "commands", "equipTypes",
-                      "weaponTypes", "armorTypes", "skillTypes", "element"]
-SYSTEM_TEXT_ARRAYS = ["variables", "switches"]
+SYSTEM_TEXT_FIELDS = rpgmaker_constants.SYSTEM_TEXT_FIELDS
+SYSTEM_TEXT_ARRAYS = rpgmaker_constants.SYSTEM_TEXT_ARRAYS
 
 
 def is_event_container(data):
-    if isinstance(data, dict):
-        return "events" in data or "commonEvents" in data
-    if isinstance(data, list):
-        return any(isinstance(x, dict) and ("list" in x or "pages" in x)
-                   for x in data)
-    return False
+    return rpgmaker_common.is_event_container(data)
 
 
 def ev_containers(data):
-    out = []
-    if isinstance(data, list):
-        return [x for x in data if isinstance(x, dict)]
-    for key in ("events", "commonEvents"):
-        arr = data.get(key) or []
-        out.extend(x for x in arr if isinstance(x, dict))
-    return out
+    return rpgmaker_common.ev_containers(data)
 
 
 LOC_SEP = "\x1f"

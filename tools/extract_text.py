@@ -24,15 +24,18 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rpgmaker_common  # noqa: E402
+import rpgmaker_constants  # noqa: E402
+
 # Same whitelist as translate_rpgmaker.py
 DISPLAY_KEYS = {
     "name", "nickname", "profile", "description",
     "message1", "message2", "message3", "message4", "text",
 }
 EVENT_TEXT_IDX = {401: [0], 405: [0], 101: [4], 402: [1], 320: [1], 324: [1], 325: [1]}
-SYSTEM_TEXT_FIELDS = ["terms", "message", "commands", "equipTypes",
-                      "weaponTypes", "armorTypes", "skillTypes", "element"]
-SYSTEM_TEXT_ARRAYS = ["variables", "switches"]
+SYSTEM_TEXT_FIELDS = rpgmaker_constants.SYSTEM_TEXT_FIELDS
+SYSTEM_TEXT_ARRAYS = rpgmaker_constants.SYSTEM_TEXT_ARRAYS
 
 # Same directive guard as translate_rpgmaker.py: comment (408) lines used as
 # plugin commands are not display text and must not be extracted.
@@ -139,11 +142,7 @@ def iter_command_lists(data):
 
 
 def is_event_container(data):
-    if isinstance(data, dict):
-        return "events" in data or "commonEvents" in data
-    if isinstance(data, list):
-        return any(isinstance(x, dict) and ("list" in x or "pages" in x) for x in data)
-    return False
+    return rpgmaker_common.is_event_container(data)
 
 
 def main():

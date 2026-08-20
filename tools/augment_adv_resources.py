@@ -37,7 +37,13 @@ import os
 import re
 import sys
 
-KANA = re.compile(r"[\u3040-\u30ff]")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import japanese_utils  # noqa: E402
+
+# ADV text-resource detection uses the coarser hiragana+katakana block range
+# (U+3040-30FF, no half-width) - keep it distinct from the canonical KANA so
+# the extraction/bake detection behavior is unchanged.
+KANA = japanese_utils.KANA_BLOCKS
 DEFAULT_DIRS = ["ja-JP"]
 DEFAULT_TWEETS = ["hiroka_tweet_list.json"]
 

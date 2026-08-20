@@ -33,12 +33,15 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import japanese_utils  # noqa: E402
 import plain_io  # noqa: E402
+import rpgmaker_common  # noqa: E402
+import rpgmaker_constants  # noqa: E402
 from rvdata2_io import load_rvdata2  # noqa: E402
 
 CTRL = re.compile(r"\\[A-Za-z]+\[[^\]]*\]|:[a-z]+(?:\[[^\]]*\])?")
 JA = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
-KANA = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e]")
+KANA = japanese_utils.KANA
 NAME_LINE = re.compile(r"^(?:[\u3040-\u30ff\u4e00-\u9fff]|・)+[さんちゃん君様先生嬢ぽ]?$")
 DIRECTIVE = re.compile(r"^\s*(?:<|>|//|#|\[|`)|<[A-Za-z_@][^>]*>", re.S)
 NOTE_TAG = re.compile(r"<[A-Za-z_@][^>]*>")
@@ -49,9 +52,7 @@ WINDOW = 2
 DISPLAY_KEYS = {"name", "nickname", "profile", "description",
                 "message1", "message2", "message3", "message4", "text"}
 EVENT_TEXT_IDX = {402: [0], 320: [1]}
-SYSTEM_TEXT_FIELDS = ["terms", "messages", "commands", "skill_types",
-                      "weapon_types", "armor_types", "elements",
-                      "equip_types", "variables", "switches"]
+SYSTEM_TEXT_FIELDS = rpgmaker_constants.RVDATA2_SYSTEM_TEXT_FIELDS
 TALK_CODES = (401, 405, 101, 102)
 
 SKIP_KEYS = {"@data", "@screen_x", "@screen_y", "@scroll_x", "@scroll_y",
@@ -67,14 +68,7 @@ def log(msg):
 
 def ev_containers(data):
     """Events from a map/CommonEvents object (VX Ace events = dict)."""
-    if isinstance(data, dict):
-        evs = data.get("@events") or {}
-        if isinstance(evs, dict):
-            return [evs[k] for k in sorted(evs, key=lambda k: (k is None, k))
-                    if isinstance(evs[k], dict)]
-        if isinstance(evs, list):
-            return [e for e in evs if isinstance(e, dict)]
-    return []
+    return rpgmaker_common.rvdata2_ev_containers(data)
 
 
 def is_map_file(fname):

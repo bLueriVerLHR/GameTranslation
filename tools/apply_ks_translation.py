@@ -121,7 +121,6 @@ def apply(work_dir, scenario_dir, out_dir, pack_name):
 
 
 def pack_patch(patch_dir, out_path):
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from kirikiri import xp3pack
 
     _files, _total = xp3pack.pack(patch_dir, out_path)

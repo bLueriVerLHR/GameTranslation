@@ -1,0 +1,44 @@
+# GameTranslation project metadata and packaging config.
+#
+# Declarative only: nothing here is required to run the tools.  Every script
+# still resolves its own imports via the repo-local sys.path convention
+# (tools/ imports siblings as top-level modules through sys.path, and the
+# rpgmaker/kirikiri/tyrano packages are reached by inserting the repo root).
+# No `pip install -e .` is assumed anywhere in the codebase.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "GameTranslation"
+version = "1.0.0"
+description = "Local toolkit for JP->ZH translation and playable builds (RPG Maker MZ/MV, TyranoScript, KiriKiri, Unity, Wolf RPG)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "GPL-3.0-or-later"}
+# No install-time dependencies: tools resolve their own imports via the
+# repo-local sys.path convention (see code), so the distribution is dependency
+# free by design.
+
+[tool.setuptools]
+# Real packages (each has __init__.py): rpgmaker / kirikiri / tyrano / wolfrpg
+# / unity plus the unity.rmunite subpackage.
+#
+# tools/ has NO __init__.py on purpose and is NOT declared as a package: its
+# scripts import each other as top-level modules via the sys.path convention
+# (e.g. `import plain_io`), so converting it to a package would change that
+# import semantics.  Treat tools/ as a script directory.
+packages = [
+    "rpgmaker",
+    "kirikiri",
+    "tyrano",
+    "wolfrpg",
+    "unity",
+    "unity.rmunite",
+]
+
+[tool.pytest.ini_options]
+# Intentionally minimal to preserve the historical no-config behavior: tests
+# are always collected by passing tests/ explicitly, and importmode/testpaths
+# stay at pytest defaults.

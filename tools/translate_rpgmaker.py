@@ -35,8 +35,8 @@ import re
 import shutil
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
 from rpgmaker import config  # noqa: E402

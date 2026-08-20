@@ -428,8 +428,30 @@ def _decode_golomb(bit_pool, pixel_count, offset=None):
 
 
 
-def _decode_tlg6(data, width, height, colors, data_offset, load_base=None):
-    src = data[data_offset:]
+def _tlg6_lzss_text():
+    """The 4096-byte LZSS sliding-dictionary seed: every 2-byte pattern with
+    (r,g,b,a) + (r,g,b,a) repeated 32x16 times (the standard TLG6 start)."""
+    text = bytearray(4096)
+    p = 0
+    for i in range(0, 32 * 0x01010101, 0x01010101):
+        for j in range(0, 16 * 0x01010101, 0x01010101):
+            text[p] = i & 0xFF
+            text[p + 1] = (i >> 8) & 0xFF
+            text[p + 2] = (i >> 16) & 0xFF
+            text[p + 3] = (i >> 24) & 0xFF
+            text[p + 4] = j & 0xFF
+            text[p + 5] = (j >> 8) & 0xFF
+            text[p + 6] = (j >> 16) & 0xFF
+            text[p + 7] = (j >> 24) & 0xFF
+            p += 8
+    return text
+
+
+def _decode_tlg6_header(src, width, height, colors):
+    """Parse the TLG6 block header and set up the decode state: block
+    geometry, per-row buffers, the LZSS sliding dictionary and the (LZSS-
+    decompressed) filter-type stream.  Returns (state_dict, pos) with pos
+    just past the filter stream - the start of the image blocks."""
     pos = 0
     max_bit_length = _le_i32(src, pos)
     pos += 4
@@ -444,27 +466,11 @@ def _decode_tlg6(data, width, height, colors, data_offset, load_base=None):
     pixelbuf = [0] * (width * H_BLOCK + 1)
     filter_types = bytearray(x_block_count * y_block_count)
     zeroline = [0] * width
-    LZSS_text = bytearray(4096)
+    LZSS_text = _tlg6_lzss_text()
 
     zerocolor = 0xFF000000 if colors == 3 else 0x00000000
     for i in range(width):
         zeroline[i] = zerocolor
-
-    prevline = zeroline
-    prevline_index = 0
-
-    p = 0
-    for i in range(0, 32 * 0x01010101, 0x01010101):
-        for j in range(0, 16 * 0x01010101, 0x01010101):
-            LZSS_text[p] = i & 0xFF
-            LZSS_text[p + 1] = (i >> 8) & 0xFF
-            LZSS_text[p + 2] = (i >> 16) & 0xFF
-            LZSS_text[p + 3] = (i >> 24) & 0xFF
-            LZSS_text[p + 4] = j & 0xFF
-            LZSS_text[p + 5] = (j >> 8) & 0xFF
-            LZSS_text[p + 6] = (j >> 16) & 0xFF
-            LZSS_text[p + 7] = (j >> 24) & 0xFF
-            p += 8
 
     inbuf_size = _le_i32(src, pos)
     pos += 4
@@ -474,6 +480,39 @@ def _decode_tlg6(data, width, height, colors, data_offset, load_base=None):
         raise TlgError("filter types truncated")
     filter_types = bytearray(filter_types)
     _lzss_decompress_slide(filter_types, inbuf, LZSS_text, 0)
+
+    state = {
+        "x_block_count": x_block_count,
+        "y_block_count": y_block_count,
+        "main_count": main_count,
+        "fraction": fraction,
+        "max_bit_length": max_bit_length,
+        "image_bits": image_bits,
+        "bit_pool": bit_pool,
+        "pixelbuf": pixelbuf,
+        "filter_types": filter_types,
+        "zeroline": zeroline,
+        "LZSS_text": LZSS_text,
+        "zerocolor": zerocolor,
+    }
+    return state, pos
+
+
+def _decode_tlg6_blocks(src, state, width, height, colors, pos):
+    """Decode every 8x8 block's entropy-coded pixel data and reconstruct the
+    filtered scan lines into image_bits, then pack them as RGBA bytes.
+    `pos` is the offset just past the filter stream (start of image blocks)."""
+    x_block_count = state["x_block_count"]
+    main_count = state["main_count"]
+    fraction = state["fraction"]
+    image_bits = state["image_bits"]
+    bit_pool = state["bit_pool"]
+    pixelbuf = state["pixelbuf"]
+    filter_types = state["filter_types"]
+    zerocolor = state["zerocolor"]
+
+    prevline = state["zeroline"]
+    prevline_index = 0
 
     for y in range(0, height, H_BLOCK):
         ylim = min(y + H_BLOCK, height)
@@ -528,6 +567,12 @@ def _decode_tlg6(data, width, height, colors, data_offset, load_base=None):
         out[i * 4 + 2] = (v >> 16) & 0xFF
         out[i * 4 + 3] = (v >> 24) & 0xFF
     return bytes(out)
+
+
+def _decode_tlg6(data, width, height, colors, data_offset, load_base=None):
+    src = data[data_offset:]
+    state, pos = _decode_tlg6_header(src, width, height, colors)
+    return _decode_tlg6_blocks(src, state, width, height, colors, pos)
 
 
 def _decode_line_generic(prevline, prevline_index, curline, curline_index, width,

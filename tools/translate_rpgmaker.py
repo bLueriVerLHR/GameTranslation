@@ -332,7 +332,10 @@ def is_event_container(data):
     return rpgmaker_common.is_event_container(data)
 
 
-def translate_data(root, D, index, do_plugins):
+def _translate_data_files(root, D, index):
+    """Translate every data/*.json in place: event containers (map
+    displayName, per-event names, command lists), System.json and plain DB
+    files.  Returns the number of files touched."""
     data_dir = os.path.join(root, "data")
     changed_files = 0
     for path in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
@@ -359,42 +362,62 @@ def translate_data(root, D, index, do_plugins):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         changed_files += 1
+    return changed_files
+
+
+def _translate_scenario(root, D, index):
+    """Translate scenario/Scenario.json (ExternMessage-style flows): dict
+    values translated per-key, list values as command lists."""
+    scenario_path = os.path.join(root, "scenario", "Scenario.json")
+    if not os.path.exists(scenario_path):
+        return
+    with open(scenario_path, encoding="utf-8") as f:
+        scenario = json.load(f)
+    if isinstance(scenario, dict):
+        for k, v in list(scenario.items()):
+            if isinstance(v, list):
+                process_commands(v, D, index)
+            elif isinstance(v, str):
+                scenario[k] = translate_text(v, D, index)
+    elif isinstance(scenario, list):
+        for chunk in scenario:
+            if isinstance(chunk, list):
+                process_commands(chunk, D, index)
+    with open(scenario_path, "w", encoding="utf-8") as f:
+        json.dump(scenario, f, ensure_ascii=False, indent=2)
+    log("translated scenario/Scenario.json (%d chunks)" %
+        (len(scenario) if isinstance(scenario, dict) else len(scenario)))
+
+
+def _patch_plugins(root, D):
+    """Literal-text plugin patch for js/plugins.js (risky, only when
+    --plugins): replace every quoted dict key/value with its translation,
+    skipping symbol-like keys."""
+    plugins_path = os.path.join(root, "js", "plugins.js")
+    if not os.path.exists(plugins_path):
+        return
+    with open(plugins_path, encoding="utf-8") as f:
+        text = f.read()
+    for k, v in D.items():
+        if not k or k == v:
+            continue
+        if re.fullmatch(r"[A-Za-z0-9_ ]+", k):
+            continue  # skip symbol-like keys
+        text = text.replace('"%s"' % k, '"%s"' % v)
+        text = text.replace("'%s'" % k, "'%s'" % v)
+    with open(plugins_path, "w", encoding="utf-8") as f:
+        f.write(text)
+    log("patched js/plugins.js")
+
+
+def translate_data(root, D, index, do_plugins):
+    changed_files = _translate_data_files(root, D, index)
     log("translated %d data files" % changed_files)
 
-    scenario_path = os.path.join(root, "scenario", "Scenario.json")
-    if os.path.exists(scenario_path):
-        with open(scenario_path, encoding="utf-8") as f:
-            scenario = json.load(f)
-        if isinstance(scenario, dict):
-            for k, v in list(scenario.items()):
-                if isinstance(v, list):
-                    process_commands(v, D, index)
-                elif isinstance(v, str):
-                    scenario[k] = translate_text(v, D, index)
-        elif isinstance(scenario, list):
-            for chunk in scenario:
-                if isinstance(chunk, list):
-                    process_commands(chunk, D, index)
-        with open(scenario_path, "w", encoding="utf-8") as f:
-            json.dump(scenario, f, ensure_ascii=False, indent=2)
-        log("translated scenario/Scenario.json (%d chunks)" %
-            (len(scenario) if isinstance(scenario, dict) else len(scenario)))
+    _translate_scenario(root, D, index)
 
     if do_plugins:
-        plugins_path = os.path.join(root, "js", "plugins.js")
-        if os.path.exists(plugins_path):
-            with open(plugins_path, encoding="utf-8") as f:
-                text = f.read()
-            for k, v in D.items():
-                if not k or k == v:
-                    continue
-                if re.fullmatch(r"[A-Za-z0-9_ ]+", k):
-                    continue  # skip symbol-like keys
-                text = text.replace('"%s"' % k, '"%s"' % v)
-                text = text.replace("'%s'" % k, "'%s'" % v)
-            with open(plugins_path, "w", encoding="utf-8") as f:
-                f.write(text)
-            log("patched js/plugins.js")
+        _patch_plugins(root, D)
 
 
 def add_cjk_font_fallback(root):
@@ -600,6 +623,34 @@ def _existing_policy_orig_font(css):
     return m.group(1) if m else ""
 
 
+def _mz_font_blocks(cjk_name, kana_src):
+    """The rmmz-mainfont unicode-range @font-face split: kana + Japanese
+    punctuation use the JP/original font (when available), Chinese/latin use
+    the bundled CJK font; #gameCanvas/.GameFont pin the family."""
+    blocks = ["/* Font policy (translate_rpgmaker.py): bundled CJK font for "
+              "Chinese/latin,", "   the Japanese fallback for kana/JP "
+              "punctuation */"]
+    if kana_src:
+        blocks += [
+            "@font-face {",
+            "    font-family: rmmz-mainfont;",
+            "    src: %s;" % kana_src,
+            "    unicode-range: U+3000-30FF, U+FF00-FFEF;",
+            "}",
+        ]
+    blocks += [
+        "@font-face {",
+        "    font-family: rmmz-mainfont;",
+        '    src: url("../fonts/%s");' % cjk_name,
+        "    unicode-range: U+0000-00FF, U+2000-206F, U+4E00-9FFF, U+F900-FAFF;",
+        "}",
+        "#gameCanvas, .GameFont {",
+        '    font-family: "rmmz-mainfont", sans-serif;',
+        "}",
+    ]
+    return blocks
+
+
 def _apply_mz_font_policy(root, cjk_font_src, jp_font_src=None):
     """MZ: split family rmmz-mainfont in css/game.css by unicode-range -
     kana + Japanese punctuation use the JP fallback font (or the game's
@@ -638,27 +689,7 @@ def _apply_mz_font_policy(root, cjk_font_src, jp_font_src=None):
     elif orig_name and os.path.exists(os.path.join(root, "fonts", orig_name)):
         kana_src = 'url("../fonts/%s")' % orig_name
         kana_label = orig_name
-    blocks = ["/* Font policy (translate_rpgmaker.py): bundled CJK font for "
-              "Chinese/latin,", "   the Japanese fallback for kana/JP "
-              "punctuation */"]
-    if kana_src:
-        blocks += [
-            "@font-face {",
-            "    font-family: rmmz-mainfont;",
-            "    src: %s;" % kana_src,
-            "    unicode-range: U+3000-30FF, U+FF00-FFEF;",
-            "}",
-        ]
-    blocks += [
-        "@font-face {",
-        "    font-family: rmmz-mainfont;",
-        '    src: url("../fonts/%s");' % cjk_name,
-        "    unicode-range: U+0000-00FF, U+2000-206F, U+4E00-9FFF, U+F900-FAFF;",
-        "}",
-        "#gameCanvas, .GameFont {",
-        '    font-family: "rmmz-mainfont", sans-serif;',
-        "}",
-    ]
+    blocks = _mz_font_blocks(cjk_name, kana_src)
     with open(css_path, "w", encoding="utf-8") as f:
         f.write(css + "\n" + "\n".join(blocks) + "\n")
     log("MZ font policy: bundled CJK font + Japanese fallback (%s)"

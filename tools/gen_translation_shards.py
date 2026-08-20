@@ -193,37 +193,10 @@ def transcript(keys, ctx, truncate=45, window=2):
     return out
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("work_dir")
-    ap.add_argument("--per-chunk", type=int, default=0,
-                    help="cap chunks by key count instead of total key char "
-                         "length (legacy; disables auto sizing)")
-    ap.add_argument("--max-chars", type=int, default=0,
-                    help="cap chunks by total key char length instead of "
-                         "key count (single overlong key gets its own chunk; "
-                         "disables auto sizing)")
-    ap.add_argument("--start", type=int, default=0)
-    ap.add_argument("--resume", action="store_true")
-    ap.add_argument("--out-dir", default="chunks",
-                    help="chunk subdirectory (default: chunks)")
-    ap.add_argument("--window", type=int, default=2,
-                    help="context window radius per key (default 2)")
-    ap.add_argument("--truncate", type=int, default=45,
-                    help="max chars per context transcript line")
-    ap.add_argument("--target-chunks", type=int, default=0,
-                    help="auto: pick --max-chars for about N story+global "
-                         "chunks (0 = off)")
-    ap.add_argument("--global-per-chunk", type=int, default=600,
-                    help="cap GLOBAL/DB/UI chunks by key count (default 600; "
-                         "short keys, transcript lines dominate the context)")
-    ap.add_argument("--context-budget-kb", type=int,
-                    default=DEFAULT_CONTEXT_BUDGET_KB,
-                    help="auto: keep every chunk's context.md under this many "
-                         "KB (default %(default)s; 90KB+ chunks are flaky)")
-    args = ap.parse_args()
-
-    work = os.path.abspath(args.work_dir)
+def _collect_context(work, args):
+    """Load the work package (template/kinds/structure + tone/glossary/
+    macros/context), create the chunks dir and apply --resume filtering.
+    Returns (tpl, kinds, structure, glossary, macros, ctx, tone, chunks_dir)."""
     tpl = plain_io.load_json(os.path.join(work, "template.json"))
     kinds = plain_io.load_json(os.path.join(work, "kinds.json"))
     structure = plain_io.load_json(os.path.join(work, "structure.json"))
@@ -240,7 +213,13 @@ def main():
         tpl = {k: v for k, v in tpl.items() if k not in done}
         print("resume: %d keys already translated, %d remaining"
               % (len(done), len(tpl)))
+    return tpl, kinds, structure, glossary, macros, ctx, tone, chunks_dir
 
+
+def _collect_keys(tpl, kinds, structure):
+    """Classify template keys: GLOBAL_KINDS first (sorted), then per-map
+    scene keys in story order (dedup keep-first), then orphan keys that no
+    map references.  Returns (global_keys, map_keys, n_orphan)."""
     # global chunk
     global_keys = [k for k in tpl if kinds.get(k) in GLOBAL_KINDS]
     global_keys.sort(key=lambda k: (-len(k), k))
@@ -277,23 +256,20 @@ def main():
     for _l, ks in map_keys:
         covered.update(ks)
     orphan = [k for k in tpl if k not in covered]
+    n_orphan = 0
     if orphan:
         map_keys.append(("Orphan", orphan))
-        print("orphan keys: %d" % len(orphan))
+        n_orphan = len(orphan)
+        print("orphan keys: %d" % n_orphan)
+    return global_keys, map_keys, n_orphan
 
-    # auto sizing (DEFAULT): binary-search the largest --max-chars that keeps
-    # the chunk count <= --target-chunks and every context.md under
-    # --context-budget-kb (90KB+ context chunks are the flaky no-file
-    # failures).  Explicit --max-chars / --per-chunk disable it.
-    if not args.max_chars and not args.per_chunk:
-        args.max_chars, n_chunks, mx, warn = _auto_sizing(
-            map_keys, global_keys, ctx, tone, glossary, macros, args)
-        print("auto sizing: max_chars=%d -> %d chunks, max context ~%.1fKB%s"
-              % (args.max_chars, n_chunks, mx / 1024,
-                 " (WARN: %s)" % warn if warn else ""))
-    if not args.max_chars and not args.per_chunk:
-        args.per_chunk = 450  # fallback: no story maps -> legacy key-count cap
 
+def _emit_chunks(chunks_dir, args, global_keys, map_keys, tone, glossary,
+                 macros, ctx):
+    """Write the global chunk (key-count capped) then the story chunks in
+    story order (auto --max-chars buckets, or legacy --per-chunk pieces),
+    each carrying the previous chunk's dialogue tail for continuity.
+    Returns the next chunk number."""
     num = args.start
     if global_keys:
         # Global/DB/UI texts are short one-liners; cap them by KEY COUNT
@@ -334,7 +310,59 @@ def main():
         if cur:
             num = _write_map_chunk(chunks_dir, num, cur, tone,
                                    glossary, macros, ctx, args, prev_keys)
+    return num
 
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("work_dir")
+    ap.add_argument("--per-chunk", type=int, default=0,
+                    help="cap chunks by key count instead of total key char "
+                         "length (legacy; disables auto sizing)")
+    ap.add_argument("--max-chars", type=int, default=0,
+                    help="cap chunks by total key char length instead of "
+                         "key count (single overlong key gets its own chunk; "
+                         "disables auto sizing)")
+    ap.add_argument("--start", type=int, default=0)
+    ap.add_argument("--resume", action="store_true")
+    ap.add_argument("--out-dir", default="chunks",
+                    help="chunk subdirectory (default: chunks)")
+    ap.add_argument("--window", type=int, default=2,
+                    help="context window radius per key (default 2)")
+    ap.add_argument("--truncate", type=int, default=45,
+                    help="max chars per context transcript line")
+    ap.add_argument("--target-chunks", type=int, default=0,
+                    help="auto: pick --max-chars for about N story+global "
+                         "chunks (0 = off)")
+    ap.add_argument("--global-per-chunk", type=int, default=600,
+                    help="cap GLOBAL/DB/UI chunks by key count (default 600; "
+                         "short keys, transcript lines dominate the context)")
+    ap.add_argument("--context-budget-kb", type=int,
+                    default=DEFAULT_CONTEXT_BUDGET_KB,
+                    help="auto: keep every chunk's context.md under this many "
+                         "KB (default %(default)s; 90KB+ chunks are flaky)")
+    args = ap.parse_args()
+
+    work = os.path.abspath(args.work_dir)
+    tpl, kinds, structure, glossary, macros, ctx, tone, chunks_dir = \
+        _collect_context(work, args)
+    global_keys, map_keys, _n_orphan = _collect_keys(tpl, kinds, structure)
+
+    # auto sizing (DEFAULT): binary-search the largest --max-chars that keeps
+    # the chunk count <= --target-chunks and every context.md under
+    # --context-budget-kb (90KB+ context chunks are the flaky no-file
+    # failures).  Explicit --max-chars / --per-chunk disable it.
+    if not args.max_chars and not args.per_chunk:
+        args.max_chars, n_chunks, mx, warn = _auto_sizing(
+            map_keys, global_keys, ctx, tone, glossary, macros, args)
+        print("auto sizing: max_chars=%d -> %d chunks, max context ~%.1fKB%s"
+              % (args.max_chars, n_chunks, mx / 1024,
+                 " (WARN: %s)" % warn if warn else ""))
+    if not args.max_chars and not args.per_chunk:
+        args.per_chunk = 450  # fallback: no story maps -> legacy key-count cap
+
+    num = _emit_chunks(chunks_dir, args, global_keys, map_keys, tone,
+                       glossary, macros, ctx)
     print("wrote chunks %02d..%02d into %s" % (args.start, num, chunks_dir))
 
 

@@ -159,11 +159,11 @@ def _translate_note_refs(note, D, refs=None):
     return _REF_RE.sub(repl, note)
 
 
-def process_commands(cmds, D, loc=""):
-    """One pass over a command list: blocks first, then individual codes.
-    loc = stable traversal path (file#evN#pgM) rebuilt to match the
-    build_translation.py location keys; every exact match prefers the
-    located key `s\x1f<loc>#c<idx>` and falls back to the plain key."""
+def _process_block(cmds, D, loc):
+    """Consecutive 401/405 runs are matched as one joined block first (the
+    located key `s\x1f<loc>#c<block_start>`), then fall back to per-line
+    exact matches (each line's own command index).  Extra translation lines
+    beyond the original block length are appended as new commands."""
     n = len(cmds)
     i = 0
     while i < n:
@@ -207,6 +207,11 @@ def process_commands(cmds, D, loc=""):
                         params[0] = v
         i = j
 
+
+def _process_single_code(cmds, D, loc):
+    """Individual command codes: choices, display-text indices, script
+    operands, script lines, plugin-command args and comment lines, each
+    exact-matched with its own command index `s\x1f<loc>#c<idx>`."""
     for ci, cmd in enumerate(cmds):
         params = cmd.get("parameters")
         if not isinstance(params, list):
@@ -261,6 +266,15 @@ def process_commands(cmds, D, loc=""):
                 if v is not None:
                     params[0] = v
                     params[0] = v
+
+
+def process_commands(cmds, D, loc=""):
+    """One pass over a command list: blocks first, then individual codes.
+    loc = stable traversal path (file#evN#pgM) rebuilt to match the
+    build_translation.py location keys; every exact match prefers the
+    located key `s\x1f<loc>#c<idx>` and falls back to the plain key."""
+    _process_block(cmds, D, loc)
+    _process_single_code(cmds, D, loc)
 
 
 def _translate_arg_values(obj, D, loc=""):
@@ -385,6 +399,86 @@ def translate_plugins(root, D, write=True):
         return n
 
 
+def _translate_events(data, D, fname, event_names, refs):
+    """Translate one event-container file: map displayName, per-event names,
+    <TE:name>/<namePop:name> note refs, and every event page's command list.
+    `event_names` accumulates the (translated) event names and `refs` the
+    note refs for the post-bake dangling-ref check."""
+    if isinstance(data, dict):
+        dn = data.get("displayName")
+        if isinstance(dn, str):
+            v = exact_loc(dn, D, fname + "#displayName")
+            if v is not None:
+                data["displayName"] = v
+    for evi, ev in enumerate(ev_containers(data)):
+        eloc = "%s#ev%d" % (fname, evi)
+        if isinstance(ev.get("name"), str):
+            v = exact_loc(ev["name"], D, eloc + "#name")
+            if v is not None:
+                ev["name"] = v
+            event_names.add(ev["name"])
+        # TemplateEvent-style note refs: <TE:name> must keep matching
+        # the (translated) template event name, else template lookup
+        # fails and unconditional autorun events re-fire forever.
+        # <namePop:name> must keep matching the named map event.
+        note = ev.get("note")
+        if note:
+            new_note = _translate_note_refs(note, D, refs)
+            if new_note != note:
+                ev["note"] = new_note
+        lists = []
+        if isinstance(ev.get("list"), list):
+            lists.append(ev["list"])
+        for pg in ev.get("pages") or []:
+            if isinstance(pg, dict) and isinstance(pg.get("list"), list):
+                lists.append(pg["list"])
+        for li, lst in enumerate(lists):
+            process_commands(lst, D, eloc + "#pg%d" % li)
+
+
+def _translate_scenario(root, D, write):
+    """Bake scenario/Scenario.json (ExternMessage-style flows): dict values
+    are translated per-key, list values are treated as command lists."""
+    scenario_path = os.path.join(root, "scenario", "Scenario.json")
+    if not os.path.exists(scenario_path):
+        return
+    with open(scenario_path, encoding="utf-8-sig") as f:
+        scenario = json.load(f)
+    if isinstance(scenario, dict):
+        for k, v in list(scenario.items()):
+            if isinstance(v, list):
+                process_commands(v, D, "scenario#" + k)
+            elif isinstance(v, str):
+                nv = exact_loc(v, D, "scenario#" + k)
+                if nv is not None:
+                    scenario[k] = nv
+    elif isinstance(scenario, list):
+        for i, chunk in enumerate(scenario):
+            if isinstance(chunk, list):
+                process_commands(chunk, D, "scenario[%d]" % i)
+    if write:
+        with open(scenario_path, "w", encoding="utf-8") as f:
+            json.dump(scenario, f, ensure_ascii=False, indent=2)
+    log.info("baked scenario/Scenario.json")
+
+
+def _report_name_refs(refs, event_names):
+    """Post-bake check: every <TE:name>/<namePop:name> ref must resolve to a
+    (translated) event name, else the name-based lookup fails at runtime."""
+    if not refs:
+        return
+    dangling = [(t, n) for t, n in refs if n not in event_names]
+    log.info("name-ref check: %d <TE:/<namePop:> refs vs %d event names",
+             len(refs), len(event_names))
+    if dangling:
+        log.warning("dangling name refs (match no event name - the "
+                    "lookup WILL fail at runtime):")
+        for t, n in sorted(dangling):
+            log.warning("  <%s:%s>", t, n)
+    else:
+        log.info("all name refs resolve to an event name")
+
+
 def translate_data(root, D, write=True):
     """Bake the dict into every data file.  write=False is the coverage
     measurement pass: identical traversal, no files touched."""
@@ -397,36 +491,7 @@ def translate_data(root, D, write=True):
         with open(path, encoding="utf-8-sig") as f:
             data = json.load(f)
         if is_event_container(data):
-            if isinstance(data, dict):
-                dn = data.get("displayName")
-                if isinstance(dn, str):
-                    v = exact_loc(dn, D, fname + "#displayName")
-                    if v is not None:
-                        data["displayName"] = v
-            for evi, ev in enumerate(ev_containers(data)):
-                eloc = "%s#ev%d" % (fname, evi)
-                if isinstance(ev.get("name"), str):
-                    v = exact_loc(ev["name"], D, eloc + "#name")
-                    if v is not None:
-                        ev["name"] = v
-                    event_names.add(ev["name"])
-                # TemplateEvent-style note refs: <TE:name> must keep matching
-                # the (translated) template event name, else template lookup
-                # fails and unconditional autorun events re-fire forever.
-                # <namePop:name> must keep matching the named map event.
-                note = ev.get("note")
-                if note:
-                    new_note = _translate_note_refs(note, D, refs)
-                    if new_note != note:
-                        ev["note"] = new_note
-                lists = []
-                if isinstance(ev.get("list"), list):
-                    lists.append(ev["list"])
-                for pg in ev.get("pages") or []:
-                    if isinstance(pg, dict) and isinstance(pg.get("list"), list):
-                        lists.append(pg["list"])
-                for li, lst in enumerate(lists):
-                    process_commands(lst, D, eloc + "#pg%d" % li)
+            _translate_events(data, D, fname, event_names, refs)
         if fname == "System.json":
             process_system(data, D)
         else:
@@ -441,38 +506,10 @@ def translate_data(root, D, write=True):
     if n_pl:
         log.info("baked %d plugin strings in js/plugins.js", n_pl)
 
-    scenario_path = os.path.join(root, "scenario", "Scenario.json")
-    if os.path.exists(scenario_path):
-        with open(scenario_path, encoding="utf-8-sig") as f:
-            scenario = json.load(f)
-        if isinstance(scenario, dict):
-            for k, v in list(scenario.items()):
-                if isinstance(v, list):
-                    process_commands(v, D, "scenario#" + k)
-                elif isinstance(v, str):
-                    nv = exact_loc(v, D, "scenario#" + k)
-                    if nv is not None:
-                        scenario[k] = nv
-        elif isinstance(scenario, list):
-            for i, chunk in enumerate(scenario):
-                if isinstance(chunk, list):
-                    process_commands(chunk, D, "scenario[%d]" % i)
-        if write:
-            with open(scenario_path, "w", encoding="utf-8") as f:
-                json.dump(scenario, f, ensure_ascii=False, indent=2)
-        log.info("baked scenario/Scenario.json")
+    _translate_scenario(root, D, write)
 
-    if write and refs:
-        dangling = [(t, n) for t, n in refs if n not in event_names]
-        log.info("name-ref check: %d <TE:/<namePop:> refs vs %d event names",
-                 len(refs), len(event_names))
-        if dangling:
-            log.warning("dangling name refs (match no event name - the "
-                        "lookup WILL fail at runtime):")
-            for t, n in sorted(dangling):
-                log.warning("  <%s:%s>", t, n)
-        else:
-            log.info("all name refs resolve to an event name")
+    if write:
+        _report_name_refs(refs, event_names)
 
 
 def main():

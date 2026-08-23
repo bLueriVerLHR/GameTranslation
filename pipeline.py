@@ -10,6 +10,7 @@ Pipeline steps (run in this order on a game folder):
   clean     remove junk files / unused fonts / unused tilesets
   verify    check PNG signatures, JSON, audio refs, System flags, key files
   serve     run an HTTP server + smoke test (for browser/JoiPlay testing)
+  doctor    environment self-check (tool binaries, config, deliverable dirs)
   compress  package the result as a 7z-zstd archive (tested last)
   deliver   compress locally, copy the archive to the archives dir,
             then extract it into the games dir (replaces the old copy step)
@@ -28,7 +29,7 @@ import argparse
 import logging
 import sys
 
-from rpgmaker import build, clean, compress, decrypt, deliver, detect, serve, verify
+from rpgmaker import build, clean, compress, decrypt, deliver, detect, doctor, serve, verify
 from rpgmaker import audio as audio_mod
 logging.basicConfig(
     level=logging.INFO,
@@ -95,6 +96,11 @@ def cmd_serve(args):
     serve.serve(wr, port=args.port)
 
 
+# ---------------------------------------------------------------- doctor
+def cmd_doctor(args):
+    sys.exit(doctor.run())
+
+
 # ---------------------------------------------------------------- compress
 def cmd_compress(args):
     wr = resolve_web_root(args.game)
@@ -153,6 +159,10 @@ def main(argv=None):
     p.add_argument("--workers", type=int, default=None,
                    help="parallel PNG/decode workers (default: auto-tuned to the machine)")
     p.set_defaults(func=cmd_verify)
+
+    p = sub.add_parser("doctor", help="environment self-check "
+                                      "(tools, config, deliverable dirs)")
+    p.set_defaults(func=cmd_doctor)
 
     p = sub.add_parser("serve", help="HTTP server + smoke test (do NOT run on phone)")
     p.add_argument("game", help="JoiPlay folder (web root)")

@@ -403,6 +403,17 @@ def find_git():
     return _find_tool("GIT", "git", "", ("git",))
 
 
+def find_npx():
+    """Locate the npx launcher (Node.js package runner). Same resolution as
+    _find_tool (NPX env -> env_config -> PATH), plus an explicit npx.cmd
+    fallback on Windows: shutil.which may miss .cmd shims in some setups
+    (mirrors tyrano/asar.py find_npx)."""
+    p = _find_tool("NPX", "npx", "", ("npx",))
+    if not p and sys.platform == "win32":
+        p = shutil.which("npx.cmd")
+    return p
+
+
 # Preferred CJK font for translated builds. Machine paths never live in the
 # repo - resolve at runtime:
 #   1. env var CJK_FONT_PATH / JP_FONT_PATH

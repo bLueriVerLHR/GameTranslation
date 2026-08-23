@@ -366,8 +366,8 @@ powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<g
 - **Repacker 广告壳插件：** 每个构建都扫 —
   `rg -l "axios|pako|_0x[0-9a-f]{4,}" js/plugins/*.js`。命中通常是假
   "插件"纯广告代码（内联 axios + pako + 混淆载荷；见
-  `docs/experience.md` §9）。`data/` 里没有调用它的插件命令就删文件 +
-  `plugins.js` 条目。
+  `docs/experience-audio-clean.md` §6）。`data/` 里没有调用它的插件命令
+  就删文件 + `plugins.js` 条目。
 - RPG Maker MZ 默认加密密钥 `d41d8cd98f00b204e9800998ecf8427e`
   （空字符串 MD5）非常常见 — `decrypt` 当普通密钥处理。
 - MTool repack 垃圾：repack 在游戏根目录带 `Dictionaries/`、`MTool/`、

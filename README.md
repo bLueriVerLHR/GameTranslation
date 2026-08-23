@@ -20,11 +20,14 @@ Unity = MelonLoader/BepInEx 运行时 hook；Wolf RPG = rewolf-trans 补丁
 
 ```
 GameTranslation/
-├── pipeline.py          # RPG Maker 命令行（build → decrypt → audio → clean → verify → serve/compress/deliver）
+├── pipeline.py          # RPG Maker 命令行（build → decrypt → audio → clean → verify → serve/doctor/compress/deliver）
 ├── kirikiri/            # KiriKiri（吉里吉里）工具包
 │   ├── xp3tool.py       #   XP3 解包（zlib 索引、0x80 间接块、raw/zlib 段）
 │   ├── xp3pack.py       #   XP3 打包（patch.xp3：raw 段 + zlib 索引 + 自校验）
 │   ├── ks_extract.py    #   .ks 解析（编码探测、方括号配对、可译性判定）
+│   ├── tjs2js.py        #   TJS2 → JavaScript 转换（KAG3 [iscript] 块）
+│   ├── convert_kag.py   #   KAG3 → TyranoScript 工程转换
+│   ├── tlg.py           #   TLG 图像解码（TLG5/TLG6，解包立绘/背景）
 │   └── merge_font.py    #   中文字体 + 日文字体合并（中文方块修复）
 ├── wolfrpg/             # Wolf RPG（ウディタ）工具包
 │   └── dxarchive.py     #   DXArchive v8 解包器（LZ/Huffman/KeyConv，从 UberWolf 移植）
@@ -40,6 +43,9 @@ GameTranslation/
 ├── unity/               # Unity 工具包（仅翻译 + 运行时注入，绝不用流水线）
 │   └── rmunite/         #   RPG Maker Unite（Unity Mono）翻译：提取、
 │                        #   BepInEx+Harmony 运行时 hook 插件、系列预填
+│       ├── extract_game.py  #   Addressables bundle 文本提取（UnityPy typetree）
+│       ├── prefill.py       #   系列预填（借已翻译作品的词条/剧情字典）
+│       └── RMUniteTranslation_plugin.cs # BepInEx + Harmony 运行时 hook 插件
 │                        #   （IL2CPP/MelonLoader、Mono/AutoTranslator 见 AGENTS.md）
 ├── rpgmaker/            # RPG Maker MZ/MV 工具包（两者通用，见 detect.py）
 │   ├── config.py        #   工具发现（ffmpeg/ffprobe/7z）+ 阈值 + 路径/平台转换
@@ -52,6 +58,7 @@ GameTranslation/
 │   ├── clean.py         #   安全清理：img 垃圾、未用字体、未用图块（语料并行读取）
 │   ├── verify.py        #   PNG/JSON/标志位/音频引用/解码检查（--source 感知，PNG 并行）
 │   ├── compress.py      #   7z-zstd 打包（替换旧包，-mmt 自动线程）+ 完整性测试
+│   ├── doctor.py        #   环境自检：工具可用性 + env_config + deliverables
 │   ├── deliver.py       #   写回存储侧：本地压缩 → 复制压缩包到压缩包目录
 │   │                    #   （覆盖旧包）→ 删成品目录旧文件夹 → 解压到成品目录
 │   └── serve.py         #   HTTP 服务器 + 冒烟测试
@@ -84,6 +91,7 @@ GameTranslation/
 │   │                             #   增强工作包（故事顺序）+ 原地烘焙（含低覆盖率闸门）
 │   ├── unlock_gallery.py         # 可选：解锁 CG 回想（启动插件）
 │   ├── patch_names.py           # 用规则文件统一字典里的角色名写法
+│   ├── check_docs.py            # README 目录树 vs 实际仓库文件一致性校验
 │   ├── wsl_capture.py           # WSL 侧窗口级截图 CLI（互操作检查、脚本部署、
 │   │                            #   路径转换，见 docs/screenshot.md）
 │   ├── capture_window.ps1       # Windows 侧窗口捕获脚本（PrintWindow，窗口

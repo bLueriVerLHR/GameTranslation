@@ -8,6 +8,7 @@ current platform and converts (_localize -> to_wsl_path/to_windows_path).
 Tools are indexed [platform][tool] because the binaries differ per side.
 """
 import json
+import logging
 import os
 import shutil
 import sys
@@ -325,3 +326,83 @@ class TestMagicConstants:
 
     def test_nwjs_runtime_contains_exe(self):
         assert "Game.exe" in config.NWJS_RUNTIME
+
+
+class TestMissingDefaultWarnings:
+    """Review §6.2 / E: a built-in default (Windows 7z, D:/ deliverable
+    folders) whose path does not exist must log a WARNING - but exactly ONCE
+    per process, so a long batch calling config repeatedly does not spam.
+
+    Every test resets the module sentinel so the once-per-process guarantee
+    is asserted in isolation (a prior test in the session may have already
+    logged the same tag).
+    """
+
+    @staticmethod
+    def _reset(monkeypatch):
+        monkeypatch.setattr(config, "_warned_defaults", set())
+
+    def _warns(self, caplog, needle):
+        return [r.message for r in caplog.records
+                if r.levelno >= logging.WARNING and needle in r.message]
+
+    def test_win7z_default_missing_warns_once(self, monkeypatch, caplog):
+        self._reset(monkeypatch)
+        # default not present -> win_7z() resolves to None and warns once
+        monkeypatch.setattr(config, "DEFAULT_WIN_SEVENZ", r"C:\missing\7z.exe")
+        monkeypatch.delenv("SEVENZ_WIN", raising=False)
+        with caplog.at_level(logging.WARNING, logger="rpgmaker.config"):
+            assert config.win_7z() is None
+            assert config.win_7z() is None   # second call -> still one warn
+        warns = self._warns(caplog, "Windows 7z")
+        assert len(warns) == 1
+
+    def test_win7z_configured_no_warn(self, monkeypatch, caplog, tmp_path):
+        self._reset(monkeypatch)
+        exe = tmp_path / "7z.exe"
+        exe.write_bytes(b"x")
+        monkeypatch.setenv("SEVENZ_WIN", str(exe))
+        with caplog.at_level(logging.WARNING, logger="rpgmaker.config"):
+            assert config.win_7z() == str(exe)
+        assert self._warns(caplog, "Windows 7z") == []
+
+    def test_games_dir_default_missing_warns_once(self, monkeypatch, caplog):
+        self._reset(monkeypatch)
+        monkeypatch.delenv("GAMES_DIR", raising=False)
+        # empty env_config -> built-in default used; force it "missing" so
+        # the WARN fires regardless of the host filesystem
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE",
+                            config.REPO_ROOT / "does-not-exist.json")
+        monkeypatch.setattr(config.os.path, "exists", lambda p: False)
+        with caplog.at_level(logging.WARNING, logger="rpgmaker.config"):
+            p = config.games_dir()
+            assert p.endswith("Games")
+            config.games_dir()
+        warns = self._warns(caplog, "deliverables.games")
+        assert len(warns) == 1
+
+    def test_games_dir_configured_no_warn(self, monkeypatch, caplog, tmp_path):
+        self._reset(monkeypatch)
+        target = tmp_path / "Games"
+        target.mkdir()
+        cfg = tmp_path / "env_config.json"
+        cfg.write_text(json.dumps({"deliverables": {"games": str(target)}}),
+                       encoding="utf-8")
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+        monkeypatch.delenv("GAMES_DIR", raising=False)
+        with caplog.at_level(logging.WARNING, logger="rpgmaker.config"):
+            assert config.games_dir() == str(target)
+        assert self._warns(caplog, "deliverables.games") == []
+
+    def test_archives_dir_default_missing_warns_once(self, monkeypatch,
+                                                     caplog):
+        self._reset(monkeypatch)
+        monkeypatch.delenv("ARCHIVES_DIR", raising=False)
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE",
+                            config.REPO_ROOT / "does-not-exist.json")
+        monkeypatch.setattr(config.os.path, "exists", lambda p: False)
+        with caplog.at_level(logging.WARNING, logger="rpgmaker.config"):
+            config.archives_dir()
+            config.archives_dir()
+        warns = self._warns(caplog, "deliverables.archives")
+        assert len(warns) == 1

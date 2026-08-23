@@ -13,6 +13,7 @@ are expanded at runtime; config paths relative to the repo are resolved
 against the config file's own directory (docs/table/).
 """
 import json
+import logging
 import os
 import re
 import shutil
@@ -21,6 +22,21 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOCAL_ENV_FILE = REPO_ROOT / "docs" / "table" / "env_config.json"
+
+log = logging.getLogger("rpgmaker.config")
+
+# Tags whose missing-default WARNING was already emitted this process, so the
+# warning is logged exactly once instead of once per call (review §6.2 / E).
+_warned_defaults = set()
+
+
+def _warn_once(tag, message):
+    """Log a WARNING at most once per (tag) per process: a silent fallback to
+    a built-in default that does not exist should be noticed, not repeated."""
+    if tag in _warned_defaults:
+        return
+    _warned_defaults.add(tag)
+    log.warning(message)
 
 # RPGMaker encrypted asset magic header (both MZ ".png_/.ogg_" and MV ".rpgmvp/.rpgmvo")
 RPGMV_HEADER = bytes.fromhex("5250474d560000000003010000000000")
@@ -149,7 +165,14 @@ def win_7z():
     """Windows-side 7z binary, for processing files stored on the Windows
     side. Resolution: SEVENZ_WIN env -> env_config tools.win32.7z ->
     DEFAULT_WIN_SEVENZ; None when the binary is not present."""
-    return _win_tool("7z", "SEVENZ_WIN", DEFAULT_WIN_SEVENZ)
+    p = _win_tool("7z", "SEVENZ_WIN", DEFAULT_WIN_SEVENZ)
+    if p is None and DEFAULT_WIN_SEVENZ:
+        _warn_once(
+            "win7z-default",
+            "default Windows 7z not found (%s); set SEVENZ_WIN or "
+            "env_config.json tools.win32.7z to enable Windows-side "
+            "extraction" % DEFAULT_WIN_SEVENZ)
+    return p
 
 
 def win_ffmpeg():
@@ -273,16 +296,39 @@ def temp_dir():
 
 # ---------------------------------------------------------------- deliverables
 
+def _warn_missing_default_deliverable(env_var, cfg_name, path):
+    """Warn once when a deliverables built-in default is actually in use
+    (no env var, no env_config entry) and the path does not exist - the
+    operator should configure env_config.json instead of silently relying on
+    a legacy Windows default."""
+    if os.environ.get(env_var):
+        return
+    cfg = _load_env_config().get("deliverables")
+    if isinstance(cfg, dict) and cfg.get(cfg_name):
+        return
+    if not path or os.path.exists(path):
+        return
+    _warn_once(
+        "default:%s" % cfg_name,
+        "no deliverables.%s in env_config.json; using built-in default %s "
+        "which does not exist - add deliverables.%s to configure a real "
+        "folder" % (cfg_name, path, cfg_name))
+
+
 def games_dir():
     """Deliverable folder for finished game builds (stored native:
     D:/Games; localized to /mnt/d/Games on WSL)."""
-    return _deliverable("GAMES_DIR", "games", "D:/Games")
+    p = _deliverable("GAMES_DIR", "games", "D:/Games")
+    _warn_missing_default_deliverable("GAMES_DIR", "games", p)
+    return p
 
 
 def archives_dir():
     """Deliverable folder for game archives (stored native:
     D:/GamesCompress; localized to /mnt/d/GamesCompress on WSL)."""
-    return _deliverable("ARCHIVES_DIR", "archives", "D:/GamesCompress")
+    p = _deliverable("ARCHIVES_DIR", "archives", "D:/GamesCompress")
+    _warn_missing_default_deliverable("ARCHIVES_DIR", "archives", p)
+    return p
 
 
 def win_temp_dir():

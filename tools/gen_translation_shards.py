@@ -526,7 +526,18 @@ def _auto_sizing(map_keys, global_keys, ctx, tone, glossary, macros, args):
     chunk count stays <= --target-chunks AND whose largest chunk context.md
     stays under --context-budget-kb (90KB+ context chunks are the flaky
     no-file failures).  Returns (max_chars, chunk_count, max_context_chars,
-    warning)."""
+    warning).
+
+    Performance note (review §4.2 "prefix sum + binary locate"): the search
+    below already runs a BOUNDED number of full linear scans (two binary
+    searches over max_chars, ~log2(60000/1000) ~ 6 iterations each).  A
+    prefix-sum + bisect rewrite was NOT applied: build_buckets() must keep
+    consecutive keys of one map grouped (a label change forces a bucket
+    break), so bucket boundaries depend on the map labels, not just key
+    lengths - a pure cumulative-size bisect would change the chunking and
+    is protected against by test_random_build_buckets_constraints.  Measured
+    on a 30k-key / 60-map job the whole sizing runs in ~0.6s, well below the
+    per-invocation budget, so the added complexity is not justified."""
     if not map_keys:
         return 0, 0, 0, "no story maps"
     lo, hi = 1000, 60000

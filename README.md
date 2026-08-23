@@ -104,7 +104,13 @@ GameTranslation/
     ├── kirikiri-html.md # KiriKiri→HTML5 移植调研（JoiPlay 插件 / TyranoScript 转换 / WASM 对比）
     ├── kirikiri-tyrano.md # KiriKiri→TyranoScript 转换调研（路线 B 深化：支持程度分档 + 所需软件清单）
     ├── tyrano.md        # TyranoScript/TyranoBuilder 指南（JoiPlay 构建 + 翻译）
-    ├── experience.md    # 会话经验日志（坑、失败模式）
+    ├── experience.md    # 经验库索引（各主题经验入口，见下 experience-*）
+    ├── experience-decrypt.md  # 经验：解密/解包/Repacker 识别
+    ├── experience-audio-clean.md # 经验：音频/清理/打包
+    ├── experience-translation.md  # 经验：翻译工作流/烘焙/QC/补翻
+    ├── experience-tyrano.md   # 经验：TyranoScript 构建/移植
+    ├── experience-misc.md     # 经验：其他/杂项（服务卫生/CG解锁/运行兼容）
+    ├── CONTRIBUTING.md  # 贡献指南（分支/提交/自查/测试/语言/合并推送）
     ├── screenshot.md    # 截图验证流程（窗口级：指定 app 精确截图，配合
     │                    #   vision-analyzer 分析运行画面）
     └── table/           # 本地名词表/翻译资料库/游戏特定特征记录（glossary/

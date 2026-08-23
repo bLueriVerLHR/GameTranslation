@@ -18,6 +18,19 @@ import pytest
 
 from rpgmaker import config, deliver
 
+# Resolved Windows-side PowerShell path, as returned by shutil.which() inside
+# _run_powershell().  Tests pin it so the assertion is hermetic regardless of
+# the machine's PATH.
+_POWERSHELL_EXE = ("/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/"
+                   "powershell.exe")
+
+
+def _patch_powershell(monkeypatch):
+    """Make _run_powershell resolve to a deterministic PowerShell path."""
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda name: _POWERSHELL_EXE if name == "powershell.exe" else None)
+
 
 def _recorder(monkeypatch, calls, returncode=0):
     """Replace deliver.subprocess.run with a recorder returning success."""
@@ -113,6 +126,7 @@ class TestWindowsSide:
     def _windows_harness(self, tmp_path, monkeypatch, calls,
                          win7z="C:/Tools/7z.exe"):
         archive, dest = _make_archive_and_dest(tmp_path)
+        _patch_powershell(monkeypatch)
         monkeypatch.setattr(config, "win_7z", lambda: win7z)
         monkeypatch.setattr(config, "is_windows_side", lambda p: True)
         monkeypatch.setattr(config, "to_windows_path", lambda p: "D:" + p)
@@ -128,7 +142,7 @@ class TestWindowsSide:
         assert out == target
         assert len(calls) == 1
         cmd, _kw = calls[0]
-        assert cmd[0] == "powershell.exe"
+        assert cmd[0].endswith("powershell.exe")
         assert "-NoProfile" in cmd and "-Command" in cmd
         command = cmd[cmd.index("-Command") + 1]
         assert "C:/Tools/7z.exe" in command
@@ -150,6 +164,7 @@ class TestWindowsSide:
         assert calls == []
 
     def test_remove_windows_side_uses_powershell(self, tmp_path, monkeypatch):
+        _patch_powershell(monkeypatch)
         monkeypatch.setattr(config, "is_windows_side", lambda p: True)
         monkeypatch.setattr(config, "to_windows_path",
                             lambda p: "D:" + p)
@@ -158,13 +173,14 @@ class TestWindowsSide:
         deliver._remove_windows_side(str(tmp_path / "stale"))
         assert len(calls) == 1
         cmd, _kw = calls[0]
-        assert cmd[0] == "powershell.exe"
+        assert cmd[0].endswith("powershell.exe")
         command = cmd[cmd.index("-Command") + 1]
         assert "Remove-Item" in command
         assert "-LiteralPath" in command
         assert "$?" in command
 
     def test_powershell_failure_raises(self, tmp_path, monkeypatch):
+        _patch_powershell(monkeypatch)
         monkeypatch.setattr(config, "is_windows_side", lambda p: True)
         calls = []
         _recorder(monkeypatch, calls, returncode=1)
@@ -182,6 +198,7 @@ class TestExtractDispatch:
         os.makedirs(dest)
         with open(archive, "wb") as f:
             f.write(b"FAKE")
+        _patch_powershell(monkeypatch)
         monkeypatch.setattr(config, "find_7z",
                             lambda: str(tmp_path / "7zz"))
         monkeypatch.setattr(config, "win_7z", lambda: "C:/7z.exe")
@@ -208,7 +225,7 @@ class TestExtractDispatch:
         os.makedirs(target)
         deliver._extract(archive, dest, "game")
         cmd, _kw = calls[0]
-        assert cmd[0] == "powershell.exe"
+        assert cmd[0].endswith("powershell.exe")
 
     def test_cross_side_refused(self, tmp_path, monkeypatch):
         calls = []

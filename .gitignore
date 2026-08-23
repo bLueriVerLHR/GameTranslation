@@ -13,3 +13,4 @@ docs/table/
 
 # persistent work copies (per-game temp dirs, machine-local)
 tmp/
+work/

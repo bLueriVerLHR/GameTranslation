@@ -41,10 +41,11 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import japanese_utils  # noqa: E402
 import plugins_io  # noqa: E402
 import plain_io  # noqa: E402
 
-KANA = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e]")
+KANA = japanese_utils.KANA
 CJK = re.compile(r"[\u4e00-\u9fff]")
 BACKTICK = re.compile(r"`([^`]*)`")
 # Code-shaped strings (JS method calls / expressions) are treated like

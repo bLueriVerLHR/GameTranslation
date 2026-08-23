@@ -11,6 +11,13 @@ import argparse
 import json
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import japanese_utils  # noqa: E402
+
+KANA_ALL = japanese_utils.KANA_PURE_WORD
+KANA = japanese_utils.KANA
 
 TAIL_RULES = [
     (re.compile(r"ッッッ+$"), "!!!"),
@@ -74,7 +81,6 @@ MID_RULES = [
 TAG = re.compile(r"<[^>]*>")
 RB = re.compile(r"\\RB\[[^\]]*\]")
 IF = re.compile(r"if\([^)]*\)|:name(?:\[[^\]]*\])?|[A-Za-z]+://\S+")
-KANA_ALL = re.compile(r"^[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9eー～・゛゜\s\"'()（）\-_/]+$")
 CJK = re.compile(r"[\u4e00-\u9fff]")
 # Author/brand names are exempt from tick-cleaning.  Do NOT hardcode
 # per-game names here (game-specific pollution, same class as the old
@@ -149,7 +155,6 @@ def main():
     print("cleaned values:", n)
 
     # verify: kana outside RB/tags/author-names
-    KANA = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e]")
     left = []
     for k, v in data.items():
         v2 = re.sub(r"\\RB\[[^\]]*\]|<[^>]*>", "", v)

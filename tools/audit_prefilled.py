@@ -12,9 +12,13 @@ Usage:
 """
 import argparse
 import json
-import re
+import os
+import sys
 
-KANA = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e]")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import japanese_utils  # noqa: E402
+
+KANA = japanese_utils.KANA
 
 
 def main():

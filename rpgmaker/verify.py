@@ -14,10 +14,6 @@ from . import runtime
 
 log = logging.getLogger("rpgmaker.verify")
 
-BENIGN_DECODE = re_ignore = (
-    "Application provided invalid, non monotonically increasing dts to muxer"
-)
-
 FFMPEG_DECODE_TIMEOUT = 600  # per-file decode-check timeout (seconds)
 
 
@@ -138,7 +134,8 @@ def verify_audio_refs(web_root, source_dir=None):
         with open(path, encoding="utf-8-sig") as f:
             s = json.load(f)
     except (OSError, ValueError):
-        log.warning("System.json not plain JSON (custom runtime-decryption); audio refs check skipped")
+        log.warning("System.json not plain JSON (custom runtime-decryption); "
+                    "audio refs check skipped")
         return missing
 
     def check(name, folder):

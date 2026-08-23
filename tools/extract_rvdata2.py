@@ -34,7 +34,6 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import japanese_utils  # noqa: E402
-import plain_io  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
 from rvdata2_io import load_rvdata2  # noqa: E402

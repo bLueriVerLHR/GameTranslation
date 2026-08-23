@@ -26,12 +26,10 @@ Typical usage:
 """
 import argparse
 import logging
-import os
 import sys
 
 from rpgmaker import build, clean, compress, decrypt, deliver, detect, serve, verify
 from rpgmaker import audio as audio_mod
-from rpgmaker import runtime
 logging.basicConfig(
     level=logging.INFO,
     format="%(filename)s:%(lineno)d %(levelname)-7s %(name)s: %(message)s",

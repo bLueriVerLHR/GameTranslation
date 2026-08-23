@@ -18,9 +18,7 @@ Usage:
 """
 import argparse
 import glob
-import json
 import os
-import re
 
 NEUTRAL_TONE = """## Tone (from the game owner)
 - Faithful to the original (忠于原文): translate the meaning faithfully, do not invent or censor.

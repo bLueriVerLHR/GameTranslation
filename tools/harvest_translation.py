@@ -32,7 +32,6 @@ import json
 import logging
 import os
 import re
-import sys
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(message)s")
 log = logging.getLogger("harvest")
@@ -152,7 +151,8 @@ def main():
                         lines = [rebuild_name(name_line)] if name_line is not None else []
                         lines += [snorm[b] for b in body_s]
                         val, how = "\n".join(lines), "fragment"
-        if val is None and kd == "event-text" and len(k) >= 2 and k.startswith('"') and k.endswith('"'):
+        if (val is None and kd == "event-text" and len(k) >= 2
+                and k.startswith('"') and k.endswith('"')):
             inner = k[1:-1]
             iv = snorm.get(strip_codes(inner))
             if isinstance(iv, str) and iv:

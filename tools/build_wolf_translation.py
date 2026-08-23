@@ -41,8 +41,6 @@ Usage:
     python tools/build_wolf_translation.py <patch_dir> <work_dir> [--no-danger] [--no-extra]
 """
 import argparse
-import glob
-import json
 import os
 import re
 import sys

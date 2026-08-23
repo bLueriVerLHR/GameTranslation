@@ -19,7 +19,6 @@ import argparse
 import os
 import sys
 
-from fontTools.misc.transform import Transform
 from fontTools.ttLib import TTFont, TTCollection
 
 

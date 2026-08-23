@@ -14,10 +14,6 @@ from . import runtime
 
 log = logging.getLogger("rpgmaker.verify")
 
-BENIGN_DECODE = re_ignore = (
-    "Application provided invalid, non monotonically increasing dts to muxer"
-)
-
 FFMPEG_DECODE_TIMEOUT = 600  # per-file decode-check timeout (seconds)
 
 

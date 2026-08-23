@@ -24,10 +24,16 @@ import json
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import japanese_utils  # noqa: E402
 import plain_io  # noqa: E402
+
+# QC is CPU-ish and file-I/O bound per chunk; cap the worker pool so a huge
+# chunk count (hundreds of agent chunks) does not spawn unbounded threads
+# (review §4.2: parallelize the per-chunk QC, keep output order).
+MAX_QC_WORKERS = 8
 
 KANA = japanese_utils.KANA
 CTRL_TOK = re.compile(r"\\[A-Za-z]+\[[^\]]*\]|:[a-z]+(?:\[[^\]]*\])?")
@@ -121,6 +127,19 @@ def qc_pair(keys, vals, idx):
     return issues, not issues
 
 
+def _process_chunk(chunks_dir, num):
+    """Load + QC one chunk.  Returns (num, keys, vals, issues, ok) or
+    (num, None, None, None, False) when the zh.txt is missing.  Pure per
+    chunk: no shared state, safe to run on a thread pool (review §4.2)."""
+    keys, vals = plain_io.load_pair(chunks_dir, num)
+    if keys is None:
+        if os.path.exists(plain_io.ja_path(chunks_dir, num)):
+            return num, None, None, ["zh.txt missing"], False
+        return num, None, None, None, False
+    issues, ok = qc_pair(keys, vals, num)
+    return num, keys, vals, issues, ok
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("work_dir")
@@ -135,18 +154,29 @@ def main():
     problems = 0
     chunks = 0
 
+    # chunk numbers in filename (glob) order - the same order the legacy
+    # loop merged them, so the output dict and report lines stay identical.
+    nums = []
     for p in sorted(glob.glob(os.path.join(chunks_dir, "chunk_*.ja.txt"))):
         m = re.search(r"chunk_(\d+)\.ja\.txt$", p)
-        if not m:
-            continue
-        num = int(m.group(1))
-        keys, vals = plain_io.load_pair(chunks_dir, num)
+        if m:
+            nums.append(int(m.group(1)))
+
+    def run(num):
+        return _process_chunk(chunks_dir, num)
+
+    if len(nums) > 1:
+        with ThreadPoolExecutor(max_workers=min(MAX_QC_WORKERS, len(nums))) as ex:
+            results = list(ex.map(run, nums))
+    else:
+        results = [run(n) for n in nums]
+
+    for num, keys, vals, issues, ok in results:
         if keys is None:
-            if os.path.exists(plain_io.ja_path(chunks_dir, num)):
+            if issues == ["zh.txt missing"]:
                 print("chunk_%02d: zh.txt missing (not translated)" % num)
             continue
         chunks += 1
-        issues, ok = qc_pair(keys, vals, num)
         if not ok:
             problems += 1
         for k, v in zip(keys, vals):

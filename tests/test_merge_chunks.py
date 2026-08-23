@@ -125,6 +125,64 @@ class TestMergeFlow:
         assert "merged: 0 keys" in out
 
 
+class TestParallelQc:
+    """Review §4.2: with many chunks the per-chunk QC runs on a thread
+    pool.  Output must stay deterministic - same merged dict, same
+    per-chunk report lines, same key order - as the legacy serial path."""
+
+    def _make_chunks(self, tmp_path, n=12):
+        chunks_dir = tmp_path / "chunks"
+        chunks_dir.mkdir()
+        for i in range(n):
+            keys = ["こんにちは%d" % (i * 100 + j) for j in range(3)]
+            vals = ["你好%d" % (i * 100 + j) for j in range(3)]
+            plain_io.save_lines(plain_io.ja_path(str(chunks_dir), i), keys)
+            plain_io.save_lines(plain_io.zh_path(str(chunks_dir), i), vals)
+        return chunks_dir
+
+    def test_many_chunks_parallel_merge_order(self, tmp_path, monkeypatch,
+                                              capsys):
+        work = tmp_path
+        self._make_chunks(work, n=12)
+        monkeypatch.setattr("sys.argv", ["merge_plain_chunks.py", str(work)])
+        mpc.main()
+        with open(str(work / "chunks_translated.json"), encoding="utf-8") as f:
+            merged = json.load(f)
+        # all 36 keys merged, in chunk order (chunk 0 first, chunk 11 last)
+        assert len(merged) == 36
+        keys = list(merged)
+        assert keys[0] == "こんにちは0"
+        assert keys[-1] == "こんにちは1102"
+        out = capsys.readouterr().out
+        assert "merged: 36 keys (12 chunks)" in out
+        # report lines stay sorted by chunk number (chunk_00 ... chunk_11)
+        lines = [l for l in out.splitlines() if l.startswith("chunk_")]
+        assert len(lines) == 12
+        assert lines[0].startswith("chunk_00:") and lines[-1].startswith("chunk_11:")
+
+    def test_parallel_matches_serial(self, tmp_path, monkeypatch, capsys):
+        import copy
+        work1 = tmp_path / "w1"
+        work2 = tmp_path / "w2"
+        for w in (work1, work2):
+            w.mkdir()
+            self._make_chunks(w, n=8)
+        # serial: force the 1-chunk branch by pointing at a single chunk
+        # (results must equal the parallel path on the full set)
+        merged_ref = {}
+        for i in range(8):
+            num, keys, vals, issues, ok = mpc._process_chunk(
+                str(work1 / "chunks"), i)
+            assert ok
+            for k, v in zip(keys, vals):
+                merged_ref[k] = v
+        monkeypatch.setattr("sys.argv", ["merge_plain_chunks.py", str(work2)])
+        mpc.main()
+        with open(str(work2 / "chunks_translated.json"), encoding="utf-8") as f:
+            merged_par = json.load(f)
+        assert merged_par == merged_ref
+
+
 class TestRandomSampleQc:
     """Randomly generated ja/zh line pairs must satisfy the QC invariants
     (AGENTS.md task-rule 4: random sampling instead of a fixed spot check).

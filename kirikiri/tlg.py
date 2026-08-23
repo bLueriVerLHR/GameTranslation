@@ -684,8 +684,10 @@ def _blend_image(base, base_w, base_h, overlay, ov_w, ov_h, off_x, off_y, method
                     out[dst:dst + 4] = overlay[src:src + 4]
                 else:
                     out[dst] = (overlay[src] * src_alpha + out[dst] * (0xFF - src_alpha)) // 0xFF
-                    out[dst + 1] = (overlay[src + 1] * src_alpha + out[dst + 1] * (0xFF - src_alpha)) // 0xFF
-                    out[dst + 2] = (overlay[src + 2] * src_alpha + out[dst + 2] * (0xFF - src_alpha)) // 0xFF
+                    out[dst + 1] = (overlay[src + 1] * src_alpha
+                                    + out[dst + 1] * (0xFF - src_alpha)) // 0xFF
+                    out[dst + 2] = (overlay[src + 2] * src_alpha
+                                    + out[dst + 2] * (0xFF - src_alpha)) // 0xFF
                     out[dst + 3] = max(src_alpha, out[dst + 3])
             dst += 4
             src += 4

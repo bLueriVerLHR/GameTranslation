@@ -7,6 +7,11 @@ Policy (music stays stereo at q3; voice/sfx become 32 kHz mono q2):
   channels == 1 and bitrate >  64000  -> -ar 32000 -ac 1 libvorbis -q:a 2
 Always `-map 0:a:0` so embedded album-art video streams are dropped.
 Only replaces the original when the new file is smaller.
+
+The encode policy is a STRATEGY list (review §5): MonoVoiceStrategy /
+StereoMusicStrategy / KeepOriginalStrategy, selected by pick_strategy().
+Adding a new codec policy (e.g. Opus) is a new strategy class, not a new
+branch in transcode_one().
 """
 import asyncio
 import csv
@@ -61,6 +66,79 @@ def bitrate_calc(fsize, duration):
     return int(fsize * 8 / float(duration))
 
 
+class EncodeStrategy:
+    """Base class for the audio re-encode policy (review §5 / §5.1).
+
+    A strategy decides whether a probed file should be re-encoded and which
+    ffmpeg args to use.  `applies(info)` inspects the probe result
+    (duration/size/channels) and `args()` returns the encoder arguments
+    (without the fixed `-map 0:a:0` prefix added by transcode_one).
+
+    Strategies are ordered by priority in STRATEGIES; the first one whose
+    applies() returns True wins.  Degenerate/placeholder files (duration
+    <= 0 or < 1s) NEVER reach a strategy: transcode_one guards them first
+    because re-encoding them would produce a broken Ogg (see transcode_one).
+    """
+
+    def applies(self, info):
+        raise NotImplementedError
+
+    def args(self):
+        raise NotImplementedError
+
+
+class MonoVoiceStrategy(EncodeStrategy):
+    """Voice/SFX: a single channel above the mono threshold -> 32 kHz mono
+    q2 (halves the sample rate while keeping speech quality)."""
+
+    def applies(self, info):
+        ch = int(info["channels"] or 0)
+        br = bitrate_calc(int(info["size"]), float(info["duration"]))
+        return ch == 1 and br > config.MONO_BITRATE_THRESHOLD
+
+    def args(self):
+        return ["-ar", "32000", "-ac", "1", "-c:a", "libvorbis", "-q:a", "2"]
+
+
+class StereoMusicStrategy(EncodeStrategy):
+    """Music/BGM: multi-channel above the stereo threshold -> q3 at the
+    original sample rate/channels (music stays stereo)."""
+
+    def applies(self, info):
+        ch = int(info["channels"] or 0)
+        br = bitrate_calc(int(info["size"]), float(info["duration"]))
+        return ch != 1 and br > config.STEREO_BITRATE_THRESHOLD
+
+    def args(self):
+        return ["-c:a", "libvorbis", "-q:a", "3"]
+
+
+class KeepOriginalStrategy(EncodeStrategy):
+    """Keep-original terminal strategy: matches any remaining file (below
+    both thresholds) and emits no encode args - transcode_one returns
+    'keep'.  Placed last in STRATEGIES so the re-encode strategies win;
+    kept as an explicit class so the 'keep' decision is a first-class
+    strategy (review §5)."""
+
+    def applies(self, info):
+        return True
+
+    def args(self):
+        return []
+
+
+# Priority order: mono voice first, then stereo music, keep-original last.
+STRATEGIES = [MonoVoiceStrategy(), StereoMusicStrategy(), KeepOriginalStrategy()]
+
+
+def pick_strategy(info):
+    """First strategy whose applies() is True (MonoVoice -> StereoMusic ->
+    KeepOriginal); returns None only if STRATEGIES were empty.  The
+    KeepOriginal terminal strategy stands in for the old code's "keep the
+    file as-is" fallback."""
+    return next((s for s in STRATEGIES if s.applies(info)), None)
+
+
 def transcode_one(ffmpeg, path, info):
     """Re-encode one file. Returns (path, status, saved_bytes)."""
     try:
@@ -72,16 +150,11 @@ def transcode_one(ffmpeg, path, info):
             # huge enough to pass the threshold, but re-encoding them produces a
             # broken Ogg with no audio packets. Leave anything under 1s alone.
             return path, "keep", 0
-        fsize = int(info["size"])
-        br = bitrate_calc(fsize, dur)
-        ch = int(info["channels"] or 0)
-
-        if ch == 1 and br > config.MONO_BITRATE_THRESHOLD:
-            args = ["-ar", "32000", "-ac", "1", "-c:a", "libvorbis", "-q:a", "2"]
-        elif ch != 1 and br > config.STEREO_BITRATE_THRESHOLD:
-            args = ["-c:a", "libvorbis", "-q:a", "3"]
-        else:
+        strategy = pick_strategy(info)
+        args = strategy.args()
+        if not args:
             return path, "keep", 0
+        fsize = int(info["size"])
 
         loopstart, looplength = info.get("loopstart"), info.get("looplength")
         if loopstart:

@@ -101,6 +101,53 @@ class TestToolMissing:
             audio.reencode_all(web, {}, workers=1)
 
 
+class TestStrategyPattern:
+    """Review §5.1: the re-encode policy is a strategy list.  pick_strategy
+    must map (channels, bitrate) to the same class as the old inline
+    branches, and the classes must be first-class so a new codec policy can
+    extend the list without touching transcode_one."""
+
+    def _info(self, ch, fsize, dur=10.0):
+        return {"duration": "%.4f" % dur, "size": str(fsize),
+                "channels": str(ch)}
+
+    def test_pick_mono_voice(self):
+        br = config.MONO_BITRATE_THRESHOLD
+        s = audio.pick_strategy(self._info(1, br * 10 // 8 + 8))
+        assert isinstance(s, audio.MonoVoiceStrategy)
+        assert s.args() == ["-ar", "32000", "-ac", "1", "-c:a", "libvorbis",
+                            "-q:a", "2"]
+
+    def test_pick_stereo_music(self):
+        br = config.STEREO_BITRATE_THRESHOLD
+        s = audio.pick_strategy(self._info(2, br * 10 // 8 + 8))
+        assert isinstance(s, audio.StereoMusicStrategy)
+        assert s.args() == ["-c:a", "libvorbis", "-q:a", "3"]
+
+    def test_pick_keep_original_below_thresholds(self):
+        s = audio.pick_strategy(self._info(1, 1000, 10.0))
+        assert isinstance(s, audio.KeepOriginalStrategy)
+        assert s.args() == []
+
+    def test_pick_mono_priority_over_music(self):
+        # a mono file above BOTH thresholds must pick MonoVoice (priority)
+        mono = config.MONO_BITRATE_THRESHOLD * 10 // 8 + 8
+        stereo = config.STEREO_BITRATE_THRESHOLD * 10 // 8 + 8
+        s = audio.pick_strategy(self._info(1, max(mono, stereo)))
+        assert isinstance(s, audio.MonoVoiceStrategy)
+
+    def test_strategy_order_is_priority(self):
+        assert [type(s) for s in audio.STRATEGIES] == [
+            audio.MonoVoiceStrategy, audio.StereoMusicStrategy,
+            audio.KeepOriginalStrategy]
+
+    def test_missing_size_raises_like_legacy(self):
+        # a missing "size" key must surface as exc (KeyError) exactly as the
+        # old inline code did - MonoVoice.applies touches info["size"] first
+        with pytest.raises(KeyError):
+            audio.pick_strategy({"duration": "10.0", "channels": "2"})
+
+
 class TestRandomSamplePolicy:
     """Random-sampled (channels, size, duration) triples must map to the
     documented re-encode policy (AGENTS.md task-rule 4: random sampling, not

@@ -252,7 +252,7 @@ GOLOMB_COMPRESSED = [
     (2, 3, 9, 18, 33, 61, 129, 258, 511),
 ]
 
-_leading_zero = bytearray(LZ_TABLE_SIZE)
+_LEADING_ZERO = bytearray(LZ_TABLE_SIZE)
 for i in range(LZ_TABLE_SIZE):
     cnt = 0
     j = 1
@@ -262,14 +262,14 @@ for i in range(LZ_TABLE_SIZE):
     cnt += 1
     if j == LZ_TABLE_SIZE:
         cnt = 0
-    _leading_zero[i] = cnt
+    _LEADING_ZERO[i] = cnt
 
-_golomb_table = bytearray(GOLOMB_N * GOLOMB_N * 2 * 128)
+_GOLOMB_TABLE = bytearray(GOLOMB_N * GOLOMB_N * 2 * 128)
 for n in range(GOLOMB_N):
     a = 0
     for i in range(9):
         for _ in range(GOLOMB_COMPRESSED[n][i]):
-            _golomb_table[a * GOLOMB_N + n] = i
+            _GOLOMB_TABLE[a * GOLOMB_N + n] = i
             a += 1
     assert a == GOLOMB_N * 2 * 128
 
@@ -360,7 +360,7 @@ def _decode_golomb(bit_pool, pixel_count, offset=None):
     pixel = 0
     while pixel < pixel_count:
         t = (_le_u32(bit_pool, idx) >> bit_pos) & MASK32
-        b = _leading_zero[t & (LZ_TABLE_SIZE - 1)]
+        b = _LEADING_ZERO[t & (LZ_TABLE_SIZE - 1)]
         bit_count = b
         while b == 0:
             bit_count += LZ_TABLE_BITS
@@ -368,7 +368,7 @@ def _decode_golomb(bit_pool, pixel_count, offset=None):
             idx += bit_pos >> 3
             bit_pos &= 7
             t = (_le_u32(bit_pool, idx) >> bit_pos) & MASK32
-            b = _leading_zero[t & (LZ_TABLE_SIZE - 1)]
+            b = _LEADING_ZERO[t & (LZ_TABLE_SIZE - 1)]
             bit_count += b
         bit_pos += b
         idx += bit_pos >> 3
@@ -384,10 +384,10 @@ def _decode_golomb(bit_pool, pixel_count, offset=None):
             zero = False
         else:
             while count:
-                k = _golomb_table[a * GOLOMB_N + n]
+                k = _GOLOMB_TABLE[a * GOLOMB_N + n]
                 t = (_le_u32(bit_pool, idx) >> bit_pos) & MASK32
                 if t != 0:
-                    b = _leading_zero[t & (LZ_TABLE_SIZE - 1)]
+                    b = _LEADING_ZERO[t & (LZ_TABLE_SIZE - 1)]
                     bit_count = b
                     while b == 0:
                         bit_count += LZ_TABLE_BITS
@@ -395,7 +395,7 @@ def _decode_golomb(bit_pool, pixel_count, offset=None):
                         idx += bit_pos >> 3
                         bit_pos &= 7
                         t = (_le_u32(bit_pool, idx) >> bit_pos) & MASK32
-                        b = _leading_zero[t & (LZ_TABLE_SIZE - 1)]
+                        b = _LEADING_ZERO[t & (LZ_TABLE_SIZE - 1)]
                         bit_count += b
                     bit_count -= 1
                 else:
@@ -1105,6 +1105,6 @@ def _decode_tlg6_fast(data, width, height, colors, data_offset):
     """numba JIT path; falls back to pure python on any error."""
     import numpy as np
     src = np.frombuffer(data, dtype=np.uint8)
-    lz = np.frombuffer(bytes(_leading_zero), dtype=np.uint8)
-    gt = np.frombuffer(bytes(_golomb_table), dtype=np.uint8)
+    lz = np.frombuffer(bytes(_LEADING_ZERO), dtype=np.uint8)
+    gt = np.frombuffer(bytes(_GOLOMB_TABLE), dtype=np.uint8)
     return _nb_decode_tlg6(src, width, height, colors, data_offset, lz, gt)

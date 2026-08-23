@@ -115,7 +115,7 @@ def _golomb_stream(values):
             v = 2 * val - 1
         else:
             v = 2 * (256 - val)
-        k = tlg._golomb_table[a * GOLOMB_N + n]
+        k = tlg._GOLOMB_TABLE[a * GOLOMB_N + n]
         bc = v >> k
         extra = v & ((1 << k) - 1)
         bits += [0] * bc + [1]

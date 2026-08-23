@@ -82,7 +82,7 @@ DEFAULT_WIN_SEVENZ = DEFAULT_SEVENZ
 
 # ---------------------------------------------------------------- platform
 
-def is_wsl():
+def is_wsl() -> bool:
     """True when running inside WSL (Linux with a Microsoft kernel)."""
     if sys.platform != "linux":
         return False
@@ -94,7 +94,7 @@ def is_wsl():
         return False
 
 
-def platform_key():
+def platform_key() -> str:
     """Current platform key used inside env_config.json."""
     if is_wsl():
         return "wsl"
@@ -103,7 +103,7 @@ def platform_key():
     return "linux"
 
 
-def is_windows_side(path):
+def is_windows_side(path: str) -> bool:
     """True when `path` points at a Windows-side file from inside WSL.
 
     Windows-side files (/mnt/*) must be processed by the Windows-side tools
@@ -121,7 +121,7 @@ def _posix(path):
     return PureWindowsPath(str(path)).as_posix()
 
 
-def to_windows_path(path):
+def to_windows_path(path: str) -> str:
     """Convert a /mnt/<drive>/... path to Windows form (D:\\...); anything
     else is returned unchanged."""
     parts = PurePosixPath(_posix(path)).parts
@@ -131,7 +131,7 @@ def to_windows_path(path):
     return str(PureWindowsPath(parts[2].upper() + ":", "\\", *parts[3:]))
 
 
-def to_wsl_path(path):
+def to_wsl_path(path: str) -> str:
     """Map a Windows-form path (C:\\... or /mnt/...) to the WSL mount view
     (/mnt/c/...) so it can be stat/read from WSL. Relative inputs are
     returned unchanged."""
@@ -161,7 +161,7 @@ def _win_tool(name, env_var, default=""):
     return None
 
 
-def win_7z():
+def win_7z() -> str | None:
     """Windows-side 7z binary, for processing files stored on the Windows
     side. Resolution: SEVENZ_WIN env -> env_config tools.win32.7z ->
     DEFAULT_WIN_SEVENZ; None when the binary is not present."""
@@ -175,21 +175,21 @@ def win_7z():
     return p
 
 
-def win_ffmpeg():
+def win_ffmpeg() -> str | None:
     """Windows-side ffmpeg binary (WinGet install), for processing files
     stored on the Windows side. Resolution: WIN_FFMPEG env ->
     env_config tools.win32.ffmpeg; None when not configured/absent."""
     return _win_tool("ffmpeg", "WIN_FFMPEG")
 
 
-def win_rg():
+def win_rg() -> str | None:
     """Windows-side ripgrep binary (WinGet install), for searching files
     stored on the Windows side. Resolution: WIN_RG env ->
     env_config tools.win32.rg; None when not configured/absent."""
     return _win_tool("rg", "WIN_RG")
 
 
-def recorded_platform():
+def recorded_platform() -> str:
     """Platform recorded in env_config.json (informational only; the code
     still detects the actual platform at runtime)."""
     return _load_env_config().get("platform") or platform_key()
@@ -284,7 +284,7 @@ def _temp_dir_cfg(key):
     return _localize(_expand(p or ""))
 
 
-def temp_dir():
+def temp_dir() -> str:
     """Work directory for temp copies: the persistent large-work dir on
     WSL (deliverables.temp.persist), the Windows %TEMP% on Windows
     (deliverables.temp.win32)."""
@@ -315,7 +315,7 @@ def _warn_missing_default_deliverable(env_var, cfg_name, path):
         "folder" % (cfg_name, path, cfg_name))
 
 
-def games_dir():
+def games_dir() -> str:
     """Deliverable folder for finished game builds (stored native:
     D:/Games; localized to /mnt/d/Games on WSL)."""
     p = _deliverable("GAMES_DIR", "games", "D:/Games")
@@ -323,7 +323,7 @@ def games_dir():
     return p
 
 
-def archives_dir():
+def archives_dir() -> str:
     """Deliverable folder for game archives (stored native:
     D:/GamesCompress; localized to /mnt/d/GamesCompress on WSL)."""
     p = _deliverable("ARCHIVES_DIR", "archives", "D:/GamesCompress")
@@ -331,7 +331,7 @@ def archives_dir():
     return p
 
 
-def win_temp_dir():
+def win_temp_dir() -> str:
     """Windows-side temp for downloads and Windows-only tools (the Windows
     %TEMP% folder; stored native: %LOCALAPPDATA%/Temp, localized to
     /mnt/c/... on WSL).  Reads the nested deliverables.temp.win32 key
@@ -344,13 +344,13 @@ def win_temp_dir():
 
 # ---------------------------------------------------------------- venv
 
-def venv_dir():
+def venv_dir() -> Path:
     """Project virtualenv directory (created locally, gitignored)."""
     rel = _pick(_load_env_config().get("venv"), "dir") or ".venv"
     return REPO_ROOT / rel
 
 
-def venv_python():
+def venv_python() -> str:
     """Python interpreter inside the project venv (best compatibility)."""
     exe = "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
     return str(venv_dir() / exe)
@@ -381,29 +381,29 @@ def _find_tool(env_var, cfg_name, win_default="", names=()):
     return None
 
 
-def find_ffmpeg():
+def find_ffmpeg() -> str | None:
     return _find_tool("FFMPEG", "ffmpeg",
                       os.path.join(DEFAULT_FFMPEG_DIR, "ffmpeg.exe"), ("ffmpeg",))
 
 
-def find_ffprobe():
+def find_ffprobe() -> str | None:
     return _find_tool("FFPROBE", "ffprobe",
                       os.path.join(DEFAULT_FFMPEG_DIR, "ffprobe.exe"), ("ffprobe",))
 
 
-def find_7z():
+def find_7z() -> str | None:
     return _find_tool("SEVENZ", "7z", DEFAULT_SEVENZ, ("7z", "7zz", "7za"))
 
 
-def find_rg():
+def find_rg() -> str | None:
     return _find_tool("RG", "rg", "", ("rg",))
 
 
-def find_git():
+def find_git() -> str | None:
     return _find_tool("GIT", "git", "", ("git",))
 
 
-def find_npx():
+def find_npx() -> str | None:
     """Locate the npx launcher (Node.js package runner). Same resolution as
     _find_tool (NPX env -> env_config -> PATH), plus an explicit npx.cmd
     fallback on Windows: shutil.which may miss .cmd shims in some setups
@@ -474,7 +474,7 @@ def _discover_font(pattern):
     return first
 
 
-def find_cjk_font():
+def find_cjk_font() -> str | None:
     p = os.environ.get("CJK_FONT_PATH")
     if p and os.path.isfile(p):
         return p
@@ -484,7 +484,7 @@ def find_cjk_font():
     return _discover_font("glowsanssc")
 
 
-def find_jp_font():
+def find_jp_font() -> str | None:
     """Japanese fallback font (second line of local_font_path.txt, or
     JP_FONT_PATH env var). None when unset - callers keep the game's
     original font for Japanese text."""

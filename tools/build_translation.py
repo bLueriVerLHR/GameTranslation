@@ -54,6 +54,13 @@ NAME_LINE = re.compile(r"^(?:[\u3040-\u30ff\u4e00-\u9fff]|・)+[さんちゃん�
 DIRECTIVE = re.compile(r"^\s*(?:<|>|//|#|\[|`)|<[A-Za-z_@][^>]*>", re.S)
 WINDOW = 2
 
+# Parsed plugin list cache (review §4.2: "single read, cached per file").
+# js/plugins.js is read and parsed exactly once per build even when
+# extract_plugin_text() is invoked repeatedly (each build loops over every
+# data/*.json first, then collects plugin text once).  The key includes
+# mtime + size so a modified file invalidates the entry and re-parses.
+_plugin_cache = {}
+
 DISPLAY_KEYS = {"name", "nickname", "profile", "description",
                 "message1", "message2", "message3", "message4", "text"}
 EVENT_TEXT_IDX = {101: [4], 402: [0], 320: [1], 324: [1], 325: [1]}
@@ -104,11 +111,24 @@ def talk_lines(lst):
     return out
 
 
-def window_for(idx, tl, radius=WINDOW):
-    pos = [i for i, (ci, _) in enumerate(tl) if ci == idx]
-    if not pos:
+def pos_map(tl):
+    """command index -> position in the talk list.  Building this once per
+    command list turns window_for() from a per-call O(m) linear scan into an
+    O(1) lookup, so the whole build is O(n) instead of O(n x m) (review
+    §4.2: group windows per (map, event) command list, then look up).
+    setdefault keeps the FIRST occurrence like the legacy window_for()."""
+    pos = {}
+    for i, (ci, _) in enumerate(tl):
+        pos.setdefault(ci, i)
+    return pos
+
+
+def window_for(idx, tl, radius=WINDOW, pos=None):
+    if pos is None:
+        pos = pos_map(tl)
+    p = pos.get(idx)
+    if p is None:
         return []
-    p = pos[0]
     return [t for _, t in tl[max(0, p - radius):p + radius + 1] if t is not None]
 
 
@@ -178,9 +198,16 @@ def build_name_macros(data_dir):
     return macros
 
 
-def iter_message_blocks(cmds, collector, kind="block", where="", loc=""):
-    """Yield (block_key, [line, ...]) for runs of consecutive 401/405 cmds."""
-    tl = talk_lines(cmds)
+def iter_message_blocks(cmds, collector, kind="block", where="", loc="",
+                        tl=None, pos=None):
+    """Yield (block_key, [line, ...]) for runs of consecutive 401/405 cmds.
+    `tl`/`pos` are the shared talk list + position map (computed once per
+    command list by the caller); both callers reuse them so talk_lines() is
+    not recomputed and window_for() stays O(1) (review §4.2)."""
+    if tl is None:
+        tl = talk_lines(cmds)
+    if pos is None:
+        pos = pos_map(tl)
     i, n = 0, len(cmds)
     while i < n:
         code = cmds[i].get("code")
@@ -195,7 +222,8 @@ def iter_message_blocks(cmds, collector, kind="block", where="", loc=""):
                          else "")
             j += 1
         key = "\n".join(lines)
-        collector.add(key, kind, where, window_for(i, tl), loc + "#c%d" % i)
+        collector.add(key, kind, where, window_for(i, tl, pos=pos),
+                      loc + "#c%d" % i)
         yield key, lines
         if len(lines) == 1 and key and not CTRL.search(key) \
                 and NAME_LINE.match(key.strip()) and len(key.strip()) <= 14:
@@ -205,8 +233,14 @@ def iter_message_blocks(cmds, collector, kind="block", where="", loc=""):
         i = j
 
 
-def process_commands(cmds, collector, where="", loc=""):
-    tl = talk_lines(cmds)
+def process_commands(cmds, collector, where="", loc="", tl=None, pos=None):
+    """`tl`/`pos` are the shared talk list + position map computed once per
+    command list by the caller (see iter_message_blocks); window_for() uses
+    them so the per-key window lookup is O(1), not a linear re-scan."""
+    if tl is None:
+        tl = talk_lines(cmds)
+    if pos is None:
+        pos = pos_map(tl)
     for idx, cmd in enumerate(cmds):
         code = cmd.get("code")
         params = cmd.get("parameters")
@@ -216,7 +250,7 @@ def process_commands(cmds, collector, where="", loc=""):
         if code == 102 and params and isinstance(params[0], list):
             for x in params[0]:
                 if isinstance(x, str) and JA.search(x):
-                    collector.add(x, "choice", where, window_for(idx, tl), cloc)
+                    collector.add(x, "choice", where, window_for(idx, tl, pos=pos), cloc)
         elif code in EVENT_TEXT_IDX:
             for i2 in EVENT_TEXT_IDX[code]:
                 if i2 < len(params) and isinstance(params[i2], str) \
@@ -224,7 +258,7 @@ def process_commands(cmds, collector, where="", loc=""):
                     if code == 101 and len(params) >= 5:
                         collector.add_name(params[4])
                     collector.add(params[i2], "event-text", where,
-                                  window_for(idx, tl), cloc)
+                                  window_for(idx, tl, pos=pos), cloc)
         elif code == 122:
             # skip script operands (operandType == 4): params[4] is JS code
             if len(params) > 3 and params[3] == 4:
@@ -234,11 +268,11 @@ def process_commands(cmds, collector, where="", loc=""):
                     if i2 < len(params) and isinstance(params[i2], str) \
                             and params[i2]:
                         collector.add(params[i2], "event-text", where,
-                                      window_for(idx, tl), cloc)
+                                      window_for(idx, tl, pos=pos), cloc)
         elif code == 408:
             if params and isinstance(params[0], str) and params[0] \
                     and not DIRECTIVE.match(params[0]):
-                collector.add(params[0], "help", where, window_for(idx, tl),
+                collector.add(params[0], "help", where, window_for(idx, tl, pos=pos),
                               cloc)
 
 
@@ -277,19 +311,30 @@ def collect_values(obj, collector, where="", loc=""):
 
 
 def extract_plugin_text(game_dir, collector):
-    """JA-bearing strings in js/plugins.js plugin parameters (kind 'plugin')."""
+    """JA-bearing strings in js/plugins.js plugin parameters (kind 'plugin').
+    The file is read and parsed at most once per build via _plugin_cache
+    (keyed by mtime+size); repeated calls reuse the parsed plugin list."""
     path = os.path.join(game_dir, "js", "plugins.js")
     if not os.path.exists(path):
         return 0
     try:
-        plugins = plugins_io.parse_plugins_js(
-            open(path, encoding="utf-8-sig").read())
-    except Exception as e:  # noqa: BLE001 - keep the build going
-        # Intentional catch-all: parse_plugins_js() is a heuristic JS parser;
-        # on any failure (ValueError/IndexError/TypeError/KeyError from
-        # malformed plugin params) we skip plugin text rather than abort.
-        log("WARN: plugins.js parse failed (%s) - plugin text skipped" % e)
-        return 0
+        st = os.stat(path)
+        key = (path, st.st_mtime_ns, st.st_size)
+    except OSError:
+        key = (path,)
+    plugins = _plugin_cache.get(key)
+    if plugins is None:
+        try:
+            plugins = plugins_io.parse_plugins_js(
+                open(path, encoding="utf-8-sig").read())
+        except Exception as e:  # noqa: BLE001 - keep the build going
+            # Intentional catch-all: parse_plugins_js() is a heuristic JS
+            # parser; on any failure (ValueError/IndexError/TypeError/KeyError
+            # from malformed plugin params) we skip plugin text rather than
+            # abort.  A failed parse is NOT cached, so a later fix re-parses.
+            log("WARN: plugins.js parse failed (%s) - plugin text skipped" % e)
+            return 0
+        _plugin_cache[key] = plugins
     n = 0
     for where, val in plugins_io.iter_plugin_strings(plugins, JA):
         collector.add(val, "plugin", where, [])
@@ -319,10 +364,17 @@ def build_tree(data, map_id, map_name, display_name, collector, fname=""):
                 lists.append(pg["list"])
         for li, lst in enumerate(lists):
             ploc = eloc + "#pg%d" % li
-            process_commands(lst, collector, where, ploc)
+            # One shared talk list + position map per command list: both
+            # walkers reuse it, so the per-key window lookup is O(1) (the
+            # old code recomputed talk_lines() and linearly re-scanned it
+            # for every command -> O(n x m) per list, review §4.2).
+            tl = talk_lines(lst)
+            pos = pos_map(tl)
+            process_commands(lst, collector, where, ploc, tl=tl, pos=pos)
             for block_key, lines in iter_message_blocks(lst, collector,
                                                         where=where,
-                                                        loc=ploc):
+                                                        loc=ploc, tl=tl,
+                                                        pos=pos):
                 ev_items["items"].append({"kind": "block", "key": block_key})
             for c in lst:
                 params = c.get("parameters") or []

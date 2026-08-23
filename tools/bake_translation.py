@@ -41,6 +41,8 @@ import os
 import re
 import shutil
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -67,6 +69,19 @@ QUOTED = re.compile(r"['\"`][^'\"`]*[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e][^'
 
 # Coverage stats, filled by exact() during a translate_data pass.
 STATS = {"hit": 0, "miss": 0}
+
+# Per-thread coverage counters for the parallel bake path (review §4.2:
+# map-level parallelism).  Each worker thread sets its own local dict so
+# exact()/exact_loc() accumulate into it instead of racing the shared
+# STATS; the main thread (and the tests) keep using STATS directly.
+_thread_stats = threading.local()
+
+
+def _stats():
+    """Coverage counters for the current thread: a worker thread's local
+    dict when set, else the shared module STATS (which tests inspect)."""
+    local = getattr(_thread_stats, "value", None)
+    return local if local is not None else STATS
 
 # Bake coverage gate: refuse to bake when the dict translates less than this
 # fraction of the game's kana-bearing display strings (see --min-coverage).
@@ -100,7 +115,7 @@ def exact_loc(s, D, loc):
         v = D.get(s + LOC_SEP + loc)
         if isinstance(v, str) and v:
             if v != s:
-                STATS["hit"] += 1
+                _stats()["hit"] += 1
             return v
     return exact(s, D)
 
@@ -113,10 +128,10 @@ def exact(s, D):
     v = D.get(s)
     if isinstance(v, str) and v:
         if v != s:
-            STATS["hit"] += 1
+            _stats()["hit"] += 1
         return v
     if KANA.search(s):
-        STATS["miss"] += 1
+        _stats()["miss"] += 1
     return None
 
 
@@ -483,15 +498,16 @@ def _report_name_refs(refs, event_names):
         log.info("all name refs resolve to an event name")
 
 
-def translate_data(root, D, write=True):
-    """Bake the dict into every data file.  write=False is the coverage
-    measurement pass: identical traversal, no files touched."""
-    data_dir = os.path.join(root, "data")
-    files = 0
+def _translate_file(path, D, fname, write):
+    """Translate one data file in isolation.  Returns (event_names, refs,
+    stats) so translate_data() can merge results without any shared mutable
+    state: the per-thread coverage counters avoid racing the module STATS
+    (review §4.2: map-level parallelism with correct JSON parse/write-back)."""
+    local = {"hit": 0, "miss": 0}
+    _thread_stats.value = local
     event_names = set()
     refs = []
-    for path in sorted(glob.glob(os.path.join(data_dir, "*.json"))):
-        fname = os.path.basename(path)
+    try:
         with open(path, encoding="utf-8-sig") as f:
             data = json.load(f)
         if is_event_container(data):
@@ -503,8 +519,43 @@ def translate_data(root, D, write=True):
         if write:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-        files += 1
-    log.info("%s %d data files", "baked" if write else "scanned", files)
+    finally:
+        _thread_stats.value = None
+    return event_names, refs, local
+
+
+def translate_data(root, D, write=True, workers=None):
+    """Bake the dict into every data file.  write=False is the coverage
+    measurement pass: identical traversal, no files touched.
+
+    `workers` > 1 translates the data files on a thread pool (each file is
+    read, translated and written independently, so JSON parse + write-back
+    are safe to parallelize; review §4.2).  Default (None/1) is the exact
+    legacy single-threaded path.  Per-file results are merged in the sorted
+    file order, so the baked output and the coverage totals are identical
+    regardless of the worker count."""
+    data_dir = os.path.join(root, "data")
+    files = sorted(glob.glob(os.path.join(data_dir, "*.json")))
+    event_names = set()
+    refs = []
+    stats_total = {"hit": 0, "miss": 0}
+
+    def run(path, fname):
+        return _translate_file(path, D, fname, write)
+
+    if workers and workers > 1 and len(files) > 1:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            results = list(ex.map(lambda p: run(p, os.path.basename(p)), files))
+    else:
+        results = [run(p, os.path.basename(p)) for p in files]
+
+    for ev, rf, st in results:
+        event_names.update(ev)
+        refs.extend(rf)
+        stats_total["hit"] += st["hit"]
+        stats_total["miss"] += st["miss"]
+    STATS.update(hit=stats_total["hit"], miss=stats_total["miss"])
+    log.info("%s %d data files", "baked" if write else "scanned", len(files))
 
     n_pl = translate_plugins(root, D, write)
     if n_pl:
@@ -528,6 +579,11 @@ def main():
                     help="bake anyway when coverage is below --min-coverage")
     ap.add_argument("--no-kv", action="store_true",
                     help="do not write translation_kv.json")
+    ap.add_argument("--workers", type=int, default=None,
+                    help="parallel data-file workers for the bake pass "
+                         "(default: single-threaded; >1 translates the data "
+                         "files concurrently - output is identical, only the "
+                         "coverage totals are accumulated per worker)")
     ap.add_argument("--cjk-font", default="",
                     help="CJK ttf to bundle (MV: gamefont.css split; MZ: "
                          "swap the main @font-face src). Default: resolved "
@@ -576,7 +632,7 @@ def main():
     # from scratch.  --force overrides for intentional phase-1 harvest bakes.
     if glob.glob(os.path.join(game_dir, "data", "*.json")):
         STATS.update(hit=0, miss=0)
-        translate_data(game_dir, D, write=False)
+        translate_data(game_dir, D, write=False, workers=args.workers)
         cov = coverage()
         if cov is not None:
             log.info("coverage: %d hit / %d missed = %.1f%%",
@@ -602,7 +658,7 @@ def main():
     decrypt_dir(out_dir)
     clear_encryption_flags(out_dir)
     STATS.update(hit=0, miss=0)
-    translate_data(out_dir, D, write=True)
+    translate_data(out_dir, D, write=True, workers=args.workers)
     cov = coverage()
     if cov is not None:
         log.info("baked coverage: %d hit / %d missed = %.1f%%",

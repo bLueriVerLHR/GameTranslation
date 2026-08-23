@@ -13,8 +13,10 @@ Covers the contract documented in AGENTS.md / docs/translation.md:
 - dangling <TE:name> / <namePop:name> refs are WARNed after the bake,
 - located keys (\\x1f<loc> variants) are preferred, bare keys fall back.
 """
+import glob
 import json
 import os
+import shutil
 import sys
 
 import pytest
@@ -221,6 +223,75 @@ class TestProcessCommands:
         D = {"$gameMessage.add('こんにちは')": "$gameMessage.add('你好')"}
         bake.process_commands(cmds, D, "loc")
         assert cmds[0]["parameters"][0] == "$gameMessage.add('你好')"
+
+
+class TestTranslateDataParallel:
+    """Review §4.2: the map-level parallel bake path must be byte-identical
+    to the legacy single-threaded path (same baked files, same coverage
+    totals), with correct per-worker coverage accumulation."""
+
+    def _game(self, tmp_path, n_maps=3, lines_per=2):
+        root = str(tmp_path / "game")
+        maps = {}
+        for i in range(1, n_maps + 1):
+            evs = [ev(1, "むらびと%d" % i,
+                      [text_cmd("こんにちは%d" % (i * 10 + j))
+                       for j in range(lines_per)])]
+            maps["Map%03d.json" % i] = ("まち%d" % i, evs)
+        make_game(root, maps=maps)
+        return root
+
+    def _dict(self):
+        return {"むらびと%d" % i: "村民%d" % i for i in range(1, 4)}
+
+    def _bake_and_read(self, root, D, workers):
+        bake.STATS.update(hit=0, miss=0)
+        bake.translate_data(root, D, write=True, workers=workers)
+        stats = dict(bake.STATS)
+        files = {}
+        for p in sorted(glob.glob(os.path.join(root, "data", "Map*.json"))):
+            with open(p, encoding="utf-8") as f:
+                files[os.path.basename(p)] = json.load(f)
+        return stats, files
+
+    def test_parallel_equals_single_threaded(self, tmp_path):
+        root1 = self._game(tmp_path, n_maps=4, lines_per=3)
+        root2 = str(tmp_path / "game2")
+        shutil.copytree(root1, root2)
+        D = dict(self._dict())
+        D.update({"こんにちは%d" % (i * 10 + j): "你好%d" % (i * 10 + j)
+                  for i in range(1, 5) for j in range(3)})
+        stats1, files1 = self._bake_and_read(root1, D, workers=None)
+        stats2, files2 = self._bake_and_read(root2, D, workers=4)
+        assert stats1 == stats2, (stats1, stats2)
+        assert set(files1) == set(files2)
+        for name in files1:
+            assert files1[name] == files2[name]
+
+    def test_parallel_coverage_totals(self, tmp_path):
+        root1 = self._game(tmp_path, n_maps=2, lines_per=1)
+        root2 = str(tmp_path / "game2")
+        shutil.copytree(root1, root2)
+        # translate only one line -> coverage below 100%, identical in both
+        D = {"こんにちは10": "你好10", "むらびと1": "村民1", "むらびと2": "村民2"}
+        stats1, _ = self._bake_and_read(root1, D, workers=None)
+        stats2, _ = self._bake_and_read(root2, D, workers=4)
+        assert stats1 == stats2
+        assert stats1["hit"] > 0 and stats1["miss"] > 0
+
+    def test_parallel_coverage_scan_no_write(self, tmp_path):
+        root1 = self._game(tmp_path, n_maps=2, lines_per=1)
+        root2 = str(tmp_path / "game2")
+        shutil.copytree(root1, root2)
+        D = {"こんにちは10": "你好10"}
+        bake.STATS.update(hit=0, miss=0)
+        bake.translate_data(root1, D, write=False, workers=4)
+        cov = bake.coverage()
+        # parallel read-only scan must not write any file
+        for p in glob.glob(os.path.join(root2, "data", "Map*.json")):
+            with open(p, encoding="utf-8") as f:
+                assert "你好" not in f.read()
+        assert cov is not None and 0 < cov < 1
 
 
 class TestTranslateDataEndToEnd:

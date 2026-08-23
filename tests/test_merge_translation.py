@@ -97,6 +97,22 @@ class TestMergeFlow:
             merged = json.load(f)
         assert merged == {"a": "A", "b": "B"}
 
+    def test_prefilled_and_sweep_relative_to_work_dir(self, tmp_path,
+                                                      monkeypatch):
+        # C1 contract: every file arg (--chunks/--prefilled/--sweep/--out)
+        # resolves RELATIVE TO work_dir, so a bare name works regardless of
+        # the current directory.
+        work = str(tmp_path / "work")
+        make_work(work, {"力": ""}, chunks={"力": "色"},
+                  prefilled={"力": "色"})
+        write_json(os.path.join(work, "sweep.json"), [["色", "色色"]])
+        run_merge(work, "--chunks", "chunks_translated.json",
+                  "--prefilled", "prefilled.json",
+                  "--sweep", "sweep.json", monkeypatch=monkeypatch)
+        with open(os.path.join(work, "translated.json"), encoding="utf-8") as f:
+            merged = json.load(f)
+        assert merged == {"力": "色色"}
+
     def test_sweep_applied_to_chunks(self, tmp_path, monkeypatch):
         work = str(tmp_path / "work")
         make_work(work, {"力": ""}, chunks={"力": "色"})

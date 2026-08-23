@@ -11,6 +11,10 @@ that itself contains the prefix of another rule (色经验值->色色经验值) 
 re-hit if applied later. Order rules longest-first, and afterwards re-scan
 the output for any malformed target strings.
 
+All file arguments (--chunks / --prefilled / --sweep / --out) resolve
+RELATIVE TO work_dir, so the whole merge stays inside the work package no
+matter what the current directory is.
+
 Usage:
     python tools\\merge_translation.py <work_dir> --chunks chunks_translated.json \\
         --prefilled <prefilled.json> [--sweep <sweep_rules.json>] [--out translated.json]
@@ -41,17 +45,20 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("work_dir")
     ap.add_argument("--chunks", default="",
-                    help="merge_plain_chunks.py output (default: glob legacy "
-                         "chunks/*.translated.json)")
+                    help="merge_plain_chunks.py output, relative to work_dir "
+                         "(default: glob legacy chunks/*.translated.json)")
     ap.add_argument("--prefilled", default="",
-                    help="prefilled.json (MTool exact hits); optional")
+                    help="prefilled.json (MTool exact hits), relative to "
+                         "work_dir; optional")
     ap.add_argument("--sweep", default="",
-                    help="terminology sweep rules JSON (list of pairs)")
-    ap.add_argument("--out", default="translated.json")
+                    help="terminology sweep rules JSON (list of pairs), "
+                         "relative to work_dir")
+    ap.add_argument("--out", default="translated.json",
+                    help="output file name, relative to work_dir")
     args = ap.parse_args()
 
     work = os.path.abspath(args.work_dir)
-    sweeps = load_sweeps(args.sweep) if args.sweep else []
+    sweeps = load_sweeps(os.path.join(work, args.sweep)) if args.sweep else []
 
     def sweep(v):
         for a, b in sweeps:
@@ -72,7 +79,7 @@ def main():
         print("chunks merged: %d keys" % len(merged))
 
     if args.prefilled:
-        pref = plain_io.load_json(args.prefilled)
+        pref = plain_io.load_json(os.path.join(work, args.prefilled))
         pref_swept = 0
         for k, v in pref.items():
             nv = sweep(v)

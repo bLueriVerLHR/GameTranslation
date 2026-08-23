@@ -32,7 +32,6 @@ import json
 import logging
 import os
 import re
-import sys
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(message)s")
 log = logging.getLogger("harvest")

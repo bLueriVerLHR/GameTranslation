@@ -17,9 +17,15 @@ import argparse
 import json
 import os
 import re
+import sys
 
-KANA = re.compile(r"[\u3040-\u30ff\uff65-\uff9f]")
-VALUE_KANA = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e]")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import japanese_utils  # noqa: E402
+
+# Coarse block-range + half-width variant (legacy, kept for reference);
+# the actual value check uses the canonical KANA below.
+KANA = japanese_utils.KANA_BLOCKS_HW
+VALUE_KANA = japanese_utils.KANA
 CTRL_TOK = re.compile(r"\\[A-Za-z]+\[[^\]]*\]|:[a-z]+(?:\[[^\]]*\])?")
 VALID_ESC = re.compile(r"\\([^\"\\/bfnrtu])", re.S)
 UNCERTAIN = re.compile(r"【[^】]*\?[^】]*】")

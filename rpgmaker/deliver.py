@@ -83,8 +83,18 @@ def _refuse_cross_side(what, path, hint):
 
 
 def _run_powershell(command):
-    """Run `command` in Windows PowerShell (Windows-side operations only)."""
-    r = subprocess.run(["powershell.exe", "-NoProfile", "-Command", command],
+    """Run `command` in Windows PowerShell (Windows-side operations only).
+
+    Reached only on the is_windows_side flow.  Fail fast with a cross-system
+    hint when the Windows-side PowerShell binary is missing (e.g. inside a
+    WSL image without WSLInterop installed).
+    """
+    exe = shutil.which("powershell.exe")
+    if not exe:
+        raise FileNotFoundError(
+            "powershell.exe not found - install PowerShell on the Windows "
+            "side / 请在 Windows 侧安装 PowerShell")
+    r = subprocess.run([exe, "-NoProfile", "-Command", command],
                        capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError("powershell failed (%s):\n%s"

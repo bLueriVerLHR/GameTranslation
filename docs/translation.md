@@ -261,7 +261,10 @@ python tools\merge_translation.py  <work_dir> --chunks chunks_translated.json
    （`--strict` 有任何问题就失败。）
 2. `merge_translation.py` 叠加 `--prefilled`（MTool 精确命中）并应用
    `--sweep` 术语规则（最长优先，防 substring bomb）→ 最终
-   `translated.json`；断言每个模板键都在。
+   `translated.json`；断言每个模板键都在。**`merge_translation.py` 的所有
+   文件参数（`--chunks`/`--prefilled`/`--sweep`/`--out`）都相对
+   `<work_dir>` 解析**（与 `<work_dir>` 中存放的模板/分片一致），与当前
+   工作目录无关。
 3. agent 偶尔丢键/改键（转义反斜杠、编辑距离 ≤3）— 1:1 行布局下错误行数
    立刻被抓；修 zh.txt 行再合并。之后做值卫生：折叠双反斜杠、剥离
    `【?...】`、diff 控制 token。

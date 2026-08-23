@@ -38,7 +38,7 @@ logging.basicConfig(
 log = logging.getLogger("pipeline")
 
 
-def resolve_web_root(game_dir):
+def resolve_web_root(game_dir: str) -> str:
     wr = detect.find_web_root(game_dir)
     if not wr:
         sys.exit("ERROR: no web root found under %s (need index.html + js/)" % game_dir)
@@ -48,21 +48,21 @@ def resolve_web_root(game_dir):
 
 
 # ---------------------------------------------------------------- build
-def cmd_build(args):
+def cmd_build(args: argparse.Namespace) -> None:
     wr = resolve_web_root(args.game)
     build.build_joiplay(wr, args.out, workers=args.workers)
     log.info("build done -> %s", args.out)
 
 
 # ---------------------------------------------------------------- decrypt
-def cmd_decrypt(args):
+def cmd_decrypt(args: argparse.Namespace) -> None:
     wr = resolve_web_root(args.game)
     key = bytes.fromhex(args.key) if args.key else None
     decrypt.decrypt_and_clear(wr, key=key, workers=args.workers)
 
 
 # ---------------------------------------------------------------- audio
-def cmd_audio(args):
+def cmd_audio(args: argparse.Namespace) -> None:
     wr = resolve_web_root(args.game)
     infos = audio_mod.probe_all(wr, sample=args.sample, workers=args.workers)
     if args.probe_only:
@@ -74,13 +74,13 @@ def cmd_audio(args):
 
 
 # ---------------------------------------------------------------- clean
-def cmd_clean(args):
+def cmd_clean(args: argparse.Namespace) -> None:
     wr = resolve_web_root(args.game)
     clean.cleanup_all(wr, dry_run=args.dry_run)
 
 
 # ---------------------------------------------------------------- verify
-def cmd_verify(args):
+def cmd_verify(args: argparse.Namespace) -> None:
     wr = resolve_web_root(args.game)
     issues = verify.verify_all(wr, decode=args.decode, sample=args.sample,
                                source_dir=args.source, workers=args.workers)
@@ -88,7 +88,7 @@ def cmd_verify(args):
 
 
 # ---------------------------------------------------------------- serve
-def cmd_serve(args):
+def cmd_serve(args: argparse.Namespace) -> None:
     wr = resolve_web_root(args.game)
     if args.test:
         _results, ok = serve.smoke_test(wr, port=args.port)
@@ -97,12 +97,12 @@ def cmd_serve(args):
 
 
 # ---------------------------------------------------------------- doctor
-def cmd_doctor(args):
+def cmd_doctor(args: argparse.Namespace) -> None:
     sys.exit(doctor.run())
 
 
 # ---------------------------------------------------------------- compress
-def cmd_compress(args):
+def cmd_compress(args: argparse.Namespace) -> None:
     wr = resolve_web_root(args.game)
     archive = args.out or (wr + ".7z")
     compress.compress(wr, archive, level=args.level)
@@ -110,11 +110,11 @@ def cmd_compress(args):
 
 
 # ---------------------------------------------------------------- deliver
-def cmd_deliver(args):
+def cmd_deliver(args: argparse.Namespace) -> None:
     deliver.deliver(args.game, level=args.level)
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)

@@ -31,16 +31,16 @@ Usage:
 """
 
 import argparse
-import json
 import logging
 import os
-import shutil
 import sys
 from collections import deque
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kirikiri.ks_extract import (display_text, load_ks, scenario_storage_refs,
                                  split_line, translatable_segments)  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import scenario_common  # noqa: E402
 
 log = logging.getLogger("build_ks_translation")
 
@@ -52,19 +52,12 @@ SCENARIO_CANDIDATES = ("scenario", "System/Scenario", "Scenario")
 
 
 def find_scenario_dir(game_dir, explicit):
-    if explicit:
-        path = os.path.join(game_dir, explicit)
-        return path if os.path.isdir(path) else None
-    for cand in SCENARIO_CANDIDATES:
-        path = os.path.join(game_dir, cand)
-        if os.path.isdir(path):
-            return path
-    return None
+    return scenario_common.find_scenario_dir(game_dir, explicit,
+                                             SCENARIO_CANDIDATES)
 
 
 def resolve_storage(name):
-    """storage="foo" may omit the extension."""
-    return name if name.lower().endswith(".ks") else name + ".ks"
+    return scenario_common.resolve_storage(name)
 
 
 def story_order(scenario_dir, entry):
@@ -160,32 +153,12 @@ def build(game_dir, work_dir, scenario_dir, entry):
         total_lines += n
         log.debug("%s: %d translatable lines", name, n)
 
-    os.makedirs(work_dir, exist_ok=True)
-    _save(work_dir, "template.json", tpl)
-    _save(work_dir, "kinds.json", kinds)
-    _save(work_dir, "structure.json", {"maps": maps})
-    _save(work_dir, "context.json", ctx)
-    _save_meta(work_dir, {"game_dir": game_dir, "scenario_dir": src,
-                          "entry": entry})
-
-    dest = os.path.join(work_dir, "scenario")
-    if os.path.isdir(dest):
-        shutil.rmtree(dest)
-    shutil.copytree(src, dest)
-
+    num_keys = scenario_common.write_work_package(
+        work_dir, tpl, kinds, maps, ctx, "ks_meta.json",
+        {"game_dir": game_dir, "scenario_dir": src, "entry": entry}, src)
     log.info("%d files / %d translatable lines / %d unique keys -> %s",
-             len(maps), total_lines, len(tpl), work_dir)
-    return len(tpl)
-
-
-def _save(work_dir, name, data):
-    path = os.path.join(work_dir, name)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=1)
-
-
-def _save_meta(work_dir, data):
-    _save(work_dir, "ks_meta.json", data)
+             len(maps), total_lines, num_keys, work_dir)
+    return num_keys
 
 
 def main():

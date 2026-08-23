@@ -86,6 +86,8 @@ GameTranslation/
 │   │                             #   重建整串参数供烘焙（大 JSON 参数专用）
 │   ├── plain_io.py               # 双文件块格式的共享转义/IO
 │   ├── plugins_io.py             # 容错 js/plugins.js 解析/序列化
+│   ├── scenario_common.py        # KS/Tyrano 场景链共享胶水：场景目录发现、
+│   │                             #   存储名解析、工作包写入（最小收敛）
 │   ├── extract_remaining_text.py # 残留假名提取器（补翻流程，故事顺序）
 │   ├── augment_adv_resources.py  # MZ TextResource 插件/ADV/SNS 文本资源：
 │   │                             #   增强工作包（故事顺序）+ 原地烘焙（含低覆盖率闸门）

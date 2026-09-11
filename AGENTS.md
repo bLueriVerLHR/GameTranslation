@@ -70,8 +70,8 @@ powershell.exe -NoProfile -Command \
 `rpgmaker/deliver.py` 已内置**自动桥接**：WSL 下对 Windows 侧（`/mnt/*`）
 文件的删除/解压自动改用 Windows 7z.exe / PowerShell `Remove-Item`（经
 `powershell.exe` 调用，路径自动转 Windows 格式），无需手工介入；仅当
-Windows 7z（默认 `C:\Program Files\7-Zip-Zstandard\7z.exe`，可用
-`SEVENZ_WIN` 环境变量或 `env_config.json` 的 `tools.win7z` 覆盖）缺失、
+Windows 7z（`win_7z()` 解析：`SEVENZ_WIN` 环境变量 → 本地配置
+`tools.win32.7z` → 探测 `Program Files`/`Programs` 下的 `7-Zip*`）缺失、
 或同一 7z 命令的输入跨两侧混用（archive 与 dest 不同侧）时才拒绝。
 
 ## 本地名词表 docs/table/ — 加载规则 (mandatory)
@@ -460,7 +460,7 @@ KiriKiri 游戏（`Game.exe` + `data.xp3` 等，无 `index.html`/`js/`）不走
   `deliverables.temp`），绝不放源目录旁边。
 - **路径配置只存一份（原生形式）**：Windows 侧资源写 `D:/..`/`C:/..`，
   WSL 侧写 `/tmp/..`；WSL 要用 Windows 侧路径时由代码转换
-  （`rpgmaker/config.py` 的 `_localize()` → `to_wsl_path()`），**绝不把同一
+  （`rpgmaker/config.py` 的 `localize()` → `to_wsl_path()`），**绝不把同一
   路径写两份**。工具按 `[platform][tool]` 索引（两侧二进制不同）。
 - **Windows 端下载/暂存**（Windows-only 工具、待处理内容）一律放
   `deliverables.win_temp`（Windows 的 `%TEMP%`，代码里
@@ -486,11 +486,21 @@ KiriKiri 游戏（`Game.exe` + `data.xp3` 等，无 `index.html`/`js/`）不走
      `Remove-Item`（经 `powershell.exe` 调用），无需手工介入；仅当
      Windows 7z 缺失或输入跨两侧混用时报错（提示见上节）。
   跨系统只搬运单个压缩包，避免大量小文件走 9P。
-- **本机环境信息（交付目录、工具路径、venv 等）一律写进本地私有配置
-  `docs/table/env_config.json`**（gitignored，不入库）；代码按平台
-  （wsl）解析，不硬编码本机路径。新增本机专用信息
-  先加到这里。系统工具安装（如 `pacman -S ...`）由 owner 执行，agent 不
-  自行下载/提权。
+- **工具/路径解析只在一处（mandatory，2026-08 重设）**：外部程序的解析
+  统一走 `rpgmaker/config.py` 的 `TOOLS` 表 + `resolve_tool()`，顺序为
+  **环境变量 → 本地配置覆盖（可选，支持 `*` 通配）→ 探测常见安装位置
+  → PATH**。新增/修改一个程序只改 `TOOLS` 一条，**不得**在别的模块里新
+  写 `shutil.which` / 自己的查找函数，也**不得**把机器路径写进代码或
+  文档（探测代替硬编码）。`pipeline.py doctor`（`--json` 机器可读）打印
+  每个程序实际解析到的路径与来源；排查「工具找不到」先跑它，不要搜盘。
+- **本机环境信息**（交付目录、工具路径覆盖、venv 等）写进本地私有配置
+  `docs/table/env_config.json`（gitignored，不入库）——**这是可选覆盖层，
+  不是必需条件**：文件缺失时由探测 + 内置默认值接管。交付目录解析顺序
+  为 环境变量 → 本地配置 → 探测已有约定目录（各盘符/家目录下的
+  `Games`/`GamesCompress`）→ 内置默认
+  `~/Documents/GameTranslation/{games,archives}`（按需创建）。代码按
+  平台解析（`is_wsl()`），不硬编码本机路径。系统工具安装（如
+  `pacman -S ...`）由 owner 执行，agent 不自行下载/提权。
 
 ## 打包规则 (mandatory, 压缩前必做)
 

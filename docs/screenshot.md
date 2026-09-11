@@ -91,5 +91,6 @@ Task(description="分析截图", prompt="读取 <截图路径>，报告画面内
 .venv/bin/python -m pytest tests/test_wsl_capture.py -q
 ```
 
-用 `tests/fake_tools/fake_powershell`（`POWERSHELL_EXE` 注入）+ 临时目录
-`win_temp`，全流程无外部依赖。
+用 `tests/fake_tools/fake_powershell.py`（由平台适配 launcher 包装后经
+`POWERSHELL_EXE` 注入；Windows 用 `.cmd` shim，POSIX 直接执行）+ 临时目录
+`win_temp`，全流程无外部依赖，两种平台都可跑。

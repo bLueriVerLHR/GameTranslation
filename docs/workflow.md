@@ -11,28 +11,30 @@
 ## 1. 环境要求
 
 - Python 3.10+（命令里直接用 `python`）。
-- ffmpeg / ffprobe（gyan.dev `ffmpeg-release-essentials` — 含 libvorbis）。
-  默认路径 `%LOCALAPPDATA%\Temp\opencode\ffmpeg_x\...\bin\`；用 `FFMPEG` /
-  `FFPROBE` 环境变量或 PATH 覆盖。
-- 7-Zip-Zstandard（默认 `C:\Program Files\7-Zip-Zstandard\7z.exe`，或
-  `SEVENZ` 环境变量 / PATH）用于 `-m0=zstd` 压缩包。
-- ripgrep（`rg`）在 PATH 上，用于快速内容搜索（如预扫插件）。
-- Everything（`es` CLI）在 PATH 上，用于跨盘即时文件名查找。
+- ffmpeg / ffprobe（含 libvorbis）用于音频探测与重编码。
+- 7-Zip-Zstandard 用于 `-m0=zstd` 压缩包（普通 7-Zip 不支持 zstd）。
+- ripgrep（`rg`）用于快速内容搜索（如预扫插件）。
 - PowerShell 5.1（无 `?.`、无 `&&`；用 `;` / `if ($?)`）。
-- **本机环境配置**：交付目录（成品游戏 / 压缩包 / 系统临时文件夹 /
-  Windows 侧临时目录）、工具路径、venv 等本机专用信息写进本地私有配置
-  `docs/table/env_config.json`（gitignored，不入库；记录当前平台）。
-  **所有工具用当前平台内部的版本**：7z = 7-Zip-Zstandard
-  （`docs/table/3rd/`，负责解压压缩包到系统临时文件夹、在成品/压缩包
-  目录间压缩），ffmpeg/rg/git 等在 PATH 中的自动发现、不写路径；只有
-  文件存储位置是机器相关的。**Windows 端需要下载/暂存的内容一律用
-  `deliverables.win_temp`（Windows 的 `%TEMP%`，代码里
-  `win_temp_dir()`），绝不放进 `games` / `archives`**。**路径只存一份
-  （原生形式）**：Windows 侧资源写 `D:/..`/`C:/..`，WSL 侧写 `/tmp/..`；
-  代码按平台转换（`_localize()`），绝不重复写同一路径。Windows 侧工具
-  按 `[platform][tool]` 索引在配置里（`win_7z()` / `win_ffmpeg()` /
-  `win_rg()`），处理 Windows 侧文件时经 PowerShell 调用它们。工具安装/下载由
-  owner 执行（如系统包管理器、`3rd/` 内二进制）。
+- **工具解析（2026-08 重设，无需手工配置）**：所有外部程序由
+  `rpgmaker/config.py` 的 `TOOLS` 表 + `resolve_tool()` 统一解析，顺序为
+  **环境变量 → 本地配置覆盖（可选）→ 自动探测常见安装位置 → PATH**。
+  探测覆盖 WinGet Packages / Scoop / Chocolatey / `Program Files`
+  （`7-Zip*`、`Git`、`nodejs`）、各发行版 nvm 目录、POSIX 的
+  `/usr/bin`、`/opt`、`~/.local/bin` 与项目内 `docs/table/3rd/`。
+  新增一个程序 = 在 `TOOLS` 里加一条，不需要改其他文件。
+- **本机环境配置是「可选覆盖层」**：本地私有文件
+  `docs/table/env_config.json`（gitignored，不入库）**只用于覆盖**
+  探测结果——写交付目录（成品游戏 / 压缩包 / 系统临时文件夹 / Windows
+  侧临时目录）、工具路径、venv。文件不存在也能跑（探测 + 内置默认值
+  接管），`pipeline.py doctor` / `doctor --json` 会打印每个程序实际
+  解析到的路径与来源（`env` / `config` / `probe` / `path`）。
+  `GT_NO_PROBE=1` 可关闭探测（锁定环境/CI）。**路径只存一份（原生
+  形式）**：Windows 侧资源写 `D:/..`/`C:/..`，WSL 侧写 `/tmp/..`；代码
+  按平台转换（`localize()`），绝不重复写同一路径。配置里的工具路径允许
+  写 `*` 通配（WinGet 的版本/哈希目录），运行时按自然序取最新。
+  Windows 侧临时目录用 `win_temp_dir()`（Windows 的 `%TEMP%`），**绝不
+  放进 `games` / `archives`**。工具安装/下载由 owner 执行（如系统包
+  管理器、`3rd/` 内二进制）。
 - **工作流（2026-08 定案）**：源压缩包在存储侧（Windows），解压/处理/
   压缩在 WSL 侧完成；只做必要的跨系统搬运。**CRITICAL（MUST）——处理
   文件必须用「文件所在系统」的原生应用**：Windows 侧文件（`C:\`/`D:\`、
@@ -93,14 +95,17 @@ python $tk\pipeline.py deliver $out          # 写回存储侧（见 §6a）
 
 - **工作/解压文件放系统临时文件夹 — 绝不放原位。** 流水线绝不在原版游戏
   目录里或旁边解压/构建。工作副本在系统临时文件夹（如 Windows 的 `Temp`、
-  Linux 的 `/tmp`；本机具体路径见 `docs/table/env_config.json` 的
-  `deliverables.temp`），压缩包做完即可删除。
+  Linux 的 `/tmp`；本机具体路径用 `python pipeline.py doctor` 看
+  `temp_dir` 那一行），压缩包做完即可删除。
 - **成品放专门交付目录，与其他游戏一致。** 最终交付物 — JoiPlay 目录
-  `<Game>\` 与压缩包 `<Game>.7z` — 放本机交付目录（本机路径见
-  `docs/table/env_config.json` 的 `deliverables.games` /
-  `deliverables.archives`），命名与其他转换过的游戏完全一致。写回用
-  `deliver`（§6）：压缩 → 压缩包复制到压缩包目录 → 删除成品目录旧
-  文件夹 → 解压到成品目录。原版游戏保持不动。
+  `<Game>\` 与压缩包 `<Game>.7z` — 放本机交付目录，命名与其他转换过的
+  游戏完全一致。候选顺序：环境变量（`GAMES_DIR`/`ARCHIVES_DIR`）→ 本地
+  配置 `deliverables.games`/`archives` → **探测**已有约定目录
+  （各盘符与家目录下的 `Games` / `GamesCompress`）→ 内置默认
+  `~/Documents/GameTranslation/{games,archives}`（按需创建）；用
+  `doctor` 确认实际落到哪里。写回用 `deliver`（§6）：压缩 → 压缩包复制
+  到压缩包目录 → 删除成品目录旧文件夹 → 解压到成品目录。原版游戏保持
+  不动。
 - **手机贴图限制（单一构建策略，2026-08 定案）。** Android
   WebView/PixiJS 把 WebGL 贴图限制在**每边 4096 像素**；任何超过 4096
   的 PNG（通常是竖版立绘）在手机上渲染成**黑块**，PC
@@ -305,7 +310,8 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
 python $tk\pipeline.py deliver $out
 ```
 
-它按 `env_config.json` 的交付目录执行（跨系统只搬运单个压缩包）：
+它按解析出的交付目录执行（环境变量/本地配置/探测/默认，见 §1；跨系统只
+搬运单个压缩包）：
 
 1. 在平台内（临时目录）把成品压缩成 `<Game>.7z`（本地文件系统，快）；
 2. 把压缩包**复制到压缩包目录**（`deliverables.archives`），覆盖旧包 —
@@ -320,17 +326,17 @@ python $tk\pipeline.py deliver $out
 `rpgmaker/deliver.py` 已内置**自动桥接**：WSL 下对 `/mnt/*` 的删除与解压
 自动改用 Windows 7z.exe / PowerShell `Remove-Item`（经 `powershell.exe`
 调用，路径自动转 Windows 格式），压缩与压缩包复制照常走 WSL 侧；仅当
-Windows 7z（默认 `C:\Program Files\7-Zip-Zstandard\7z.exe`，可用
-`SEVENZ_WIN` 环境变量或 `env_config.json` 的 `tools.win7z` 覆盖）缺失、
+Windows 7z（由 `win_7z()` 解析：`SEVENZ_WIN` 环境变量 → 本地配置
+`tools.win32.7z` → 探测 `Program Files`/`Programs` 下的 `7-Zip*`）缺失、
 或 archive 与 dest 跨两侧混用时才拒绝。手动等价命令（路径用 Windows
 格式）供参考：
 
 ```powershell
-powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<games_dir>\<Game>'; & 'C:\Program Files\7-Zip-Zstandard\7z.exe' x -y '-o<games_dir>' '<archives_dir>\<Game>.7z' '<Game>'"
+powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<games_dir>\<Game>'; & '<win7z>' x -y '-o<games_dir>' '<archives_dir>\<Game>.7z' '<Game>'"
 ```
 
-（`<games_dir>`/`<archives_dir>`/`<Game>` 换成 `env_config.json` 里的实际
-值；`<Game>` 为成品目录名，与压缩包内根目录名一致。）
+（`<games_dir>`/`<archives_dir>`/`<win7z>` 用 `pipeline.py doctor` 打印的
+实际值；`<Game>` 为成品目录名，与压缩包内根目录名一致。）
 
 完成后 Temp 工作目录即可删除。
 
@@ -434,7 +440,7 @@ powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<g
   成 `rmmz_managers.js` 里的 `.ogg`。
 - `System.json`（或任何 JSON）里的 UTF-8 BOM 破坏 `JSON.parse`。
 - 原版游戏目录保持不动；只在系统临时文件夹的工作副本里操作（本机具体
-  路径见 `docs/table/env_config.json` 的 `deliverables.temp`）。
+  路径看 `pipeline.py doctor` 的 `temp_dir` 行）。
 - CG 图片珍贵 — `clean` 绝不碰 `img/pictures`。
 - 别过度修插件：只 patch JoiPlay 里真正坏的。
 - **翻译决策规则（问一次，然后行动）：**

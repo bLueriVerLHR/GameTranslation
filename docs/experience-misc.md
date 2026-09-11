@@ -95,10 +95,10 @@ repack 会话中该修复已应用（8 部电影随包）。
   都失败也打印 "ALL 200 OK"。已在 `serve.py` 修 — 任何非 200 或失败请求
   现在都失败测试。拿不准仍用 `Invoke-WebRequest` 直接验真实 URL。
 - no-cache 处理器意味着加资源后普通刷新即可。
-- 工具路径：命令里直接用 `python`；ffmpeg 在
-  `%LOCALAPPDATA%\Temp\opencode\ffmpeg_x\...\bin\`（见
-  `rpgmaker/config.py`），7z = `C:\Program Files\7-Zip-Zstandard\7z.exe`，
-  ripgrep（`rg`）与 Everything（`es`）在 PATH。
+- 工具路径已不再写在文档/代码里：所有外部程序由 `rpgmaker/config.py` 的
+  `TOOLS` 表解析（环境变量 → 本地配置 → 探测 → PATH）。需要知道某个程序
+  实际在哪里时跑 `python pipeline.py doctor`（列出每个程序解析到的路径与
+  来源），不靠猜、也不靠搜盘。
 - PowerShell 坑：`Start-Process -ArgumentList` 弄坏带空格参数；传单个
   预引号字符串（`'serve "' + $folder + '" -p 8100'`）并含脚本路径。
 

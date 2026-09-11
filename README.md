@@ -226,13 +226,20 @@ subagent 翻译 → `translated.json` → 注入。
 - ffmpeg/ffprobe（含 libvorbis）— 仅 **audio** 步骤使用
 - 7-Zip-Zstandard（压缩包用 `-m0=zstd`）
 - ripgrep（`rg`）用于构建内的快速内容搜索
-- Everything（`es` CLI，仅 Windows）用于跨盘即时文件名查找
 
-**本机环境配置（`docs/table/env_config.json`，gitignored 仅本地）：**
-交付目录（成品游戏 / 压缩包 / 系统临时文件夹）与工具路径都写在这里，
-记录当前平台。**所有工具用当前平台内部的版本**：7z 用 7-Zip-Zstandard
-（项目内 `docs/table/3rd/`），ffmpeg/rg/git 等在 PATH 中的自动发现，配置
-里不写路径；只有文件存储位置是机器相关的。**工具只处理「同侧」文件**：
+外部程序的实际路径不需要手工维护：`python pipeline.py doctor` 列出每个
+程序的解析结果与来源（`env`/`config`/`probe`/`path`）与交付目录；
+`doctor --json` 供脚本消费。
+
+**本机环境配置（`docs/table/env_config.json`，gitignored 仅本地）是可选
+覆盖层：** 所有外部程序都由 `rpgmaker/config.py` 的 `TOOLS` 表统一解析
+（**环境变量 → 本地配置 → 自动探测常见安装位置 → PATH**），交付目录同样
+先探测（各盘符/家目录下的 `Games`、`GamesCompress`）再回到内置默认
+（`~/Documents/GameTranslation/{games,archives}`，按需创建）——**没有配置
+文件也能跑**。用 `python pipeline.py doctor` 看每个程序实际解析到的路径
+与来源（`env`/`config`/`probe`/`path`），`doctor --json` 出机器可读版本；
+`GT_NO_PROBE=1` 可关闭探测。配置里的工具路径支持 `*` 通配（WinGet 的
+版本/哈希目录）。**工具只处理「同侧」文件**：
 Windows 侧文件的处理（解压/压缩/脚本读写）必须由 Windows 侧应用完成
 （从 WSL 经 `powershell.exe` 调用，路径用 Windows 格式）——WSL 内 7zz /
 python 严禁直接操作 Windows 侧文件（CRITICAL，见上）。**字体（中文/日文打包字体）
@@ -240,8 +247,7 @@ python 严禁直接操作 Windows 侧文件（CRITICAL，见上）。**字体（
 `docs/table/local_font_path.txt` 覆盖，支持相对路径；见
 `docs/workflow.md` 标准字体策略）。工作流：源压缩包在存储侧 →
 解压到系统临时文件夹 → 平台内处理 → 成品移到成品目录 → 压缩到压缩包
-目录（详见 `docs/workflow.md`）。解析顺序：环境变量 → env_config.json →
-内置默认值 → PATH。系统工具安装/下载由 owner 执行。
+目录（详见 `docs/workflow.md`）。系统工具安装/下载由 owner 执行。
 
 ### WSL 快速开始 — RPG Maker
 

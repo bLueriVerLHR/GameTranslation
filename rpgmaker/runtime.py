@@ -94,7 +94,7 @@ def disk_is_rotational(path):
     undetectable (WSL, network mounts, exotic sysfs), and the caller treats
     None as "not rotational" (modern default).
     """
-    if sys.platform != "linux":
+    if sys.platform != "linux" or not hasattr(os, "major"):
         return None
     try:
         st = os.stat(path)

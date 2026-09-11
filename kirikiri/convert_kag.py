@@ -1070,31 +1070,33 @@ def _asset_map(unpacked):
     amap = {}
     full = {}
 
-    def _scan(src_sub, subdir="", want_img=None):
-        d = os.path.join(unpacked, src_sub, subdir)
+    def _scan(src_sub, parts=(), want_img=None):
+        d = os.path.join(unpacked, src_sub, *parts)
         if not os.path.isdir(d):
             return
         for fn in sorted(os.listdir(d)):
             sp = os.path.join(d, fn)
             if os.path.isdir(sp):
-                _scan(src_sub, os.path.join(subdir, fn), want_img)
+                _scan(src_sub, parts + (fn,), want_img)
                 continue
             base = fn.rsplit(".", 1)[0].lower() if "." in fn else fn.lower()
             ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
             if want_img is not None and (ext in img_exts) != want_img:
                 continue
-            out = os.path.join(subdir, fn) if subdir else fn
-            if ext in ("tlg", "bmp"):
-                out = os.path.join(subdir, base + ".png") if subdir else base + ".png"
+            # Storage keys are always slash-separated: they end up inside
+            # generated TyranoScript/HTML references, so they must not follow
+            # the host OS separator (a Windows build would emit "select\\x.png").
+            name = base + ".png" if ext in ("tlg", "bmp") else fn
+            out = "/".join(parts + (name,))
             full.setdefault(base + "." + ext, out)
             amap.setdefault(base, out)
 
     # two passes: images first so a same-named .ma (map01_01.ma vs the
     # map01_01 image) never shadows the image for extensionless storages
     for src_sub in mapping:
-        _scan(src_sub, "", want_img=True)
+        _scan(src_sub, (), want_img=True)
     for src_sub in mapping:
-        _scan(src_sub, "", want_img=False)
+        _scan(src_sub, (), want_img=False)
     return amap, full
 
 

@@ -15,5 +15,8 @@ docs/table/
 tmp/
 work/
 
+# local-only tool/runtime downloads (engine sources used as a test runtime)
+.tools/
+
 # agent harness runtime state (bg task logs / session scratch)
 .pi/

@@ -16,9 +16,11 @@ Usage:
 import argparse
 import logging
 import os
-import shutil
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import config  # noqa: E402
 
 log = logging.getLogger("tyrano.asar")
 
@@ -26,14 +28,17 @@ ASAR_PACKAGE = "@electron/asar"
 
 
 def find_npx():
-    """Locate the npx launcher (nodejs package runner)."""
-    npx = shutil.which("npx")
-    if not npx and sys.platform == "win32":
-        npx = shutil.which("npx.cmd")
+    """Locate the npx launcher (Node.js package runner).
+
+    Delegates to the shared application resolver so Node is probed the same
+    way as every other tool (env NPX -> env_config -> probe -> PATH) instead
+    of this module carrying its own PATH lookup.
+    """
+    npx = config.find_npx()
     if not npx:
         raise FileNotFoundError(
-            "npx not found on PATH - install Node.js (nodejs.org) and "
-            "re-run; the Tyrano build needs it to unpack app.asar")
+            "npx not found - install Node.js (nodejs.org) and re-run; the "
+            "Tyrano build needs it to unpack app.asar (set NPX to override)")
     return npx
 
 

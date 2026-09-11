@@ -33,6 +33,7 @@ from rpgmaker import config  # noqa: E402
 
 log = None  # module logger set in main()
 
+BINFMT_ROOT = "/proc/sys/fs/binfmt_misc"
 SCRIPT_NAME = "capture_window.ps1"
 INTEROP_FIX = (
     "sudo sh -c 'printf \":WSLInterop:M::MZ::/init:P\\n\" "
@@ -41,21 +42,23 @@ INTEROP_FIX = (
 
 
 def powershell_exe():
-    """PowerShell interpreter: POWERSHELL_EXE env -> PATH lookup."""
-    exe = os.environ.get("POWERSHELL_EXE")
-    if exe:
-        return exe
-    return shutil.which("powershell.exe")
+    """PowerShell interpreter for this platform: POWERSHELL_EXE env ->
+    env_config -> probe -> PATH (see rpgmaker.config.resolve_tool)."""
+    return config.find_powershell()
 
 
-def interop_ok(powershell, binfmt_root="/proc/sys/fs/binfmt_misc"):
-    """True when Windows binaries can be executed from WSL.
+def interop_ok(powershell, binfmt_root=BINFMT_ROOT):
+    """True when a Windows binary can actually be executed from here.
 
-    An explicit POWERSHELL_EXE override (tests / exotic setups) is trusted.
-    Otherwise the kernel must have the WSLInterop binfmt_misc entry.
+    An explicit POWERSHELL_EXE override (tests / exotic setups) is trusted,
+    native Windows always can, and WSL needs the kernel's WSLInterop
+    binfmt_misc entry - without it a found powershell.exe path is unusable
+    and the caller prints the re-registration command.
     """
-    if powershell:
+    if os.environ.get("POWERSHELL_EXE"):
         return True
+    if not config.is_wsl():
+        return bool(powershell)
     return os.path.exists(os.path.join(binfmt_root, "WSLInterop"))
 
 
@@ -63,7 +66,7 @@ def deploy_script(win_temp):
     """Copy tools/capture_window.ps1 to the Windows temp dir when missing or
     stale.  Returns the Windows-form path of the deployed script."""
     src = os.path.join(os.path.dirname(os.path.abspath(__file__)), SCRIPT_NAME)
-    wsl_dst = os.path.join(config.to_wsl_path(win_temp), SCRIPT_NAME)
+    wsl_dst = os.path.join(config.localize(win_temp), SCRIPT_NAME)
     stale = (not os.path.exists(wsl_dst)
              or os.path.getmtime(wsl_dst) < os.path.getmtime(src))
     if stale:
@@ -162,11 +165,11 @@ def main(argv=None):
         return 1
 
     win_path = out[-1]
-    wsl_path = config.to_wsl_path(win_path)
-    if not os.path.exists(wsl_path):
-        print(f"error: output not found: {wsl_path}", file=sys.stderr)
+    local_path = config.localize(win_path)
+    if not os.path.exists(local_path):
+        print(f"error: output not found: {local_path}", file=sys.stderr)
         return 1
-    print(wsl_path)
+    print(local_path)
     return 0
 
 

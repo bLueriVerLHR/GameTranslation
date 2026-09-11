@@ -85,21 +85,11 @@ def _refuse_cross_side(what, path, hint):
 def _run_powershell(command):
     """Run `command` in Windows PowerShell (Windows-side operations only).
 
-    Reached only on the is_windows_side flow.  Fail fast with a cross-system
-    hint when the Windows-side PowerShell binary is missing (e.g. inside a
-    WSL image without WSLInterop installed).
+    Thin alias over config.run_powershell so the interpreter lookup, the
+    cross-system failure hint and the exit-code handling live in one place
+    (shared with tools/wsl_capture.py).
     """
-    exe = shutil.which("powershell.exe")
-    if not exe:
-        raise FileNotFoundError(
-            "powershell.exe not found - install PowerShell on the Windows "
-            "side / 请在 Windows 侧安装 PowerShell")
-    r = subprocess.run([exe, "-NoProfile", "-Command", command],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError("powershell failed (%s):\n%s"
-                           % (r.returncode, (r.stderr or r.stdout)[-2000:]))
-    return r
+    return config.run_powershell(command)
 
 
 def _remove_windows_side(target):
@@ -155,9 +145,10 @@ def _extract_windows_side(archive, dest, name):
     if not win7z:
         _refuse_cross_side(
             "extract", archive,
-            "Windows 7z.exe not found (SEVENZ_WIN / tools.win7z / %s); "
-            "install it or run the extraction on the Windows side manually."
-            % config.DEFAULT_WIN_SEVENZ)
+            "Windows 7z.exe not found - install 7-Zip-Zstandard on the "
+            "Windows side (probed: Program Files/7-Zip*), or set SEVENZ_WIN "
+            "to its full path; alternatively run the extraction on the "
+            "Windows side manually.")
     command = "& '{0}' x -y '-o{1}' '{2}' '{3}'; if (-not $?) {{ exit 1 }}".format(
         win7z, config.to_windows_path(dest),
         config.to_windows_path(archive), name)

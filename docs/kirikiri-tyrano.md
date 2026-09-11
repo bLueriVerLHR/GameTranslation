@@ -133,6 +133,32 @@ KAG3 由吉里吉里 2 SDK 的 `KAGParser.dll` 解析 `.ks`；常见变体：
 > 无其他强制依赖。转换器本体只需 Python 标准库 + 仓库既有工具；
 > TLG 解码器是唯一的"必装候选"，具体按首款目标游戏的实际素材定。
 
+### 2.3 TyranoScript 引擎源码（转换骨架 + 本地运行时，已就位）
+
+`kirikiri/convert_kag.py` 的 `engine` 参数需要一个 **TyranoScript 引擎
+源码树**（含 `index.html`、`tyrano/`、`data/system/Config.tjs`），
+转换器从中复制引擎骨架并把转换结果写进 `data/`。
+
+| 项 | 值 |
+| --- | --- |
+| 来源 | `https://github.com/ShikemokuMK/tyranoscript`（官方 OSS 引擎，非 TyranoBuilder） |
+| 本地位置 | `.tools/tyranoscript/`（仓库内，**已 gitignore，不入库**） |
+| 获取 | `git clone --depth 1 --single-branch <url> .tools/tyranoscript` |
+
+该目录**一物两用**：
+
+1. **转换输入的引擎骨架** — `convert_kag.py <unpacked> .tools/tyranoscript <out>`；
+2. **本地运行时（"模拟器"）** — 需要验证转换结果时，把转换出的
+   `data/` 套在干净的引擎骨架上跑（引擎与数据分离），从而区分
+   "引擎行为问题"与"转换数据问题"，不依赖原游戏的 Electron 打包环境。
+
+网络受限时 GitHub 直连会间歇失败（重试即可，或走本机代理
+`http://127.0.0.1:7890`）。
+
+运行时验证（OCR/视觉复核）用 `visual-check`：
+`tyrano/pipeline.py serve` 起服务 → headless 浏览器截图 → 读图。
+注意转换出的构建**没有 `js/`**，因此不能用 `pipeline.py serve`。
+
 ## 3. 建议路线（与 `docs/kirikiri-html.md` 一致）
 
 1. **先用路线 A**（JoiPlay 官方 KiriKiri 插件）验证游戏可玩性；

@@ -25,7 +25,12 @@ What is NOT checked (excluded, so the tree does not have to list them)
   .gitignore, .gitattributes (the tree documents the tool layout, not the
   repo metadata)
 * VCS / env internals: .git/, .venv/, __pycache__/
-* gitignored local dirs: docs/table/ (local noun tables), work/, tmp/
+* gitignored local dirs: docs/table/ (local noun tables), work/, tmp/,
+  .tmp/ (workspace scratch), .pi/ (harness state), .tools/ (local downloads &
+  test runtimes).  The repo file set comes from git
+  (`ls-files --cached --others --exclude-standard`), so anything gitignored is
+  invisible here automatically; the exclusion list below is only a fallback
+  for running outside a git checkout.
 * generated files: *.pyc, *.pyo, *.7z, *.csv, .DS_Store
 * package markers: __init__.py
 * test scaffolding: tests/fake_tools/ (fake tool scripts), tests/fixtures/
@@ -49,6 +54,8 @@ import argparse
 import fnmatch
 import os
 import re
+import shutil
+import subprocess
 import sys
 from collections import namedtuple
 
@@ -59,10 +66,14 @@ EXCLUDED_ROOT_FILES = frozenset({
 })
 # Local / generated / scaffolding dirs never expected in the tree.
 # `.pi/` holds the agent harness runtime state (background-task logs), which is
-# gitignored and must not count as repository content.
+# gitignored and must not count as repository content.  `.tools/` holds local
+# downloads (engine sources used as a test runtime); `.tmp/` is workspace
+# scratch.  Both are gitignored, so the git-driven file set already skips them
+# - this list is the fallback for a non-git run.
 EXCLUDED_DIRS = frozenset({
-    ".git", ".venv", ".pi", "docs/table", "work", "tmp", "__pycache__",
-    ".pytest_cache", "tests/fake_tools", "tests/fixtures",
+    ".git", ".venv", ".pi", ".tools", ".tmp", "docs/table", "work", "tmp",
+    "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+    "build", "dist", "tests/fake_tools", "tests/fixtures",
 })
 EXCLUDED_SUFFIXES = (".pyc", ".pyo", ".7z", ".csv", ".DS_Store")
 # Package marker exempt everywhere.
@@ -145,9 +156,39 @@ def parse_tree(readme_text, root_name="GameTranslation/"):
     return entries, ellipsis_dirs
 
 
+def git_repo_files(repo_path):
+    """Files git considers part of the repo, or None when git is unusable.
+
+    `ls-files --cached --others --exclude-standard` = tracked files plus
+    untracked-but-not-ignored files: everything that would be committed.
+    Taking the repo's file set from git (rather than a raw disk walk) makes
+    this check immune to local artifacts by construction - a gitignored
+    download directory, work copy or virtualenv can never be reported as an
+    [EXTRA] repo file, so no hand-maintained exclusion list can fall behind.
+    """
+    if shutil.which("git") is None:
+        return None
+    try:
+        proc = subprocess.run(
+            ["git", "-C", repo_path, "ls-files", "-z", "--cached",
+             "--others", "--exclude-standard"],
+            capture_output=True, check=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    raw = proc.stdout.decode("utf-8", "surrogateescape")
+    return {p for p in raw.split("\0") if p and not is_excluded(p)}
+
+
 def collect_repo_files(repo_path):
-    """All files under repo_path (posix relative paths), skipping excluded
-    paths and not descending into .git / __pycache__."""
+    """All files that belong to the repo (posix relative paths).
+
+    Prefers git's view; falls back to a disk walk (with the exclusion list
+    above) when git is unavailable, so the check still works outside a
+    checkout.
+    """
+    from_git = git_repo_files(repo_path)
+    if from_git is not None:
+        return from_git
     files = set()
     for dirpath, dirnames, filenames in os.walk(repo_path):
         dirnames[:] = [d for d in dirnames

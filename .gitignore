@@ -25,6 +25,9 @@ docs/table/
 tmp/
 work/
 
+# workspace-local scratch (repo stays clean; $env:TEMP for anything large)
+.tmp/
+
 # local-only tool/runtime downloads (engine sources used as a test runtime)
 .tools/
 

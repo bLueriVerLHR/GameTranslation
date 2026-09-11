@@ -257,10 +257,67 @@ class TestParseTree:
             check_docs.parse_tree("# readme without a tree\n")
 
 
+class TestRepoFileCollection:
+    """The repo file set must follow .gitignore, not a hand-kept list.
+
+    A local download directory (engine sources used as a test runtime) and
+    the workspace scratch dir are gitignored; before this was git-driven, a
+    disk walk reported 298 downloaded engine files as [EXTRA] repo content.
+    """
+
+    @staticmethod
+    def _init_git(path):
+        import subprocess
+        try:
+            subprocess.run(["git", "-C", str(path), "init", "-q"],
+                           capture_output=True, check=True)
+        except (OSError, subprocess.SubprocessError):
+            pytest.skip("git unavailable")
+
+    def test_gitignored_local_download_is_not_a_repo_file(self, tmp_path):
+        self._init_git(tmp_path)
+        (tmp_path / ".gitignore").write_text(".tools/\n", encoding="utf-8")
+        (tmp_path / "keep.py").write_text("x = 1\n", encoding="utf-8")
+        (tmp_path / ".tools").mkdir()
+        (tmp_path / ".tools" / "engine.js").write_text("// big\n",
+                                                       encoding="utf-8")
+        files = check_docs.collect_repo_files(str(tmp_path))
+        assert "keep.py" in files
+        assert not any(f.startswith(".tools/") for f in files)
+
+    def test_gitignored_scratch_dir_is_not_a_repo_file(self, tmp_path):
+        self._init_git(tmp_path)
+        (tmp_path / ".gitignore").write_text(".tmp/\n", encoding="utf-8")
+        (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+        (tmp_path / ".tmp").mkdir()
+        (tmp_path / ".tmp" / "scratch.py").write_text("y = 2\n",
+                                                      encoding="utf-8")
+        files = check_docs.collect_repo_files(str(tmp_path))
+        assert "a.py" in files
+        assert ".tmp/scratch.py" not in files
+
+    def test_untracked_but_not_ignored_file_still_counts(self, tmp_path):
+        # A new file the author forgot to `git add` is still repo content
+        # that the README tree has to cover.
+        self._init_git(tmp_path)
+        (tmp_path / "brand_new.py").write_text("x = 1\n", encoding="utf-8")
+        assert "brand_new.py" in check_docs.collect_repo_files(str(tmp_path))
+
+    def test_fallback_walk_used_when_git_is_missing(self, tmp_path,
+                                                    monkeypatch):
+        monkeypatch.setattr(check_docs, "git_repo_files", lambda repo: None)
+        (tmp_path / "a.py").write_text("x = 1\n", encoding="utf-8")
+        for d, f in ((".tools", "e.js"), (".tmp", "s.py")):
+            (tmp_path / d).mkdir()
+            (tmp_path / d / f).write_text("// x\n", encoding="utf-8")
+        assert check_docs.collect_repo_files(str(tmp_path)) == {"a.py"}
+
+
 class TestIsExcluded:
     def test_documented_exclusions(self):
         for p in ("docs/table/glossary.json", ".venv/bin/python",
-                  "work/x", "tmp/y", "tests/fake_tools/7z.py",
+                  "work/x", "tmp/y", ".tools/engine.js", ".tmp/s.py",
+                  "tests/fake_tools/7z.py",
                   "tests/fixtures/tlg/a.tlg", "x.pyc", "__pycache__/m.pyc",
                   ".pytest_cache/v/cache/nodeids",
                   "AGENTS.md", "LICENSE", "pyproject.toml",

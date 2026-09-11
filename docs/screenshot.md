@@ -56,12 +56,19 @@ python tools/wsl_capture.py --full --dir /mnt/c/Users/<user>/Pictures
 2. **自动部署**：`capture_window.ps1` 幂等复制到 Windows `%TEMP%`
    （`deliverables.win_temp`），避免经 UNC 路径加载脚本的信任问题。
 3. **窗口定位**：按进程名枚举顶层可见窗口；`--title` 子串过滤；多候选
-   取面积最大者。
+   取面积最大者。**同名的所有进程都参与匹配**（Chromium/Electron 这类
+   多进程应用，拥有窗口的不一定是返回的第一个 PID；旧版只取首个 PID，
+   对这类应用会误报 `no visible window`）；无 `--title` 时优先带标题的
+   窗口（多进程应用的辅助窗口无标题）。
 4. **前置处理**：最小化窗口先还原；窗口超出可视区（对话框按钮常被顶出
    屏幕底部）时自动 `MoveWindow` 移入屏幕内。
 5. **捕获**：`PrintWindow`（先 `PW_RENDERFULLCONTENT=2` 后降级 0）抓窗口
    自身像素——被其他窗口遮挡依然正确；不支持时降级整屏拷贝
    `CopyFromScreen`。
+   **注意（已实测）**：PrintWindow 对遮挡的 Chromium 窗口能拿到正确
+   画面（含窗口边框），但对**已最小化/从未合成**的窗口无能为力；
+   Chromium 网页内容的可靠路径是 CDP 截图（见 `visual-check` 技能），
+   且被遮挡时需先发一个真实点击唤醒合成器。
 6. **输出**：UTF-8 输出绝对路径（非 ASCII 目录名可存活 WSL 往返），
    包装器转回 WSL 路径并校验文件存在。
 
@@ -80,8 +87,8 @@ Task(description="分析截图", prompt="读取 <截图路径>，报告画面内
 | 现象 | 处理 |
 |---|---|
 | `exit 2` + WSLInterop 提示 | 按提示执行修复命令后重试 |
-| `exit 1` no visible window | 进程名写错 / 窗口在托盘 / 多进程取错 → 加 `--title` |
-| 黑图 | PrintWindow 不支持该应用 → `--no-window-only` 或 `--full` |
+| `exit 1` no visible window | 进程名写错 / 窗口在托盘 / **多个同名进程时用 `--title` 收窄** |
+| 黑图 | PrintWindow 不支持该应用 → `--no-window-only` 或 `--full`；窗口被遮挡/未合成时也会黑（点击唤醒或让窗口可见） |
 | 画面被裁/偏位 | 加 `--no-force-visible` 保留原位置再截 |
 | 旧版 WSL 交互工具冲突 | 本工具自包含，不依赖其他截图脚本 |
 

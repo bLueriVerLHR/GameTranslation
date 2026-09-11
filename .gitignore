@@ -5,6 +5,16 @@ __pycache__/
 *.csv
 .DS_Store
 
+# python build / test / lint caches (never commit)
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
 # project-local python virtualenv (machine-specific)
 .venv/
 

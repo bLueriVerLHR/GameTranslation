@@ -216,10 +216,7 @@ def convert_classes(text):
                     pbody = pbody[1:]
                 if pbody.endswith("}"):
                     pbody = pbody[:-1]
-                gmm = re.search(r"getter\s*\(?[^()]*\)?\s*\{(.*)\}", pbody, re.S)
-                getter = gmm.group(1) if gmm else None
-                smm = re.search(r"setter\s*\(([^)]*)\)\s*\{(.*)\}", pbody, re.S)
-                setter = (smm.group(1).strip(), smm.group(2)) if smm else None
+                getter, setter = _tjs_property(pbody)
                 props.append((pname, getter, setter))
                 continue
             # unrecognized top-level chunk: append to ctor body (safety)
@@ -254,6 +251,50 @@ def convert_classes(text):
         pos = end
     out.append(text[pos:])
     return "".join(out)
+
+
+def _brace_body(text, open_idx):
+    """Text inside the {...} that starts at text[open_idx].
+
+    Brace-paired, so a getter body containing nested blocks (if/for) is not
+    truncated.  A greedy regex was used here before and swallowed the
+    following `setter(x){...}` block into the getter body, emitting raw TJS
+    `setter(ma){` into the JavaScript - invalid syntax that stopped the
+    script at that file.  Returns (body, index_after_closing_brace).
+
+    Braces inside string literals are not tracked (same limitation as the
+    rest of this converter).
+    """
+    depth = 0
+    for i in range(open_idx, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_idx + 1:i], i + 1
+    return text[open_idx + 1:], len(text)
+
+
+def _tjs_property(pbody):
+    """Extract (getter_body, (setter_param, setter_body)) from a TJS2
+    `property` block body.  Either may be None."""
+    getter = setter = None
+    gpos = re.search(r"\bgetter\b", pbody)
+    if gpos:
+        ob = pbody.find("{", gpos.end())
+        if ob >= 0:
+            getter, _end = _brace_body(pbody, ob)
+    spos = re.search(r"\bsetter\b", pbody)
+    if spos:
+        sm = re.match(r"setter\s*\(([^)]*)\)", pbody[spos.start():])
+        param = sm.group(1).strip() if sm else ""
+        search_from = spos.start() + (sm.end() if sm else 0)
+        ob = pbody.find("{", search_from)
+        if ob >= 0:
+            sbody, _end = _brace_body(pbody, ob)
+            setter = (param, sbody)
+    return getter, setter
 
 
 def _split_blocks(text):

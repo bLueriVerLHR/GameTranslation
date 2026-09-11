@@ -67,6 +67,69 @@ property P { getter { return v; } setter(x) { v = x; } }
         assert "get: function" in out
         assert "set: function" in out
 
+    def test_getter_does_not_swallow_the_setter_block(self):
+        # A greedy `getter {...}(.*)}` match captured the following
+        # `setter(x){...}` block into the getter body, so raw TJS
+        # `setter(ma){` was emitted into the JavaScript.  That is invalid JS
+        # and stopped the script on the file that contained it (a game boot
+        # died right after loading the file with this pattern).
+        src = """class Foo {
+var v;
+property P {
+  getter {
+    return v;
+  }
+  setter(x) {
+    v = x;
+  }
+}
+}"""
+        out = tjs2js.convert_classes(src)
+        assert "setter(" not in out, out
+        assert "getter" not in out, out
+        assert out.count("get: function") == 1
+        assert out.count("set: function") == 1
+        # the getter body must not contain the setter's assignment
+        get_body = out.split("get: function", 1)[1].split("set: function", 1)[0]
+        assert "x" not in get_body.split("//")[0].replace("this.v", "")
+        # field references are rewritten to `this.<name>`
+        assert "return this.v" in get_body
+
+    def test_property_with_getter_only(self):
+        src = """class Foo {
+var v;
+property P { getter { return v; } }
+}"""
+        out = tjs2js.convert_classes(src)
+        assert "get: function" in out
+        assert "set: function" not in out
+
+    def test_property_with_setter_only(self):
+        src = """class Foo {
+var v;
+property P { setter(x) { v = x; } }
+}"""
+        out = tjs2js.convert_classes(src)
+        assert "set: function" in out
+        assert "setter(" not in out
+
+    def test_getter_body_keeps_nested_braces(self):
+        # Brace pairing (not a greedy/lazy regex) so an `if` inside a getter
+        # does not truncate the body.
+        src = """class Foo {
+var v;
+property P {
+  getter {
+    if (v) { return 1; }
+    return 0;
+  }
+  setter(x) { v = x; }
+}
+}"""
+        out = tjs2js.convert_classes(src)
+        assert "return 0" in out
+        assert "setter(" not in out
+
 
 class TestCasts:
     def test_int_cast(self):

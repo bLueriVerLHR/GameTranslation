@@ -234,8 +234,8 @@ subagent 翻译 → `translated.json` → 注入。
 **本机环境配置（`docs/table/env_config.json`，gitignored 仅本地）是可选
 覆盖层：** 所有外部程序都由 `rpgmaker/config.py` 的 `TOOLS` 表统一解析
 （**环境变量 → 本地配置 → 自动探测常见安装位置 → PATH**），交付目录同样
-先探测（各盘符/家目录下的 `Games`、`GamesCompress`）再回到内置默认
-（`~/Documents/GameTranslation/{games,archives}`，按需创建）——**没有配置
+先探测（工作区根下的 `Games`/`GamesCompress` 优先，再看各盘符与家目录）
+再回到内置默认（同样是工作区根下的这两个目录，按需创建）——**没有配置
 文件也能跑**。用 `python pipeline.py doctor` 看每个程序实际解析到的路径
 与来源（`env`/`config`/`probe`/`path`），`doctor --json` 出机器可读版本；
 `GT_NO_PROBE=1` 可关闭探测。配置里的工具路径支持 `*` 通配（WinGet 的

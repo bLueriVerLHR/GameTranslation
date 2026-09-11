@@ -401,6 +401,17 @@ class TestDeliverable:
         monkeypatch.delenv("GAMES_DIR", raising=False)
         monkeypatch.delenv("ARCHIVES_DIR", raising=False)
 
+    def _isolate_probe(self, monkeypatch, tmp_path, workspace=None,
+                       roots=()):
+        """Probe only the given roots, so the host's own Games folders never
+        influence the assertion."""
+        monkeypatch.delenv("GT_NO_PROBE", raising=False)
+        monkeypatch.setattr(config, "workspace_root",
+                            lambda: config._posix(str(workspace or tmp_path)))
+        monkeypatch.setattr(config, "_volume_roots",
+                            lambda: [config._posix(str(r)) for r in roots])
+        monkeypatch.setattr(config, "_home_dir", lambda: self._HOME)
+
     def test_games_native_form_localized(self, monkeypatch, tmp_path):
         self._cfg(monkeypatch, tmp_path, {"games": "D:/Games"})
         monkeypatch.setattr(config, "is_wsl", lambda: True)
@@ -412,26 +423,54 @@ class TestDeliverable:
         monkeypatch.setenv("GAMES_DIR", "/mnt/d/Other")
         assert config.games_dir() == "/mnt/d/Other"
 
-    def test_unconfigured_derives_default(self, monkeypatch, tmp_path):
+    def test_unconfigured_derives_default_from_workspace(self, monkeypatch,
+                                                         tmp_path):
+        # Nothing configured and nothing probed -> the workspace root beside
+        # this checkout is the base, created on demand by deliver.
         self._cfg(monkeypatch, tmp_path, {})
-        monkeypatch.setattr(config, "is_wsl", lambda: True)
-        # /home/tester/Documents does not exist -> the home dir is the base
-        assert config.games_dir() == \
-            "/home/tester/GameTranslation/games"
-        assert config.archives_dir() == \
-            "/home/tester/GameTranslation/archives"
+        monkeypatch.setattr(config, "workspace_root",
+                            lambda: "/work/ws")
+        monkeypatch.setattr(config, "_volume_roots", lambda: [])
+        assert config.games_dir() == "/work/ws/Games"
+        assert config.archives_dir() == "/work/ws/GamesCompress"
 
-    def test_existing_conventional_folder_is_adopted(self, monkeypatch,
-                                                     tmp_path):
+    def test_workspace_sibling_folder_is_adopted(self, monkeypatch, tmp_path):
+        # The documented layout: output lives beside the project, so an
+        # existing <workspace>/Games is used without any configuration.
         self._cfg(monkeypatch, tmp_path, {})
         (tmp_path / "Games").mkdir()
-        monkeypatch.delenv("GT_NO_PROBE", raising=False)
-        monkeypatch.setattr(config, "_volume_roots", lambda: [config._posix(str(tmp_path))])
-        monkeypatch.setattr(config, "_home_dir", lambda: self._HOME)
+        (tmp_path / "GamesCompress").mkdir()
+        self._isolate_probe(monkeypatch, tmp_path)
+        assert config.games_dir() == config._posix(str(tmp_path / "Games"))
+        assert config.archives_dir() == \
+            config._posix(str(tmp_path / "GamesCompress"))
+
+    def test_probe_bases_put_the_workspace_first(self, monkeypatch, tmp_path):
+        self._cfg(monkeypatch, tmp_path, {})
+        monkeypatch.setattr(config, "workspace_root", lambda: "/work/ws")
+        monkeypatch.setattr(config, "_volume_roots",
+                            lambda: ["/mnt/c", "/mnt/d"])
+        bases = config._deliverable_bases()
+        assert bases[0] == "/work/ws"
+        assert bases[1:3] == ["/mnt/c", "/mnt/d"]
+        assert bases[-1] == self._HOME
+        assert len(bases) == len(set(bases))
+
+    def test_existing_conventional_folder_on_a_volume_is_adopted(
+            self, monkeypatch, tmp_path):
+        # The probe also adopts a conventionally named folder on a volume
+        # root, so an operator who keeps output outside the workspace is
+        # picked up automatically.
+        self._cfg(monkeypatch, tmp_path, {})
+        (tmp_path / "Games").mkdir()
+        self._isolate_probe(monkeypatch, tmp_path, workspace=tmp_path / "other",
+                            roots=(tmp_path,))
         assert config.games_dir() == config._posix(str(tmp_path / "Games"))
 
-    def test_probe_ignores_missing_conventional_folder(self, monkeypatch):
+    def test_probe_ignores_missing_conventional_folder(self, monkeypatch,
+                                                       tmp_path):
         monkeypatch.delenv("GT_NO_PROBE", raising=False)
+        monkeypatch.setattr(config, "workspace_root", lambda: "/work/none")
         monkeypatch.setattr(config, "_volume_roots", lambda: [])
         monkeypatch.setattr(config, "_home_dir", lambda: self._HOME)
         assert config._probe_deliverable("archives") is None
@@ -522,9 +561,11 @@ class TestDefaultNote:
         monkeypatch.setattr(config, "_home_dir", lambda: "/home/tester")
         monkeypatch.delenv("GAMES_DIR", raising=False)
 
-    def test_notes_once_for_derived_default(self, monkeypatch, tmp_path,
-                                            caplog):
+    def test_default_notes_once_for_derived_default(self, monkeypatch,
+                                                    tmp_path, caplog):
         self._cfg(monkeypatch, tmp_path)
+        monkeypatch.setattr(config, "workspace_root", lambda: "/work/ws")
+        monkeypatch.setattr(config, "_volume_roots", lambda: [])
         with caplog.at_level(logging.INFO, logger="rpgmaker.config"):
             config.games_dir()
             config.games_dir()

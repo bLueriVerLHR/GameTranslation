@@ -100,12 +100,12 @@ python $tk\pipeline.py deliver $out          # 写回存储侧（见 §6a）
 - **成品放专门交付目录，与其他游戏一致。** 最终交付物 — JoiPlay 目录
   `<Game>\` 与压缩包 `<Game>.7z` — 放本机交付目录，命名与其他转换过的
   游戏完全一致。候选顺序：环境变量（`GAMES_DIR`/`ARCHIVES_DIR`）→ 本地
-  配置 `deliverables.games`/`archives` → **探测**已有约定目录
-  （各盘符与家目录下的 `Games` / `GamesCompress`）→ 内置默认
-  `~/Documents/GameTranslation/{games,archives}`（按需创建）；用
-  `doctor` 确认实际落到哪里。写回用 `deliver`（§6）：压缩 → 压缩包复制
-  到压缩包目录 → 删除成品目录旧文件夹 → 解压到成品目录。原版游戏保持
-  不动。
+  配置 `deliverables.games`/`archives` → **探测**已有惯例目录（先看工作区
+  根，即本工具库的**同级目录**下的 `Games`/`GamesCompress`，再看各盘符根
+  与家目录）→ 内置默认（同样是工作区根下的 `Games`/`GamesCompress`，按需
+  创建）；用 `doctor` 确认实际落到哪里。写回用 `deliver`（§6）：压缩 →
+  压缩包复制到压缩包目录 → 删除成品目录旧文件夹 → 解压到成品目录。原版
+  游戏保持不动。
 - **手机贴图限制（单一构建策略，2026-08 定案）。** Android
   WebView/PixiJS 把 WebGL 贴图限制在**每边 4096 像素**；任何超过 4096
   的 PNG（通常是竖版立绘）在手机上渲染成**黑块**，PC

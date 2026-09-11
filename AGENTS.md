@@ -496,9 +496,9 @@ KiriKiri 游戏（`Game.exe` + `data.xp3` 等，无 `index.html`/`js/`）不走
 - **本机环境信息**（交付目录、工具路径覆盖、venv 等）写进本地私有配置
   `docs/table/env_config.json`（gitignored，不入库）——**这是可选覆盖层，
   不是必需条件**：文件缺失时由探测 + 内置默认值接管。交付目录解析顺序
-  为 环境变量 → 本地配置 → 探测已有约定目录（各盘符/家目录下的
-  `Games`/`GamesCompress`）→ 内置默认
-  `~/Documents/GameTranslation/{games,archives}`（按需创建）。代码按
+  为 环境变量 → 本地配置 → 探测已有惯例目录（工作区根即本库的**同级
+  目录**下的 `Games`/`GamesCompress` 优先，再看各盘符根与家目录）→
+  内置默认（同样是工作区根下这两个目录，按需创建）。代码按
   平台解析（`is_wsl()`），不硬编码本机路径。系统工具安装（如
   `pacman -S ...`）由 owner 执行，agent 不自行下载/提权。
 

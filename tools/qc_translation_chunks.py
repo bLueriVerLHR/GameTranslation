@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""qc_translation_chunks.py - LEGACY (JSON-chunk QC, superseded by the
+r"""qc_translation_chunks.py - LEGACY (JSON-chunk QC, superseded by the
 two-file chunk layout + tools/merge_plain_chunks.py).  Kept for old work
 packages.
 
 QC + repair + merge for subagent-translated chunks.
 
-- repair: agents write raw `\C[27]` (single backslash) and unescaped `"`
+- repair: agents write raw ``\C[27]`` (single backslash) and unescaped ``"``
   inside strings -> fix invalid escapes line-by-line (only on the VALUE side,
   after the first '"' following ': '), then re-parse.
 - validate: every input key present exactly, no extras, no empty values,
-  same \\n line count, no kana left in values.
+  same ``\n`` line count, no kana left in values.
 - merge: completion.json {key: value} + report.
 """
 import argparse

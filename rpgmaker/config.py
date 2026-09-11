@@ -646,22 +646,46 @@ def _home_dir():
     return _expand(home)
 
 
-def _default_output_root():
-    """Where deliverables go when nothing else matches: a visible, dated
-    folder next to the user's documents (created on demand by `deliver`)."""
-    home = _home_dir()
-    docs = os.path.join(home, "Documents")
-    base = docs if os.path.isdir(_view(docs)) else home
-    return _expand(os.path.join(base, "GameTranslation"))
+def workspace_root():
+    """The workspace directory that holds this checkout.
+
+    Deliverables belong next to the sources, so the tool library's own parent
+    directory is both the first probe base and the default output root - the
+    output folders live beside the repo (`<workspace>/Games`,
+    `<workspace>/GamesCompress`) instead of somewhere machine-specific.
+    Overridable for tests and exotic layouts."""
+    return str(REPO_ROOT.parent)
 
 
-# Candidate folder names probed on every volume + the home dir, in order.
-# Both the historical convention (Games / GamesCompress) and the project
-# layout (<root>/GameTranslation/{games,archives}) are recognized.
+def _deliverable_bases():
+    """Directories whose children are probed for deliverable folders, in
+    order: the workspace root first (most specific), then every volume root,
+    then $HOME - so an existing conventionally named folder is adopted
+    wherever the operator keeps it."""
+    bases = [workspace_root()]
+    bases.extend(_volume_roots())
+    bases.append(_home_dir())
+    seen = []
+    for base in bases:
+        if base and base not in seen:
+            seen.append(base)
+    return seen
+
+
+# Candidate folder names probed under every base, in order.  The historical
+# convention (Games / GamesCompress beside the workspace) comes first, then
+# lowercase / nested variants.  These are RELATIVE names: no machine path
+# lives in the repo, the bases above supply the machine-specific part.
 _DELIVERABLE_NAMES = {
-    "games": ("Games", "GameTranslation/games", "games"),
-    "archives": ("GamesCompress", "GameTranslation/archives", "archives"),
+    "games": ("Games", "games", "GameTranslation/games"),
+    "archives": ("GamesCompress", "archives", "GameTranslation/archives"),
 }
+
+
+def _default_output_root():
+    """Where deliverables go when nothing was configured and no existing
+    folder was probed: the workspace root (created on demand by `deliver`)."""
+    return workspace_root()
 
 
 def _probe_deliverable(kind):
@@ -672,8 +696,7 @@ def _probe_deliverable(kind):
     adopted, otherwise the caller's default is created on demand."""
     if _probe_disabled():
         return None
-    bases = _volume_roots() + [_home_dir()]
-    for base in bases:
+    for base in _deliverable_bases():
         for name in _DELIVERABLE_NAMES[kind]:
             cand = os.path.join(base, name)
             if os.path.isdir(_view(cand)):
@@ -756,21 +779,25 @@ def _creatable(path):
 
 
 def games_dir() -> str:
-    """Deliverable folder for finished game builds (env GAMES_DIR ->
-    deliverables.games -> probed Games folder -> default)."""
+    """Deliverable folder for finished game builds: env GAMES_DIR ->
+    deliverables.games -> probed conventional folder -> default
+    `<workspace>/Games` (created on demand)."""
     probe = "games"
     p = _deliverable("GAMES_DIR", "games",
-                     os.path.join(_default_output_root(), "games"), probe)
+                     os.path.join(_default_output_root(),
+                                  _DELIVERABLE_NAMES[probe][0]), probe)
     _note_default_deliverable("GAMES_DIR", "games", p, probe)
     return p
 
 
 def archives_dir() -> str:
-    """Deliverable folder for finished game archives (env ARCHIVES_DIR ->
-    deliverables.archives -> probed GamesCompress folder -> default)."""
+    """Deliverable folder for finished game archives: env ARCHIVES_DIR ->
+    deliverables.archives -> probed conventional folder -> default
+    `<workspace>/GamesCompress` (created on demand)."""
     probe = "archives"
     p = _deliverable("ARCHIVES_DIR", "archives",
-                     os.path.join(_default_output_root(), "archives"), probe)
+                     os.path.join(_default_output_root(),
+                                  _DELIVERABLE_NAMES[probe][0]), probe)
     _note_default_deliverable("ARCHIVES_DIR", "archives", p, probe)
     return p
 

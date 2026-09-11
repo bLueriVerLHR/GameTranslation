@@ -205,8 +205,12 @@ class TestDiskRotationalSysfs:
             st_dev = (8 << 8) | 0  # major=8 minor=0 (sd*)
         monkeypatch.setattr(sys, "platform", "linux")
         monkeypatch.setattr(runtime.os, "stat", lambda p: _FakeSt())
-        monkeypatch.setattr(runtime.os, "major", lambda dev: dev >> 8)
-        monkeypatch.setattr(runtime.os, "minor", lambda dev: dev & 0xFF)
+        # os.major/os.minor are POSIX-only: create them on Windows so the
+        # sysfs branch can be exercised from any host (raising=False).
+        monkeypatch.setattr(runtime.os, "major", lambda dev: dev >> 8,
+                            raising=False)
+        monkeypatch.setattr(runtime.os, "minor", lambda dev: dev & 0xFF,
+                            raising=False)
         monkeypatch.setattr(runtime.os, "readlink", lambda p: "sda")
         real_open = open
 

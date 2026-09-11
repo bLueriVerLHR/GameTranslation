@@ -10,6 +10,7 @@ tests; the audio conversion uses the fake ffmpeg from conftest.
 import json
 import os
 import sys
+from pathlib import Path
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
@@ -67,8 +68,9 @@ class TestBuild:
     def test_find_asar(self, tmp_path):
         root = str(tmp_path)
         asar = make_src_game(root)
-        assert tb.find_asar(root) == asar
-        assert tb.find_asar(root, "resources/app.asar") == asar
+        # compare as Paths: the code may join with either separator
+        assert Path(tb.find_asar(root)) == Path(asar)
+        assert Path(tb.find_asar(root, "resources/app.asar")) == Path(asar)
 
     def test_find_asar_missing(self, tmp_path):
         root = str(tmp_path / "empty")
@@ -126,8 +128,8 @@ class TestBuild:
 class TestAudio:
     def test_iter_mp3(self, tmp_path):
         root = make_asar_game(str(tmp_path))
-        files = list(ta.iter_mp3(root))
-        assert files == [os.path.join(root, "data", "sound", "se1.mp3")]
+        files = [Path(p) for p in ta.iter_mp3(root)]
+        assert files == [Path(root) / "data" / "sound" / "se1.mp3"]
 
     def test_convert_one_creates_ogg_and_removes_mp3(self, tmp_path, fake_tools):
         root = make_asar_game(str(tmp_path))

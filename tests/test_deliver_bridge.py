@@ -18,9 +18,9 @@ import pytest
 
 from rpgmaker import config, deliver
 
-# Resolved Windows-side PowerShell path, as returned by shutil.which() inside
-# _run_powershell().  Tests pin it so the assertion is hermetic regardless of
-# the machine's PATH.
+# Resolved Windows-side PowerShell path, as returned by the shared resolver
+# inside config.run_powershell().  Tests pin it so the assertion is hermetic
+# regardless of the machine's PATH.
 _POWERSHELL_EXE = ("/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/"
                    "powershell.exe")
 
@@ -154,7 +154,6 @@ class TestWindowsSide:
         archive, dest = _make_archive_and_dest(tmp_path)
         monkeypatch.setattr(config, "win_7z", lambda: None)
         monkeypatch.setattr(config, "is_windows_side", lambda p: True)
-        monkeypatch.setattr(config, "DEFAULT_WIN_SEVENZ", r"C:\missing\7z.exe")
         calls = []
         _recorder(monkeypatch, calls)
         with pytest.raises(RuntimeError) as ei:

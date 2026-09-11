@@ -289,16 +289,18 @@ class TestPermissionDenied:
 class TestUnreadableSevenzBinary:
     def test_compress_non_executable_binary_raises_permission_error(
             self, tmp_path):
-        # a 7z binary that exists but cannot be executed surfaces as
-        # PermissionError (POSIX exec semantics), not a silent success
+        # a 7z binary that exists but cannot be executed surfaces as an
+        # OS-level spawn error (PermissionError on POSIX, WinError 193 on
+        # Windows), never as a silent success
         folder = _make_folder(tmp_path)
-        script = tmp_path / "noexec_7z.py"
-        script.write_text("#!/usr/bin/env python3\nprint('x')\n")
-        script.chmod(0o644)  # readable, NOT executable
+        script = tmp_path / "noexec_7z.bin"
+        script.write_bytes(b"not an executable")
+        if os.name == "posix":
+            script.chmod(0o644)  # readable, NOT executable
         monkeypatch_placeholder = pytest.MonkeyPatch()
         monkeypatch_placeholder.setenv("SEVENZ", str(script))
         try:
-            with pytest.raises(PermissionError):
+            with pytest.raises(OSError):
                 compress.compress(folder, str(tmp_path / "g.7z"))
         finally:
             monkeypatch_placeholder.undo()

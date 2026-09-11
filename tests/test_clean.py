@@ -3,7 +3,8 @@
 """Unit tests for rpgmaker/clean.py safe cleanup."""
 import os
 
-from conftest import make_game
+import pytest
+from conftest import fs_is_case_sensitive, make_game
 
 from rpgmaker import clean
 
@@ -35,6 +36,8 @@ class TestFonts:
 
     def test_case_mismatch_renamed(self, game_dir, fake_tools):
         _root, web = game_dir
+        if not fs_is_case_sensitive(web):
+            pytest.skip("case-insensitive filesystem: the rename is a no-op")
         css = os.path.join(web, "css", "main.css")
         with open(css, "a", encoding="utf-8") as f:
             f.write('@font-face { src: url("casefont.ttf"); }\n')

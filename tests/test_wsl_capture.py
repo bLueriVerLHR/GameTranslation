@@ -2,13 +2,16 @@
 # -*- coding: utf-8 -*-
 """Unit tests for tools/wsl_capture.py (window-targeted screenshots).
 
-The powershell.exe invocation is replaced by tests/fake_tools/fake_powershell
-via the POWERSHELL_EXE env var; the Windows temp dir is monkeypatched to a
-tmp_path so the whole flow is hermetic (positive / negative / edge cases).
+The powershell.exe invocation is replaced by the portable fake tool
+(tests/fake_tools/fake_powershell.py, wrapped in a platform launcher and
+injected via the POWERSHELL_EXE env var); the Windows temp dir is
+monkeypatched to a tmp_path so the whole flow is hermetic (positive /
+negative / edge cases).
 """
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -18,16 +21,13 @@ import pytest  # noqa: E402
 
 import wsl_capture  # noqa: E402
 
-FAKE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                    "fake_tools", "fake_powershell")
+FAKE = None  # resolved per-test through the fake_powershell fixture
 SCRIPT_SRC = os.path.join(REPO_ROOT, "tools", "capture_window.ps1")
 
 
 @pytest.fixture
-def fake_env(monkeypatch, tmp_path):
+def fake_env(fake_powershell, monkeypatch, tmp_path):
     """Point the wrapper at the fake powershell + a hermetic Windows temp."""
-    os.chmod(FAKE, os.stat(FAKE).st_mode | 0o111)  # mode bits may be stripped
-    monkeypatch.setenv("POWERSHELL_EXE", FAKE)
     monkeypatch.setattr(wsl_capture.config, "win_temp_dir", lambda: str(tmp_path))
     return tmp_path
 
@@ -39,16 +39,29 @@ def run_main(argv, monkeypatch, tmp_path):
 
 # ------------------------------------------------------------- interop
 
-def test_interop_ok_with_override():
+def test_interop_ok_with_override(monkeypatch):
+    # an explicit POWERSHELL_EXE override is trusted (tests / exotic setups)
+    monkeypatch.setenv("POWERSHELL_EXE", "/custom/powershell")
     assert wsl_capture.interop_ok("/custom/powershell") is True
 
 
-def test_interop_ok_with_entry(tmp_path):
+def test_interop_ok_on_native_windows(monkeypatch):
+    monkeypatch.delenv("POWERSHELL_EXE", raising=False)
+    monkeypatch.setattr(wsl_capture.config, "is_wsl", lambda: False)
+    assert wsl_capture.interop_ok("C:/Windows/powershell.exe") is True
+    assert wsl_capture.interop_ok(None) is False
+
+
+def test_interop_ok_with_entry(monkeypatch, tmp_path):
+    monkeypatch.delenv("POWERSHELL_EXE", raising=False)
+    monkeypatch.setattr(wsl_capture.config, "is_wsl", lambda: True)
     (tmp_path / "WSLInterop").write_text("enabled\n")
     assert wsl_capture.interop_ok("", binfmt_root=str(tmp_path)) is True
 
 
-def test_interop_missing(tmp_path):
+def test_interop_missing(monkeypatch, tmp_path):
+    monkeypatch.delenv("POWERSHELL_EXE", raising=False)
+    monkeypatch.setattr(wsl_capture.config, "is_wsl", lambda: True)
     assert wsl_capture.interop_ok("", binfmt_root=str(tmp_path)) is False
 
 
@@ -61,7 +74,7 @@ def test_deploy_copies_script(fake_env):
     assert os.path.exists(deployed)
     assert open(deployed, encoding="utf-8").read() == \
         open(SCRIPT_SRC, encoding="utf-8").read()
-    assert script == win + "/capture_window.ps1"
+    assert Path(script) == Path(win) / "capture_window.ps1"
 
 
 def test_deploy_idempotent_skips_fresh(fake_env, monkeypatch):
@@ -211,8 +224,16 @@ def test_powershell_missing(monkeypatch, tmp_path):
     assert code == 2
 
 
-def test_interop_missing_reports_fix(monkeypatch, tmp_path, capsys):
-    monkeypatch.setenv("POWERSHELL_EXE", FAKE)
+def test_powershell_exe_delegates_to_shared_resolver(monkeypatch):
+    monkeypatch.delenv("POWERSHELL_EXE", raising=False)
+    monkeypatch.setattr(wsl_capture.config, "find_powershell",
+                        lambda: "/shared/powershell.exe")
+    assert wsl_capture.powershell_exe() == "/shared/powershell.exe"
+
+
+def test_interop_missing_reports_fix(monkeypatch, tmp_path, capsys,
+                                     fake_powershell):
+    # POWERSHELL_EXE is set by the fixture (trusted), so force the check off
     monkeypatch.setattr(wsl_capture, "interop_ok", lambda p: False)
     code = run_main(["--process", "GamePro", "--dir", str(tmp_path)],
                     monkeypatch, tmp_path)

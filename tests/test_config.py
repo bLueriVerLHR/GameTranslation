@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for rpgmaker/config.py path/platform helpers.
+"""Unit tests for rpgmaker/config.py - platform mapping, application
+resolution and location derivation.
 
-Covers the single-native-form path convention: every path is stored once
-in the form of the platform where the resource lives; the code detects the
-current platform and converts (_localize -> to_wsl_path/to_windows_path).
-Tools are indexed [platform][tool] because the binaries differ per side.
+Covers the single-native-form path convention (a path is stored once, in the
+form of the platform that owns the resource) and the layered application
+resolver: environment override -> explicit local config (globs allowed) ->
+probing of well-known install locations -> PATH, with the probe layer
+disabled globally by tests/conftest.py unless a test opts in.
 """
 import json
 import logging
@@ -52,31 +54,31 @@ class TestPathConversions:
 
 
 class TestLocalize:
-    """_localize maps a stored native path to the current platform's view."""
+    """localize() maps a stored native path to the current platform's view."""
 
     def test_wsl_windows_form_converted(self, monkeypatch):
         monkeypatch.setattr(config, "is_wsl", lambda: True)
-        assert config._localize("D:/Games") == "/mnt/d/Games"
-        assert config._localize(r"C:\Games") == "/mnt/c/Games"
+        assert config.localize("D:/Games") == "/mnt/d/Games"
+        assert config.localize(r"C:\Games") == "/mnt/c/Games"
 
     def test_wsl_native_passthrough(self, monkeypatch):
         monkeypatch.setattr(config, "is_wsl", lambda: True)
-        assert config._localize("/tmp/opencode") == "/tmp/opencode"
-        assert config._localize("3rd/7zz") == "3rd/7zz"
+        assert config.localize("/tmp/opencode") == "/tmp/opencode"
+        assert config.localize("3rd/7zz") == "3rd/7zz"
 
     def test_win32_mnt_form_converted(self, monkeypatch):
         monkeypatch.setattr(config, "is_wsl", lambda: False)
-        assert config._localize("/mnt/d/Games") == "D:\\Games"
+        assert config.localize("/mnt/d/Games") == "D:\\Games"
 
     def test_win32_native_passthrough(self, monkeypatch):
         monkeypatch.setattr(config, "is_wsl", lambda: False)
-        assert config._localize("D:/Games") == "D:/Games"
-        assert config._localize("/home/user/game") == "/home/user/game"
+        assert config.localize("D:/Games") == "D:/Games"
+        assert config.localize("/home/user/game") == "/home/user/game"
 
     def test_empty_input(self, monkeypatch):
         monkeypatch.setattr(config, "is_wsl", lambda: True)
-        assert config._localize("") == ""
-        assert config._localize(None) is None
+        assert config.localize("") == ""
+        assert config.localize(None) is None
 
 
 class TestPick:
@@ -129,14 +131,275 @@ class TestWin32Section:
         assert config._win32_section("str") == {}
 
 
+class TestExpand:
+    def test_env_token(self, monkeypatch):
+        monkeypatch.setenv("TESTVAR", "value")
+        assert config._expand("%TESTVAR%/x") == "value/x"
+
+    def test_unknown_token_passthrough(self, monkeypatch):
+        monkeypatch.delenv("NO_SUCH_VAR", raising=False)
+        assert config._expand("%NO_SUCH_VAR%/x") == "%NO_SUCH_VAR%/x"
+
+    def test_separators_normalized(self):
+        assert config._expand(r"C:\a\b") == "C:/a/b"
+
+
+class TestRegistry:
+    """The TOOLS table is the single source of truth for applications."""
+
+    def test_keys_unique(self):
+        keys = [t.key for t in config.TOOLS]
+        assert len(keys) == len(set(keys))
+
+    def test_every_entry_is_complete(self):
+        for tool in config.TOOLS:
+            assert tool.env, tool.key
+            assert tool.exe or tool.probe, tool.key
+            assert tool.purpose and tool.hint, tool.key
+            assert tool.side in ("native", "win32"), tool.key
+            assert tool.path_form in ("view", "windows"), tool.key
+
+    def test_resolver_exists_on_config(self):
+        # doctor resolves each tool through the config module so a single
+        # tool can be monkeypatched out in tests.
+        for tool in config.TOOLS:
+            assert callable(getattr(config, tool.resolver)), tool.key
+
+    def test_by_key_index(self):
+        for tool in config.TOOLS:
+            assert config.TOOLS_BY_KEY[tool.key] is tool
+
+    def test_win7z_uses_the_7z_config_key(self):
+        tool = config.TOOLS_BY_KEY["win7z"]
+        assert tool.cfg == "7z"
+        assert tool.path_form == "windows"
+        assert tool.resolver == "win_7z"
+
+
+class TestToolResolution:
+    """Layered resolution: env -> config -> probe -> PATH."""
+
+    def test_env_override_wins(self, monkeypatch, tmp_path):
+        exe = tmp_path / "ffmpeg.bin"
+        exe.write_bytes(b"x")
+        monkeypatch.setenv("FFMPEG", str(exe))
+        assert config.find_ffmpeg() == config._posix(str(exe))
+
+    def test_env_override_windows_form_for_win_tools(self, monkeypatch,
+                                                     tmp_path):
+        exe = tmp_path / "7z.exe"
+        exe.write_bytes(b"x")
+        monkeypatch.setenv("SEVENZ_WIN", str(exe))
+        # path_form == "windows": the value is handed to PowerShell
+        got = config.win_7z()
+        assert got.replace("\\", "/") == config._posix(str(exe))
+
+    def test_env_override_missing_file_falls_through(self, monkeypatch,
+                                                     tmp_path):
+        monkeypatch.setenv("FFMPEG", str(tmp_path / "nope"))
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+        assert config.find_ffmpeg() is None
+
+    def test_config_override(self, monkeypatch, tmp_path):
+        exe = tmp_path / "ffmpeg.bin"
+        exe.write_bytes(b"x")
+        self._cfg(monkeypatch, tmp_path, {"wsl": {"ffmpeg": str(exe)},
+                                          "win32": {"ffmpeg": str(exe)}})
+        monkeypatch.delenv("FFMPEG", raising=False)
+        assert config.find_ffmpeg() == config._posix(str(exe))
+
+    def test_config_glob_resolves_newest(self, monkeypatch, tmp_path):
+        for ver in ("1.0", "2.0", "10.0"):
+            d = tmp_path / ("ffmpeg-%s" % ver) / "bin"
+            d.mkdir(parents=True)
+            (d / "ffmpeg.exe").write_bytes(b"x")
+        self._cfg(monkeypatch, tmp_path,
+                  {"wsl": {"ffmpeg": "ffmpeg-*/bin/ffmpeg.exe"},
+                   "win32": {"ffmpeg": "ffmpeg-*/bin/ffmpeg.exe"}})
+        monkeypatch.delenv("FFMPEG", raising=False)
+        got = config.find_ffmpeg()
+        assert got.endswith("ffmpeg-10.0/bin/ffmpeg.exe"), got
+
+    def test_config_relative_path_resolves_against_config_dir(
+            self, monkeypatch, tmp_path):
+        # a relative entry means "relative to docs/table/", so the config file
+        # itself stays machine-independent
+        cfg = tmp_path / "env_config.json"
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+        (tmp_path / "3rd").mkdir()
+        exe = tmp_path / "3rd" / "7zz"
+        exe.write_bytes(b"x")
+        cfg.write_text(json.dumps({"tools": {"wsl": {"7z": "3rd/7zz"}}}),
+                       encoding="utf-8")
+        monkeypatch.delenv("SEVENZ", raising=False)
+        assert config.find_7z() == config._posix(str(exe))
+
+    def test_win_key_reads_win32_section(self, monkeypatch, tmp_path):
+        exe = tmp_path / "7z.exe"
+        exe.write_bytes(b"x")
+        cfg = tmp_path / "env_config.json"
+        cfg.write_text(json.dumps({"tools": {"win32": {"7z": str(exe)}}}),
+                       encoding="utf-8")
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+        monkeypatch.delenv("SEVENZ_WIN", raising=False)
+        monkeypatch.delenv("SEVENZ", raising=False)
+        assert config.win_7z() == str(exe)
+
+    def test_probe_finds_tool_under_anchor(self, monkeypatch, tmp_path):
+        d = tmp_path / "ffmpeg-9.9" / "bin"
+        d.mkdir(parents=True)
+        exe = d / "ffmpeg.exe"
+        exe.write_bytes(b"x")
+        monkeypatch.delenv("GT_NO_PROBE", raising=False)
+        monkeypatch.setattr(config, "_anchor_paths", lambda side: [str(tmp_path)])
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+        assert config.find_ffmpeg() == config._posix(str(exe))
+
+    def test_probe_skipped_when_disabled(self, monkeypatch, tmp_path):
+        d = tmp_path / "ffmpeg-9.9" / "bin"
+        d.mkdir(parents=True)
+        (d / "ffmpeg.exe").write_bytes(b"x")
+        monkeypatch.setenv("GT_NO_PROBE", "1")
+        monkeypatch.setattr(config, "_anchor_paths", lambda side: [str(tmp_path)])
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+        assert config.find_ffmpeg() is None
+
+    def test_anchors_only_return_existing_dirs(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ProgramFiles", str(tmp_path))
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "missing"))
+        anchors = config._anchor_paths("win32")
+        assert config._posix(str(tmp_path)) in anchors
+        assert config._posix(str(tmp_path / "missing")) not in anchors
+
+    def test_path_lookup_is_last_resort(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("FFMPEG", raising=False)
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE",
+                            tmp_path / "absent.json")
+        monkeypatch.setattr(shutil, "which",
+                            lambda name: "/opt/bin/ffmpeg" if name == "ffmpeg"
+                            else None)
+        assert config.find_ffmpeg() == "/opt/bin/ffmpeg"
+
+    def test_not_found_returns_none(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("FFMPEG", raising=False)
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE",
+                            tmp_path / "absent.json")
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+        assert config.find_ffmpeg() is None
+
+    def test_resolve_tool_accepts_key_or_entry(self, monkeypatch, tmp_path):
+        exe = tmp_path / "rg.bin"
+        exe.write_bytes(b"x")
+        monkeypatch.setenv("RG", str(exe))
+        assert config.resolve_tool("rg") == config._posix(str(exe))
+        assert config.resolve_tool(config.TOOLS_BY_KEY["rg"]) == \
+            config._posix(str(exe))
+
+    def test_resolve_tool_reports_source(self, monkeypatch, tmp_path):
+        exe = tmp_path / "rg.bin"
+        exe.write_bytes(b"x")
+        monkeypatch.setenv("RG", str(exe))
+        path, source = config.resolve_tool("rg", with_source=True)
+        assert path == config._posix(str(exe))
+        assert source == "env"
+        monkeypatch.delenv("RG", raising=False)
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+        assert config.resolve_tool("rg", with_source=True) == (None, None)
+
+    def test_find_powershell_uses_shared_resolver(self, monkeypatch, tmp_path):
+        exe = tmp_path / "powershell.exe"
+        exe.write_bytes(b"x")
+        monkeypatch.setenv("POWERSHELL_EXE", str(exe))
+        assert config.find_powershell() == config._posix(str(exe))
+
+    def test_find_npx_shared_with_tyrano(self, monkeypatch, tmp_path):
+        exe = tmp_path / "npx.cmd"
+        exe.write_bytes(b"x")
+        monkeypatch.setenv("NPX", str(exe))
+        assert config.find_npx() == config._posix(str(exe))
+
+    @staticmethod
+    def _cfg(monkeypatch, tmp_path, tools_section):
+        cfg = tmp_path / "env_config.json"
+        cfg.write_text(json.dumps({"tools": tools_section}), encoding="utf-8")
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+
+
+class TestRunPowershell:
+    def test_missing_raises_with_cross_system_hint(self, monkeypatch):
+        monkeypatch.delenv("POWERSHELL_EXE", raising=False)
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+        with pytest.raises(FileNotFoundError) as ei:
+            config.run_powershell("Remove-Item x")
+        msg = str(ei.value)
+        assert "powershell.exe not found" in msg
+        assert "Windows 侧安装 PowerShell" in msg
+
+    def test_passes_command_and_returns_result(self, monkeypatch, tmp_path):
+        import subprocess
+        exe = tmp_path / "powershell.exe"
+        exe.write_bytes(b"x")
+        monkeypatch.setenv("POWERSHELL_EXE", str(exe))
+        seen = {}
+
+        def fake_run(cmdline, capture_output=False, text=False):
+            seen["cmdline"] = cmdline
+            return subprocess.CompletedProcess(cmdline, 0, "ok", "")
+
+        monkeypatch.setattr(config.subprocess, "run", fake_run)
+        r = config.run_powershell("Get-Date")
+        assert seen["cmdline"][-1] == "Get-Date"
+        assert "-NoProfile" in seen["cmdline"]
+        assert r.stdout == "ok"
+
+    def test_nonzero_exit_raises(self, monkeypatch, tmp_path):
+        import subprocess
+        exe = tmp_path / "powershell.exe"
+        exe.write_bytes(b"x")
+        monkeypatch.setenv("POWERSHELL_EXE", str(exe))
+        monkeypatch.setattr(
+            config.subprocess, "run",
+            lambda cmdline, capture_output=False, text=False:
+                subprocess.CompletedProcess(cmdline, 1, "", "boom"))
+        with pytest.raises(RuntimeError) as ei:
+            config.run_powershell("exit 1")
+        assert "powershell failed (1)" in str(ei.value)
+        assert "boom" in str(ei.value)
+
+
+class TestProbeReport:
+    def test_shape_and_sources(self, monkeypatch, tmp_path):
+        exe = tmp_path / "rg.bin"
+        exe.write_bytes(b"x")
+        monkeypatch.setenv("RG", str(exe))
+        monkeypatch.setattr(shutil, "which", lambda name: None)
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE",
+                            tmp_path / "absent.json")
+        report = config.probe_report()
+        by = {r["key"]: r for r in report}
+        assert set(by) == {t.key for t in config.TOOLS}
+        assert by["rg"]["path"] == config._posix(str(exe))
+        assert by["rg"]["source"] == "env"
+        assert by["rg"]["hint"] == ""
+        # unresolved tools report None plus their remediation hint
+        assert by["ffmpeg"]["path"] is None
+        assert by["ffmpeg"]["source"] is None
+        assert by["ffmpeg"]["hint"]
+
+
 class TestDeliverable:
     """Single native-form path in config; localized for the current platform."""
+
+    _HOME = "/home/tester"
 
     def _cfg(self, monkeypatch, tmp_path, deliverables):
         cfg = tmp_path / "env_config.json"
         cfg.write_text(json.dumps({"deliverables": deliverables}),
                        encoding="utf-8")
         monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+        monkeypatch.setattr(config, "_home_dir", lambda: self._HOME)
+        monkeypatch.delenv("GAMES_DIR", raising=False)
+        monkeypatch.delenv("ARCHIVES_DIR", raising=False)
 
     def test_games_native_form_localized(self, monkeypatch, tmp_path):
         self._cfg(monkeypatch, tmp_path, {"games": "D:/Games"})
@@ -145,13 +408,34 @@ class TestDeliverable:
 
     def test_env_var_wins(self, monkeypatch, tmp_path):
         self._cfg(monkeypatch, tmp_path, {"games": "D:/Games"})
+        monkeypatch.setattr(config, "is_wsl", lambda: True)
         monkeypatch.setenv("GAMES_DIR", "/mnt/d/Other")
         assert config.games_dir() == "/mnt/d/Other"
 
-    def test_missing_config_default_localized(self, monkeypatch, tmp_path):
+    def test_unconfigured_derives_default(self, monkeypatch, tmp_path):
         self._cfg(monkeypatch, tmp_path, {})
         monkeypatch.setattr(config, "is_wsl", lambda: True)
-        assert config.games_dir() == "/mnt/d/Games"
+        # /home/tester/Documents does not exist -> the home dir is the base
+        assert config.games_dir() == \
+            "/home/tester/GameTranslation/games"
+        assert config.archives_dir() == \
+            "/home/tester/GameTranslation/archives"
+
+    def test_existing_conventional_folder_is_adopted(self, monkeypatch,
+                                                     tmp_path):
+        self._cfg(monkeypatch, tmp_path, {})
+        (tmp_path / "Games").mkdir()
+        monkeypatch.delenv("GT_NO_PROBE", raising=False)
+        monkeypatch.setattr(config, "_volume_roots", lambda: [config._posix(str(tmp_path))])
+        monkeypatch.setattr(config, "_home_dir", lambda: self._HOME)
+        assert config.games_dir() == config._posix(str(tmp_path / "Games"))
+
+    def test_probe_ignores_missing_conventional_folder(self, monkeypatch):
+        monkeypatch.delenv("GT_NO_PROBE", raising=False)
+        monkeypatch.setattr(config, "_volume_roots", lambda: [])
+        monkeypatch.setattr(config, "_home_dir", lambda: self._HOME)
+        assert config._probe_deliverable("archives") is None
+        assert config._probe_deliverable("games") is None
 
     def test_temp_native_posix(self, monkeypatch, tmp_path):
         self._cfg(monkeypatch, tmp_path, {"temp": "/tmp/opencode"})
@@ -176,17 +460,17 @@ class TestDeliverable:
         self._cfg(monkeypatch, tmp_path,
                   {"temp": {"persist": "/home/me/forge/tmp",
                             "tmpfs": "/tmp/opencode",
-                            "win32": "C:/Users/me/AppData/Local/Temp"}})
+                            "win32": "C:/Temp"}})
         monkeypatch.setattr(config, "is_wsl", lambda: False)
-        assert config.temp_dir() == "C:/Users/me/AppData/Local/Temp"
+        assert config.temp_dir() == "C:/Temp"
 
     def test_temp_nested_dict_win_temp_dir(self, monkeypatch, tmp_path):
         self._cfg(monkeypatch, tmp_path,
                   {"temp": {"persist": "/home/me/forge/tmp",
                             "tmpfs": "/tmp/opencode",
-                            "win32": "C:/Users/me/AppData/Local/Temp"}})
+                            "win32": "C:/Temp"}})
         monkeypatch.setattr(config, "is_wsl", lambda: True)
-        assert config.win_temp_dir() == "/mnt/c/Users/me/AppData/Local/Temp"
+        assert config.win_temp_dir() == "/mnt/c/Temp"
 
     def test_temp_missing_nested_falls_back_to_legacy(self, monkeypatch,
                                                       tmp_path):
@@ -195,129 +479,100 @@ class TestDeliverable:
         assert config.temp_dir() == "/tmp/opencode"
 
 
-class TestWinTools:
-    """Windows-side tools resolve from env_config tools.win32.<name>."""
-
-    def _cfg(self, monkeypatch, tmp_path, win32_tools):
-        cfg = tmp_path / "env_config.json"
-        cfg.write_text(json.dumps({"tools": {"win32": win32_tools}}),
-                       encoding="utf-8")
-        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
-
-    def test_ffmpeg_resolved(self, monkeypatch, tmp_path):
-        exe = tmp_path / "ffmpeg.exe"
-        exe.write_bytes(b"x")
-        self._cfg(monkeypatch, tmp_path, {"ffmpeg": str(exe)})
-        assert config.win_ffmpeg() == str(exe)
-
-    def test_ffmpeg_missing_entry_returns_none(self, monkeypatch, tmp_path):
-        self._cfg(monkeypatch, tmp_path, {})
-        monkeypatch.delenv("WIN_FFMPEG", raising=False)
-        assert config.win_ffmpeg() is None
-
-    def test_ffmpeg_missing_file_returns_none(self, monkeypatch, tmp_path):
-        self._cfg(monkeypatch, tmp_path,
-                  {"ffmpeg": str(tmp_path / "nope.exe")})
-        monkeypatch.delenv("WIN_FFMPEG", raising=False)
-        assert config.win_ffmpeg() is None
-
-    def test_env_var_wins(self, monkeypatch, tmp_path):
-        exe = tmp_path / "ffmpeg.exe"
-        exe.write_bytes(b"x")
-        self._cfg(monkeypatch, tmp_path, {"ffmpeg": str(tmp_path / "other.exe")})
-        monkeypatch.setenv("WIN_FFMPEG", str(exe))
-        assert config.win_ffmpeg() == str(exe)
-
-    def test_unresolvable_config_falls_back_to_default(self, monkeypatch,
-                                                       tmp_path):
-        # %ProgramFiles% tokens cannot expand on WSL: the configured value
-        # is truthy but points nowhere; the working default must win.
-        self._cfg(monkeypatch, tmp_path,
-                  {"7z": "%ProgramFiles%/7-Zip-Zstandard/7z.exe"})
-        monkeypatch.delenv("SEVENZ_WIN", raising=False)
-        if os.path.isfile(config.to_wsl_path(config.DEFAULT_WIN_SEVENZ)):
-            assert config.win_7z() == config.DEFAULT_WIN_SEVENZ
-        else:
-            assert config.win_7z() is None
-
-    def test_unresolvable_config_no_default_returns_none(self, monkeypatch,
-                                                         tmp_path):
-        self._cfg(monkeypatch, tmp_path,
-                  {"ffmpeg": "%ProgramFiles%/nope/ffmpeg.exe"})
-        monkeypatch.delenv("WIN_FFMPEG", raising=False)
-        assert config.win_ffmpeg() is None
-
-    def test_rg_resolved(self, monkeypatch, tmp_path):
-        exe = tmp_path / "rg.exe"
-        exe.write_bytes(b"x")
-        self._cfg(monkeypatch, tmp_path, {"rg": str(exe)})
-        assert config.win_rg() == str(exe)
-
-    def test_7z_configured(self, monkeypatch, tmp_path):
-        exe = tmp_path / "7z.exe"
-        exe.write_bytes(b"x")
-        self._cfg(monkeypatch, tmp_path, {"7z": str(exe)})
-        monkeypatch.delenv("SEVENZ_WIN", raising=False)
-        assert config.win_7z() == str(exe)
-
-    def test_7z_default_fallback_none(self, monkeypatch, tmp_path):
-        self._cfg(monkeypatch, tmp_path, {})
-        monkeypatch.delenv("SEVENZ_WIN", raising=False)
-        monkeypatch.setattr(config, "DEFAULT_WIN_SEVENZ", "")
-        assert config.win_7z() is None
-
-
-class TestFindToolPlatformSection:
-    """_find_tool reads the current platform's tools sub-dict."""
-
-    def test_7z_resolved_from_wsl_section(self, monkeypatch, tmp_path):
-        cfg = tmp_path / "env_config.json"
-        sevenz = tmp_path / "3rd" / "7zz"
-        sevenz.parent.mkdir()
-        sevenz.write_bytes(b"x")
-        cfg.write_text(json.dumps({"tools": {"wsl": {"7z": "3rd/7zz"}}}),
-                       encoding="utf-8")
-        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
-        monkeypatch.delenv("SEVENZ", raising=False)
-        assert config.find_7z() == str(sevenz)
-
-
-class TestConfigLookups:
-    def test_env_var_wins(self, monkeypatch, tmp_path):
-        p = tmp_path / "ffmpeg.bin"
-        p.write_bytes(b"x")
-        monkeypatch.setenv("FFMPEG", str(p))
-        assert config.find_ffmpeg() == str(p)
-
-    def test_path_fallback(self, monkeypatch, tmp_path):
-        cfg = tmp_path / "env_config.json"
-        cfg.write_text("{}", encoding="utf-8")
-        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
-        monkeypatch.delenv("FFMPEG", raising=False)
-        monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/ffmpeg")
-        assert config.find_ffmpeg() == "/usr/bin/ffmpeg"
-
-    def test_find_tool_not_found_returns_none(self, monkeypatch, tmp_path):
-        cfg = tmp_path / "env_config.json"
-        cfg.write_text("{}", encoding="utf-8")
-        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
-        monkeypatch.delenv("FFMPEG", raising=False)
-        monkeypatch.setattr(shutil, "which", lambda name: None)
-        assert config.find_ffmpeg() is None
-        assert config._find_tool("FFMPEG", "ffmpeg", "", ("ffmpeg",)) is None
-
-    def test_expand_env_tokens(self, monkeypatch):
-        monkeypatch.setenv("TESTVAR", "value")
-        assert config._expand("%TESTVAR%/x") == "value/x"
-
-    def test_expand_unknown_token_passthrough(self, monkeypatch):
-        monkeypatch.delenv("NO_SUCH_VAR", raising=False)
-        assert config._expand("%NO_SUCH_VAR%/x") == "%NO_SUCH_VAR%/x"
-
-    def test_load_env_config_missing_is_empty(self, monkeypatch):
+class TestLoadEnvConfig:
+    def test_missing_file_is_empty(self, monkeypatch):
         monkeypatch.setattr(config, "LOCAL_ENV_FILE",
                             config.REPO_ROOT / "does-not-exist.json")
         assert config._load_env_config() == {}
+
+    def test_corrupt_file_is_empty(self, monkeypatch, tmp_path):
+        cfg = tmp_path / "env_config.json"
+        cfg.write_text("{ not json", encoding="utf-8")
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+        assert config._load_env_config() == {}
+
+    def test_reads_platform_and_overrides(self, monkeypatch, tmp_path):
+        cfg = tmp_path / "env_config.json"
+        cfg.write_text(json.dumps({"platform": "wsl"}), encoding="utf-8")
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+        assert config._load_env_config()["platform"] == "wsl"
+
+
+class TestCreatable:
+    def test_existing_dir(self, tmp_path):
+        assert config._creatable(str(tmp_path))
+
+    def test_missing_leaf_under_existing_dir(self, tmp_path):
+        assert config._creatable(str(tmp_path / "a" / "b"))
+
+    def test_blocked_by_a_file_ancestor(self, tmp_path):
+        blocker = tmp_path / "not-a-dir"
+        blocker.write_text("x", encoding="utf-8")
+        assert config._creatable(str(blocker / "games")) is False
+
+
+class TestDefaultNote:
+    """The 'we derived this folder' note is informational and once-only."""
+
+    @staticmethod
+    def _cfg(monkeypatch, tmp_path):
+        cfg = tmp_path / "env_config.json"
+        cfg.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+        monkeypatch.setattr(config, "_home_dir", lambda: "/home/tester")
+        monkeypatch.delenv("GAMES_DIR", raising=False)
+
+    def test_notes_once_for_derived_default(self, monkeypatch, tmp_path,
+                                            caplog):
+        self._cfg(monkeypatch, tmp_path)
+        with caplog.at_level(logging.INFO, logger="rpgmaker.config"):
+            config.games_dir()
+            config.games_dir()
+        notes = [r.message for r in caplog.records
+                 if "deliverables.games" in r.message]
+        assert len(notes) == 1
+        assert all(r.levelno == logging.INFO for r in caplog.records)
+
+    def test_no_note_when_configured(self, monkeypatch, tmp_path, caplog):
+        cfg = tmp_path / "env_config.json"
+        cfg.write_text(json.dumps(
+            {"deliverables": {"games": "/tmp/somewhere"}}), encoding="utf-8")
+        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+        monkeypatch.delenv("GAMES_DIR", raising=False)
+        with caplog.at_level(logging.INFO, logger="rpgmaker.config"):
+            assert config.games_dir() == "/tmp/somewhere"
+        assert not [r for r in caplog.records
+                    if "deliverables.games" in r.message]
+
+    def test_no_note_when_env_set(self, monkeypatch, tmp_path, caplog):
+        self._cfg(monkeypatch, tmp_path)
+        monkeypatch.setenv("GAMES_DIR", "/tmp/from-env")
+        with caplog.at_level(logging.INFO, logger="rpgmaker.config"):
+            assert config.games_dir() == "/tmp/from-env"
+        assert not [r for r in caplog.records
+                    if "deliverables.games" in r.message]
+
+
+class TestFonts:
+    def test_cjk_font_env_override(self, monkeypatch, tmp_path):
+        f = tmp_path / "cjk.otf"
+        f.write_bytes(b"x")
+        monkeypatch.setenv("CJK_FONT_PATH", str(f))
+        assert config.find_cjk_font() == str(f)
+
+    def test_jp_font_env_override(self, monkeypatch, tmp_path):
+        f = tmp_path / "jp.otf"
+        f.write_bytes(b"x")
+        monkeypatch.setenv("JP_FONT_PATH", str(f))
+        assert config.find_jp_font() == str(f)
+
+    def test_missing_fonts_return_none(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("CJK_FONT_PATH", raising=False)
+        monkeypatch.delenv("JP_FONT_PATH", raising=False)
+        monkeypatch.setattr(config, "FONTS_DIR", tmp_path / "no-fonts")
+        monkeypatch.setattr(config, "_read_font_paths", lambda: [])
+        assert config.find_cjk_font() is None
+        assert config.find_jp_font() is None
 
 
 class TestMagicConstants:
@@ -327,82 +582,11 @@ class TestMagicConstants:
     def test_nwjs_runtime_contains_exe(self):
         assert "Game.exe" in config.NWJS_RUNTIME
 
-
-class TestMissingDefaultWarnings:
-    """Review §6.2 / E: a built-in default (Windows 7z, D:/ deliverable
-    folders) whose path does not exist must log a WARNING - but exactly ONCE
-    per process, so a long batch calling config repeatedly does not spam.
-
-    Every test resets the module sentinel so the once-per-process guarantee
-    is asserted in isolation (a prior test in the session may have already
-    logged the same tag).
-    """
-
-    @staticmethod
-    def _reset(monkeypatch):
-        monkeypatch.setattr(config, "_warned_defaults", set())
-
-    def _warns(self, caplog, needle):
-        return [r.message for r in caplog.records
-                if r.levelno >= logging.WARNING and needle in r.message]
-
-    def test_win7z_default_missing_warns_once(self, monkeypatch, caplog):
-        self._reset(monkeypatch)
-        # default not present -> win_7z() resolves to None and warns once
-        monkeypatch.setattr(config, "DEFAULT_WIN_SEVENZ", r"C:\missing\7z.exe")
-        monkeypatch.delenv("SEVENZ_WIN", raising=False)
-        with caplog.at_level(logging.WARNING, logger="rpgmaker.config"):
-            assert config.win_7z() is None
-            assert config.win_7z() is None   # second call -> still one warn
-        warns = self._warns(caplog, "Windows 7z")
-        assert len(warns) == 1
-
-    def test_win7z_configured_no_warn(self, monkeypatch, caplog, tmp_path):
-        self._reset(monkeypatch)
-        exe = tmp_path / "7z.exe"
-        exe.write_bytes(b"x")
-        monkeypatch.setenv("SEVENZ_WIN", str(exe))
-        with caplog.at_level(logging.WARNING, logger="rpgmaker.config"):
-            assert config.win_7z() == str(exe)
-        assert self._warns(caplog, "Windows 7z") == []
-
-    def test_games_dir_default_missing_warns_once(self, monkeypatch, caplog):
-        self._reset(monkeypatch)
-        monkeypatch.delenv("GAMES_DIR", raising=False)
-        # empty env_config -> built-in default used; force it "missing" so
-        # the WARN fires regardless of the host filesystem
-        monkeypatch.setattr(config, "LOCAL_ENV_FILE",
-                            config.REPO_ROOT / "does-not-exist.json")
-        monkeypatch.setattr(config.os.path, "exists", lambda p: False)
-        with caplog.at_level(logging.WARNING, logger="rpgmaker.config"):
-            p = config.games_dir()
-            assert p.endswith("Games")
-            config.games_dir()
-        warns = self._warns(caplog, "deliverables.games")
-        assert len(warns) == 1
-
-    def test_games_dir_configured_no_warn(self, monkeypatch, caplog, tmp_path):
-        self._reset(monkeypatch)
-        target = tmp_path / "Games"
-        target.mkdir()
-        cfg = tmp_path / "env_config.json"
-        cfg.write_text(json.dumps({"deliverables": {"games": str(target)}}),
-                       encoding="utf-8")
-        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
-        monkeypatch.delenv("GAMES_DIR", raising=False)
-        with caplog.at_level(logging.WARNING, logger="rpgmaker.config"):
-            assert config.games_dir() == str(target)
-        assert self._warns(caplog, "deliverables.games") == []
-
-    def test_archives_dir_default_missing_warns_once(self, monkeypatch,
-                                                     caplog):
-        self._reset(monkeypatch)
-        monkeypatch.delenv("ARCHIVES_DIR", raising=False)
-        monkeypatch.setattr(config, "LOCAL_ENV_FILE",
-                            config.REPO_ROOT / "does-not-exist.json")
-        monkeypatch.setattr(config.os.path, "exists", lambda p: False)
-        with caplog.at_level(logging.WARNING, logger="rpgmaker.config"):
-            config.archives_dir()
-            config.archives_dir()
-        warns = self._warns(caplog, "deliverables.archives")
-        assert len(warns) == 1
+    def test_no_hardcoded_tool_paths(self):
+        # Machine paths must never live in the repo: the resolver probes for
+        # them instead. Guard against a regression that re-introduces one.
+        src = (config.REPO_ROOT / "rpgmaker" / "config.py").read_text(
+            encoding="utf-8")
+        assert "Program Files" not in src or "%ProgramFiles%" in src
+        assert "DEFAULT_SEVENZ" not in src
+        assert "DEFAULT_FFMPEG_DIR" not in src

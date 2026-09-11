@@ -15,10 +15,9 @@ from rpgmaker import deliver
 
 class TestRunPowershell:
     def test_missing_powershell_raises_with_hint(self, monkeypatch):
-        # WSL image without WSLInterop / Windows-side PowerShell: fail fast.
-        monkeypatch.setattr("shutil.which",
-                            lambda name: None if name == "powershell.exe"
-                            else "/usr/bin/whatever")
+        # WSL image without WSLInterop / no PowerShell anywhere: fail fast.
+        monkeypatch.delenv("POWERSHELL_EXE", raising=False)
+        monkeypatch.setattr("shutil.which", lambda name: None)
         with pytest.raises(FileNotFoundError) as ei:
             deliver._run_powershell("Remove-Item x")
         msg = str(ei.value)
@@ -30,6 +29,7 @@ class TestRunPowershell:
         # Present binary: the command is handed to it and its exit code
         # decides success.
         exe = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+        monkeypatch.delenv("POWERSHELL_EXE", raising=False)
         monkeypatch.setattr("shutil.which",
                             lambda name: exe if name == "powershell.exe"
                             else None)
@@ -49,6 +49,7 @@ class TestRunPowershell:
 
     def test_powershell_nonzero_exit_raises_runtime_error(self, monkeypatch):
         exe = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+        monkeypatch.delenv("POWERSHELL_EXE", raising=False)
         monkeypatch.setattr("shutil.which",
                             lambda name: exe if name == "powershell.exe"
                             else None)

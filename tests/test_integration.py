@@ -113,9 +113,9 @@ class TestCli:
         out = str(tmp_path / "out")
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         env = dict(os.environ)
-        env["FFMPEG"] = os.path.join(fake_tools, "ffmpeg.py")
-        env["FFPROBE"] = os.path.join(fake_tools, "ffprobe.py")
-        env["SEVENZ"] = os.path.join(fake_tools, "7z.py")
+        env["FFMPEG"] = fake_tools["ffmpeg"]
+        env["FFPROBE"] = fake_tools["ffprobe"]
+        env["SEVENZ"] = fake_tools["7z"]
         r = subprocess.run(
             [sys.executable, os.path.join(repo, "pipeline.py"), "build",
              web, "-o", out, "--workers", "2"],
@@ -130,9 +130,9 @@ class TestCli:
         out = str(tmp_path / "out")
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         env = dict(os.environ)
-        env["FFMPEG"] = os.path.join(fake_tools, "ffmpeg.py")
-        env["FFPROBE"] = os.path.join(fake_tools, "ffprobe.py")
-        env["SEVENZ"] = os.path.join(fake_tools, "7z.py")
+        env["FFMPEG"] = fake_tools["ffmpeg"]
+        env["FFPROBE"] = fake_tools["ffprobe"]
+        env["SEVENZ"] = fake_tools["7z"]
         build.build_joiplay(web, out, workers=2)
         r = subprocess.run(
             [sys.executable, os.path.join(repo, "pipeline.py"), "verify", out],

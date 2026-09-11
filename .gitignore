@@ -14,3 +14,6 @@ docs/table/
 # persistent work copies (per-game temp dirs, machine-local)
 tmp/
 work/
+
+# agent harness runtime state (bg task logs / session scratch)
+.pi/

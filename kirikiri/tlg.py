@@ -79,12 +79,21 @@ def parse_header(data):
 # ---------------------------------------------------------------------------
 
 def _lzss_decompress_slide(outbuf, inbuf, text, initialr):
-    """Modified LZSS (TVPTLG5DecompressSlide). Returns (outbuf, next_r)."""
+    """Modified LZSS (TVPTLG5DecompressSlide). Returns (outbuf, next_r).
+
+    `outbuf` is the logical destination and its length is the contract: the
+    TLG5 channel buffers and the TLG6 filter-type array are sized from the
+    image geometry, while an encoder may pad the final token group to a whole
+    group of 8.  Writing past the end is therefore stopped rather than
+    crashing (tlg.py:0x%X-style diagnostics are not available at this layer,
+    so the caller keeps the location context).
+    """
     r = initialr
     flags = 0
     o = 0
     i = 0
     n = len(inbuf)
+    limit = len(outbuf)
     while i < n:
         flags >>= 1
         if (flags & 0x100) == 0:
@@ -99,6 +108,8 @@ def _lzss_decompress_slide(outbuf, inbuf, text, initialr):
                 mlen += inbuf[i]
                 i += 1
             while mlen:
+                if o >= limit:
+                    return outbuf, r
                 c = text[mpos & 4095]
                 outbuf[o] = c
                 o += 1
@@ -108,6 +119,8 @@ def _lzss_decompress_slide(outbuf, inbuf, text, initialr):
                 r &= 4095
                 mlen -= 1
         else:
+            if o >= limit:
+                return outbuf, r
             c = inbuf[i]
             i += 1
             outbuf[o] = c

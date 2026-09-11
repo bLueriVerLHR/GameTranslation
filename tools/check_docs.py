@@ -58,8 +58,10 @@ EXCLUDED_ROOT_FILES = frozenset({
     ".gitignore", ".gitattributes",
 })
 # Local / generated / scaffolding dirs never expected in the tree.
+# `.pi/` holds the agent harness runtime state (background-task logs), which is
+# gitignored and must not count as repository content.
 EXCLUDED_DIRS = frozenset({
-    ".git", ".venv", "docs/table", "work", "tmp", "__pycache__",
+    ".git", ".venv", ".pi", "docs/table", "work", "tmp", "__pycache__",
     ".pytest_cache", "tests/fake_tools", "tests/fixtures",
 })
 EXCLUDED_SUFFIXES = (".pyc", ".pyo", ".7z", ".csv", ".DS_Store")

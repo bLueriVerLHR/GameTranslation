@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Environment self-check for the RPG Maker -> JoiPlay toolkit.
+"""Environment self-check for the toolkit.
 
 `pipeline.py doctor` (this module) prints a compact report of everything the
 toolkit depends on and exits non-zero when something is missing:
 
-  * native tool binaries  ffmpeg / ffprobe / 7z / rg / git / npx
-                          (resolved through config.find_*)
-  * Windows-side tools    win_7z / win_ffmpeg / win_rg (used to process
-                          files stored on the Windows side, see the
-                          AGENTS.md cross-system CRITICAL rule)
-  * machine config        docs/table/env_config.json readable
-  * deliverable folders   games / archives / temp exist
+  * external applications   driven by rpgmaker.config.TOOLS - the same
+                            declarative table the resolver uses, so a new
+                            tool shows up here without touching this file
+  * machine config          docs/table/env_config.json (optional override
+                            layer; absent is normal and not a failure)
+  * deliverable folders     games / archives / temp (probed when unset,
+                            created on demand)
 
-Each line is `[OK] <label>  <detail>` or `[MISS] <label>  <detail>  hint`,
-so the report stays greppable.  Exit code: 0 when every check passes, 1
-when any check is missing/failing (pipeline.py doctor propagates it).
+Each line is `[OK] <label>  <detail>  [<source>]` or
+`[MISS] <label>  <detail>  -> <hint>`, so the report stays greppable; the
+source tells where a path came from (env / config / probe / path), which is
+the fastest way to explain a surprising binary.
+
+`doctor --json` prints the same information as machine-readable JSON.
 
 Exposed as plain functions (collect_checks / render / run) so the report
 can be unit-tested with monkeypatched find_* resolvers.
@@ -30,65 +33,48 @@ from . import config
 
 log = logging.getLogger("rpgmaker.doctor")
 
-Check = namedtuple("Check", ("label", "ok", "detail", "hint"))
-
-# (label, resolver, hint-on-missing). Resolvers are looked up lazily inside
-# collect_checks() so monkeypatching config.find_* is honored per run.
-_TOOL_CHECKS = [
-    ("ffmpeg", "find_ffmpeg",
-     "audio re-encode (audio.py) will fail; install ffmpeg with libvorbis "
-     "or set FFMPEG / config tools.<platform>.ffmpeg"),
-    ("ffprobe", "find_ffprobe",
-     "audio probing (audio.py) will fail; ships with ffmpeg, or set FFPROBE"),
-    ("7z", "find_7z",
-     "compress / deliver need 7-Zip-Zstandard (-m0=zstd); set SEVENZ or "
-     "config tools.<platform>.7z"),
-    ("rg", "find_rg",
-     "fast content search in builds (clean/verify); optional, degrades to "
-     "a Python fallback"),
-    ("git", "find_git",
-     "repo versioning / hygiene; only needed for the dev workflow, not for "
-     "conversion"),
-    ("npx", "find_npx",
-     "TyranoScript builds unpack app.asar via npx @electron/asar; only "
-     "needed for tyrano games (Node.js required)"),
-]
-
-_WIN_CHECKS = [
-    ("win_7z", "win_7z",
-     "Windows-side 7z used by deliver to process /mnt/* files (CRITICAL "
-     "cross-system rule); install 7-Zip-Zstandard on Windows or set "
-     "SEVENZ_WIN"),
-    ("win_ffmpeg", "win_ffmpeg",
-     "Windows-side ffmpeg for Windows-side files; only needed when files "
-     "are processed on the Windows side"),
-    ("win_rg", "win_rg",
-     "Windows-side ripgrep; optional"),
-]
+Check = namedtuple("Check", ("label", "ok", "detail", "hint", "source"))
 
 _DIR_CHECKS = [
     ("games_dir", "games_dir",
-     "finished builds land here (deliver step); create it or point "
-     "deliverables.games elsewhere in env_config.json"),
+     "finished builds land here (deliver step); probed when unset, set "
+     "deliverables.games in env_config.json to pin it"),
     ("archives_dir", "archives_dir",
-     "finished archives land here (deliver step); create it or point "
-     "deliverables.archives elsewhere"),
+     "finished archives land here (deliver step); probed when unset"),
     ("temp_dir", "temp_dir",
      "work copies live here; must exist and be writable (deliverables.temp)"),
 ]
+
+
+def _tool_checks():
+    """(label, resolver-name, hint, side) for every registered tool."""
+    for tool in config.TOOLS:
+        yield tool.key, tool.resolver, tool.hint, tool.side
 
 
 def _resolver(name):
     return getattr(config, name)
 
 
+def _tool_source(tool_key):
+    """Where the tool path came from (env/config/probe/path); best effort,
+    only used for reporting."""
+    try:
+        _path, source = config.resolve_tool(tool_key, with_source=True)
+        return source or "-"
+    except (OSError, KeyError, ValueError):
+        return "-"
+
+
 def _env_config_status():
-    """(ok, detail) for the gitignored machine config file. Parses the file
-    directly instead of config._load_env_config() because that helper
-    silently swallows JSON/IO errors (returns {}), which would mask a
-    corrupt config here."""
+    """(ok, detail) for the gitignored machine config file.
+
+    The file is an OPTIONAL override layer, so an absent file is reported as
+    OK (probing and built-in defaults take over); a present-but-corrupt file
+    is a real failure and is parsed here rather than through
+    config._load_env_config(), which swallows JSON/IO errors by design."""
     if not config.LOCAL_ENV_FILE.is_file():
-        return False, "(missing) %s" % config.LOCAL_ENV_FILE
+        return True, "(absent) no overrides - probing + defaults in use"
     try:
         data = json.loads(config.LOCAL_ENV_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -101,20 +87,21 @@ def _env_config_status():
 def collect_checks():
     """Run every environment check; returns a list of Check namedtuples."""
     checks = []
-    for label, fname, hint in _TOOL_CHECKS:
+    for label, fname, hint, side in _tool_checks():
         p = _resolver(fname)()
-        checks.append(Check(label, bool(p), p or "(not found)", hint))
-    for label, fname, hint in _WIN_CHECKS:
-        p = _resolver(fname)()
-        checks.append(Check(label, bool(p), p or "(not configured)", hint))
+        missing = "(not configured)" if side == "win32" else "(not found)"
+        checks.append(Check(label, bool(p), p or missing, hint,
+                            _tool_source(label) if p else "-"))
     ok, detail = _env_config_status()
     checks.append(Check(
         "env_config.json", ok, detail,
-        "machine config with deliverable paths; missing -> built-in "
-        "defaults used (may point at non-existent dirs)"))
+        "optional override layer for deliverable paths and tool locations; "
+        "absent is fine - probing and defaults take over", "file"))
     for label, fname, hint in _DIR_CHECKS:
         d = _resolver(fname)()
-        checks.append(Check(label, os.path.isdir(d), d, hint))
+        ok = os.path.isdir(d) or config._creatable(d)
+        detail = d if os.path.isdir(d) else "%s (created on demand)" % d
+        checks.append(Check(label, ok, detail, hint, "resolved"))
     return checks
 
 
@@ -124,7 +111,9 @@ def render(checks):
     for c in checks:
         tag = "OK" if c.ok else "MISS"
         line = "[%s] %-16s %s" % (tag, c.label, c.detail)
-        if not c.ok:
+        if c.ok:
+            line += "  (%s)" % c.source
+        else:
             line += "  -> %s" % c.hint
         lines.append(line)
     ok = sum(1 for c in checks if c.ok)
@@ -132,12 +121,26 @@ def render(checks):
     return lines
 
 
+def as_json(checks):
+    """Machine-readable form: the same rows the text report renders."""
+    return json.dumps({
+        "ok": all(c.ok for c in checks),
+        "checks": [c._asdict() for c in checks],
+        "tools": config.probe_report(),
+    }, indent=2, ensure_ascii=False)
+
+
 def run(argv=None):
     """Run the self-check and return the exit code (0 = all OK, 1 = any
-    missing/failing). argv is accepted for CLI-style entry (no options)."""
+    missing/failing). `--json` switches to the machine-readable report."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    as_machine = "--json" in argv
     checks = collect_checks()
-    for line in render(checks):
-        print(line)
+    if as_machine:
+        print(as_json(checks))
+    else:
+        for line in render(checks):
+            print(line)
     return 0 if all(c.ok for c in checks) else 1
 
 

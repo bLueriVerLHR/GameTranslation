@@ -20,6 +20,16 @@
   `docs/table/passwords.md`（gitignored）— 绝不入库。
 - 布局：根目录 NW.js 运行时 + `www/`（MV）或根网页部署（MZ）。
   `detect.py` 自动找网页根。
+- **MTool 运行时翻译 repack（2026-08，不可转换）：** 包里是根部署的
+  `index.html` + 完整 `js/`（引擎原封不动）+ `audio/`/`img/`（资源齐全）
+  **却没有 `data/`**；伴随 `Tool/`（MTool 自身：`Tool/www/data/` 是工具 UI
+  的 html/css/js/wasm，不是游戏数据）、`Tool/loaders/mzHook.dll` +
+  `inject.exe`、根目录 `与工具一同启动.bat` / `从游戏中移除工具文件.bat` /
+  `injectPath` / `version.dll` / `TrsData*.bin`（机翻字典）/ 推广 `.txt`。
+  这种包**没有可读的游戏数据库**，不能转 JoiPlay。`detect.is_web_root()`
+  自 2026-08 起要求 `data/` 或 `data_encrypted/`，因此它会**明确报
+  "no web root found"**（以前会静默构建出一个没有数据库的坏成品）。
+  遇到这种包直接向 owner 报告，不要尝试解 MTool 的 pack。
 - 某开发者的 MV 游戏**加密**资源（`.rpgmvp`/`.rpgmvo`，密钥在
   `data/System.json`）。它们跨游戏共享**公共资源库**（
   `img/faces/main_cha.png`、`img/tilesets/001_Particle.png`、`fsm_*`

@@ -23,6 +23,31 @@ FAKE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_tools"
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
+def make_launcher(script_path, workdir):
+    """Return an executable launcher for a script, portable across platforms.
+
+    POSIX runs the script directly (shebang + exec bit).  Windows cannot exec
+    a .py through CreateProcess, so a .cmd shim calling the current
+    interpreter is generated instead - that keeps the fake-tool protocol
+    identical on both platforms, which matters because the tools are injected
+    through the same environment variables a real installation would use.
+    """
+    if sys.platform != "win32":
+        os.chmod(script_path, os.stat(script_path).st_mode | 0o111)
+        return str(script_path)
+    stem = os.path.splitext(os.path.basename(script_path))[0]
+    launcher = os.path.join(workdir, stem + ".cmd")
+    with open(launcher, "w", encoding="ascii", newline="\r\n") as f:
+        f.write("@echo off\n")
+        f.write('"{}" "{}" %*\n'.format(sys.executable, script_path))
+    return launcher
+
+
+def fake_launcher(script, workdir):
+    """Launcher for one of the bundled tests/fake_tools/ scripts."""
+    return make_launcher(os.path.join(FAKE_DIR, script), workdir)
+
+
 def make_png_bytes(w=1, h=1):
     """A minimal valid PNG (1x1 RGBA by default) via Pillow."""
     from PIL import Image
@@ -129,21 +154,59 @@ def game_dir(tmp_path):
 
 
 @pytest.fixture
-def fake_tools(monkeypatch):
-    """Point FFMPEG/FFPROBE/SEVENZ at the fake tool scripts.
+def fake_tools(monkeypatch, tmp_path_factory):
+    """Point FFMPEG/FFPROBE/SEVENZ at the fake tool launchers.
 
-    The scripts are invoked as subprocess executables, so ensure they are
-    executable even when the repo is checked out with mode bits stripped
-    (core.filemode=false / Windows-style checkouts).
+    Returns a mapping tool-name -> launcher path (``fake_tools["ffmpeg"]``),
+    which is also what the subprocess-based CLI tests must export into their
+    environment.
     """
-    files = {"FFMPEG": "ffmpeg.py", "FFPROBE": "ffprobe.py", "SEVENZ": "7z.py"}
-    for name, fn in files.items():
-        p = os.path.join(FAKE_DIR, fn)
-        os.chmod(p, os.stat(p).st_mode | 0o111)
-        monkeypatch.setenv(name, p)
+    workdir = str(tmp_path_factory.mktemp("fake-tools"))
+    mapping = {}
+    for name, script in (("FFMPEG", "ffmpeg.py"), ("FFPROBE", "ffprobe.py"),
+                         ("SEVENZ", "7z.py")):
+        launcher = fake_launcher(script, workdir)
+        monkeypatch.setenv(name, launcher)
+        mapping[os.path.splitext(script)[0]] = launcher
+    mapping["dir"] = workdir
     for var in ("FAKE_HIGH_BITRATE", "FAKE_SMALL_OUTPUT", "GT_WORKERS"):
         monkeypatch.delenv(var, raising=False)
-    return FAKE_DIR
+    return mapping
+
+
+@pytest.fixture
+def fake_powershell(monkeypatch, tmp_path_factory):
+    """Point POWERSHELL_EXE at the fake capture interpreter."""
+    workdir = str(tmp_path_factory.mktemp("fake-powershell"))
+    launcher = fake_launcher("fake_powershell.py", workdir)
+    monkeypatch.setenv("POWERSHELL_EXE", launcher)
+    return launcher
+
+
+@pytest.fixture
+def launcher_factory(tmp_path_factory):
+    """Factory making an arbitrary test script executable on this platform
+    (tests that need a purposely failing / custom tool stub)."""
+    workdir = str(tmp_path_factory.mktemp("launchers"))
+
+    def make(script_path):
+        return make_launcher(str(script_path), workdir)
+
+    return make
+
+
+def fs_is_case_sensitive(path):
+    """True when `path`'s filesystem distinguishes file-name case."""
+    probe = os.path.join(str(path), "CaseProbe")
+    with open(probe, "w", encoding="ascii") as f:
+        f.write("x")
+    try:
+        return not os.path.exists(os.path.join(str(path), "caseprobe"))
+    finally:
+        try:
+            os.remove(probe)
+        except OSError:
+            pass
 
 
 def free_port():
@@ -152,3 +215,20 @@ def free_port():
     port = s.getsockname()[1]
     s.close()
     return port
+
+
+@pytest.fixture(autouse=True)
+def hermetic_resolution(monkeypatch):
+    """Keep application/path resolution independent of the host machine.
+
+    GT_NO_PROBE switches off the well-known-install-location probing, so a
+    test never picks up whichever binary happens to be installed on the
+    developer's box; the once-per-process warning sentinels are reset so
+    warn-once assertions stay isolated.  Tests that exercise probing itself
+    monkeypatch the probe anchors and unset GT_NO_PROBE explicitly.
+    """
+    from rpgmaker import config
+
+    monkeypatch.setenv("GT_NO_PROBE", "1")
+    monkeypatch.setattr(config, "_warned_defaults", set())
+    yield

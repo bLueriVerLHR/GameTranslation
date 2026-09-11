@@ -24,17 +24,17 @@ def _make_folder(tmp_path, name="game"):
     return folder
 
 
-def _failing_7z(tmp_path, msg="boom"):
-    """A fake 7z that always fails (exit 1, stderr=msg), as a .py shebang
-    script - same convention as tests/fake_tools/*.py."""
+def _failing_7z(tmp_path, launcher_factory, msg="boom"):
+    """A fake 7z that always fails (exit 1, stderr=msg).
+
+    Built from a Python stub wrapped in a platform-appropriate launcher, so
+    the same test exercises the failure path on POSIX and on Windows."""
     script = tmp_path / "failing_7z.py"
     script.write_text(
-        "#!/usr/bin/env python3\n"
         "import sys\n"
         "print(%r, file=sys.stderr)\n" % msg +
-        "sys.exit(1)\n")
-    script.chmod(0o755)
-    return str(script)
+        "sys.exit(1)\n", encoding="utf-8")
+    return launcher_factory(script)
 
 
 class TestCompressArchive:
@@ -155,11 +155,12 @@ class TestArchiveIntegrity:
             f.write(b"stub")
         assert compress.test_archive(archive) is True
 
-    def test_failing_7z_returns_false(self, tmp_path, monkeypatch):
+    def test_failing_7z_returns_false(self, tmp_path, monkeypatch,
+                                      launcher_factory):
         archive = str(tmp_path / "game.7z")
         with open(archive, "wb") as f:
             f.write(b"stub")
-        monkeypatch.setenv("SEVENZ", _failing_7z(tmp_path))
+        monkeypatch.setenv("SEVENZ", _failing_7z(tmp_path, launcher_factory))
         assert compress.test_archive(archive) is False
 
 
@@ -173,9 +174,10 @@ class TestErrorPaths:
         with pytest.raises(FileNotFoundError):
             compress.compress(folder, str(tmp_path / "game.7z"))
 
-    def test_7z_failure_raises_with_stderr(self, tmp_path, monkeypatch):
+    def test_7z_failure_raises_with_stderr(self, tmp_path, monkeypatch,
+                                           launcher_factory):
         folder = _make_folder(tmp_path)
-        monkeypatch.setenv("SEVENZ", _failing_7z(tmp_path))
+        monkeypatch.setenv("SEVENZ", _failing_7z(tmp_path, launcher_factory))
         with pytest.raises(RuntimeError) as ei:
             compress.compress(folder, str(tmp_path / "game.7z"))
         assert "boom" in str(ei.value)

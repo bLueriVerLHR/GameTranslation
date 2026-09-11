@@ -10,7 +10,8 @@ Pipeline steps (run in this order on a game folder):
   clean     remove junk files / unused fonts / unused tilesets
   verify    check PNG signatures, JSON, audio refs, System flags, key files
   serve     run an HTTP server + smoke test (for browser/JoiPlay testing)
-  doctor    environment self-check (tool binaries, config, deliverable dirs)
+  doctor    environment self-check (application paths + source, config,
+            deliverable dirs); --json for a machine-readable report
   compress  package the result as a 7z-zstd archive (tested last)
   deliver   compress locally, copy the archive to the archives dir,
             then extract it into the games dir (replaces the old copy step)
@@ -41,7 +42,11 @@ log = logging.getLogger("pipeline")
 def resolve_web_root(game_dir: str) -> str:
     wr = detect.find_web_root(game_dir)
     if not wr:
-        sys.exit("ERROR: no web root found under %s (need index.html + js/)" % game_dir)
+        sys.exit(
+            "ERROR: no web root found under %s (need index.html + js/ + "
+            "data/, or www/ with the same layout). An MTool-style launcher "
+            "root keeps the data in the tool's own pack and is not a web "
+            "root." % game_dir)
     log.info("engine: %s, web root: %s",
              "MZ" if detect.is_mz(wr) else "MV", wr)
     return wr
@@ -98,7 +103,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
 
 # ---------------------------------------------------------------- doctor
 def cmd_doctor(args: argparse.Namespace) -> None:
-    sys.exit(doctor.run())
+    sys.exit(doctor.run(["--json"] if args.json else []))
 
 
 # ---------------------------------------------------------------- compress
@@ -161,7 +166,10 @@ def main(argv: list[str] | None = None) -> None:
     p.set_defaults(func=cmd_verify)
 
     p = sub.add_parser("doctor", help="environment self-check "
-                                      "(tools, config, deliverable dirs)")
+                                      "(applications, config, deliverable dirs)")
+    p.add_argument("--json", action="store_true",
+                   help="machine-readable report (resolved app paths + where "
+                        "each one came from: env/config/probe/path)")
     p.set_defaults(func=cmd_doctor)
 
     p = sub.add_parser("serve", help="HTTP server + smoke test (do NOT run on phone)")

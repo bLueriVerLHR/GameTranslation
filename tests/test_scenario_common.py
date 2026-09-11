@@ -14,6 +14,7 @@ produce the documented outputs.
 import json
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -36,8 +37,9 @@ class TestFindScenarioDir:
         (root / "scenario").mkdir(parents=True)
         (root / "System" / "Scenario").mkdir(parents=True)
         # explicit path must be returned even when a candidate also exists
-        assert sc.find_scenario_dir(str(root), "System/Scenario",
-                                    ("scenario",)) == str(root / "System" / "Scenario")
+        got = sc.find_scenario_dir(str(root), "System/Scenario",
+                                   ("scenario",))
+        assert Path(got) == root / "System" / "Scenario"
 
     def test_candidates_order(self, tmp_path):
         root = tmp_path / "g"

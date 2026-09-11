@@ -447,7 +447,8 @@ KiriKiri 游戏（`Game.exe` + `data.xp3` 等，无 `index.html`/`js/`）不走
   嗅探）并 WARN。
 - **`*` 标签行、`;` 注释行、未配对方括号行一律不提取**（防改坏跳转）。
 - **QC**：`tools/qc_ks_kana.py`（补丁树/字典值假名残留，文件:行定位；
-  汉字不算残留）。
+  汉字不算残留；**只查显示文本**——标签行/注释/代码块/变量引用
+  `&f.名前` 不算，Tyrano 合法用日文标识符，不排除会淹没真漏译）。
 - **MTool 清除**：KiriKiri 游戏同样按打包规则删 MTool 注入残留
   （根目录运行时字典 json、winmm.dll/version.dll、启动/移除 bat）。
 - **字体**：中文方块按具体游戏解决（系统字体 / `kirikiri/merge_font.py`

@@ -23,6 +23,50 @@ JA = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
 TEXT_ATTR = re.compile(r'\btext\s*=\s*"([^"]*)"')
 STORAGE_ATTR = re.compile(r'\bstorage\s*=\s*"([^"]+)"')
 
+# --- code vs. display text --------------------------------------------------
+# TyranoScript exposes game state through identifiers that may legally be
+# Japanese: `f.ライブファン表示`, `&f.アイテム名[0]`, `sf.Clear_Flag`,
+# `mp.name`.  Those are references, not text - translating one breaks every
+# line that mentions it.  Raw TJS/JS also lives inside
+# [iscript]/[tb_start_tyrano_code] blocks ([eval] is a single-line tag, not a
+# block).  A kana check that ignores this reports ~10% "residual" on a fully
+# translated build, almost all of it identifiers.
+VAR_REF = re.compile(
+    r"&(?:f|sf|tf|mp)\.[A-Za-z0-9_\u3040-\u30ff\u4e00-\u9fff]+"
+    r"(?:\[[^\]]*\])?")
+CODE_STMT = re.compile(
+    r"^\s*(?:if|else|for|while|switch|case|var|let|const|function|return|"
+    r"break|continue|console|delete|new|try|catch|finally|throw|do)\b"
+    r"|^\s*(?:sf|f|tf|mp)\.[^\s=]*\s*=[^=]"
+    r"|^\s*[}{]")
+CODE_BLOCK_OPEN = re.compile(r"\[(?:iscript|script|tb_start_tyrano_code)\b")
+CODE_BLOCK_CLOSE = re.compile(r"\[(?:endscript|_tb_end_tyrano_code)\b")
+
+
+def iter_display_lines(text):
+    """Yield (line_number, line) for every line that may carry display text.
+
+    Skips comments, `*` label lines, raw TJS/JS code blocks and code
+    statements, and strips variable references (`&f.name`) from what is
+    yielded.  A kana check built on this sees only text a translator is
+    allowed to touch, so identifiers never show up as false "residuals".
+    """
+    in_code = False
+    for idx, raw in enumerate(text.split("\n"), start=1):
+        s = raw.strip()
+        if in_code:
+            if CODE_BLOCK_CLOSE.search(s):
+                in_code = False
+            continue
+        if CODE_BLOCK_OPEN.search(s):
+            in_code = True
+            continue
+        if not s or s.startswith("*") or s.startswith(";"):
+            continue
+        if CODE_STMT.match(s):
+            continue
+        yield idx, VAR_REF.sub("", raw)
+
 
 def detect_encoding(raw):
     """Detect the byte encoding of a .ks file (UTF-16 LE/BE, UTF-8, Shift-JIS)."""

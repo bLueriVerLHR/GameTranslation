@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Kana-residual QC for KiriKiri translations.
+"""Kana-residual QC for KiriKiri and TyranoScript scenario translations.
 
 Scans a scenario tree for translatable lines whose display text still
 carries kana after translation (missed lines, half-translated lines) and
 reports file:line locations.  Also checks a translated.json for kana in
 values.
+
+Only display text is checked: `*` label lines, `;` comments, raw TJS/JS
+code blocks and variable references (`&f.name`) are excluded, because
+TyranoScript legally uses Japanese identifiers and counting those as
+"residual" buries the real misses (measured: ~92% of raw kana hits on a
+fully translated build were identifiers and code).
 
 Usage:
     python3 tools/qc_ks_kana.py <scenario_dir|patch_dir>
@@ -20,25 +26,30 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from kirikiri.ks_extract import KANA, display_text, load_ks, translatable  # noqa: E402
+from kirikiri.ks_extract import (KANA, display_text, iter_display_lines,  # noqa: E402
+                                load_ks, translatable)
 
 log = logging.getLogger("qc_ks_kana")
 
 
 def scan_tree(root):
+    """Count translatable lines whose display text still carries kana.
+
+    Uses `iter_display_lines` so code, comments and label lines are not
+    counted (and variable references are stripped): a kana hit here means a
+    real, untranslated piece of display text.
+    """
     total = residual = 0
     by_file = {}
     for path in sorted(glob.glob(os.path.join(root, "**", "*.ks"),
                                  recursive=True)):
         text, _enc = load_ks(path)
-        for idx, raw in enumerate(text.splitlines(), start=1):
-            line = raw.strip()
-            if not line or line.startswith("*") or line.startswith(";"):
-                continue
-            if not translatable(line):
+        for idx, line in iter_display_lines(text):
+            stripped = line.strip()
+            if not translatable(stripped):
                 continue
             total += 1
-            shown, _ok = display_text(line)
+            shown, _ok = display_text(stripped)
             if KANA.search(shown):
                 residual += 1
                 by_file.setdefault(path, []).append((idx, shown[:60]))
@@ -81,6 +92,10 @@ def main():
         total, residual = scan_tree(args.target)
         log.info("%d translatable lines, %d kana residual (%.1f%%)",
                  total, residual, 100.0 * residual / total if total else 0.0)
+        if residual:
+            log.info("residuals are real display text - check each one before "
+                     "translating: a hit inside target=\"*...\" would break a "
+                     "jump, and identifiers are never translated")
 
 
 if __name__ == "__main__":

@@ -66,17 +66,23 @@ public static class CapApi {
 function Get-TargetWindow {
     # Enumerate visible top-level windows of $ProcessName; filter by title
     # substring when given; return the largest (by area) candidate.
+    #
+    # ALL processes with that name are considered, not just the first: a
+    # multi-process app (Chromium, Electron, many launchers) runs several
+    # processes under the same image name and the one owning the window is
+    # not necessarily the first one returned.  Matching only the first PID
+    # made this report "no visible window" for such apps.
     param([string]$ProcessName, [string]$Title)
-    $proc = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-    if (-not $proc) { return $null }
-    $targetPid = $proc.Id
+    $procs = @(Get-Process -Name $ProcessName -ErrorAction SilentlyContinue)
+    if (-not $procs) { return $null }
+    $targetPids = @{}
+    foreach ($proc in $procs) { $targetPids[[int]$proc.Id] = $true }
     $windows = New-Object System.Collections.ArrayList
     $cb = [CapApi+EnumProc]{
         param($hWnd, $lParam)
         $wpid = 0
         [CapApi]::GetWindowThreadProcessId($hWnd, [ref]$wpid) | Out-Null
-        if ($wpid -eq $targetPid -and [CapApi]::IsWindowVisible($hWnd)) {
+        if ($targetPids.ContainsKey([int]$wpid) -and [CapApi]::IsWindowVisible($hWnd)) {
             $sb = New-Object System.Text.StringBuilder 512
             [CapApi]::GetWindowText($hWnd, $sb, 512) | Out-Null
             $r = New-Object CapApi+RECT
@@ -97,6 +103,11 @@ function Get-TargetWindow {
             Sort-Object $byArea -Descending | Select-Object -First 1
         if ($hit) { return $hit }
     }
+    # Prefer a titled window (the real app window) over untitled helpers, then
+    # fall back to the largest window of any kind.
+    $titled = $windows | Where-Object { $_.Title } |
+        Sort-Object $byArea -Descending | Select-Object -First 1
+    if ($titled) { return $titled }
     return $windows | Sort-Object $byArea -Descending | Select-Object -First 1
 }
 

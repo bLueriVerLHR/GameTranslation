@@ -161,6 +161,47 @@ def test_args_flags_false():
     assert "-ForceVisible:$false" in cmd
 
 
+# ------------------------------------------------- script shape (PowerShell)
+
+def _script_text():
+    with open(SCRIPT_SRC, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def test_script_considers_every_process_with_that_name():
+    # A multi-process app (Chromium/Electron/launchers) runs several processes
+    # under one image name and the window owner is not necessarily the first
+    # one: matching only the first PID reported "no visible window" for such
+    # apps.  The script must build a PID set instead.
+    text = _script_text()
+    assert "$targetPids" in text, "multi-PID matching was lost"
+    assert "$targetPids.ContainsKey" in text
+    assert "Select-Object -First 1\n    if (-not $proc)" not in text, \
+        "the old single-PID lookup is back"
+
+
+def test_script_prefers_a_titled_window():
+    # Chromium spawns untitled helper windows; the real app window carries a
+    # title, so prefer it over a bigger but titleless helper.
+    text = _script_text()
+    assert "$titled" in text
+
+
+def test_script_restores_and_moves_before_capture():
+    # Occluded/minimized windows must be restored and moved into view, and
+    # the capture must retry the classic flag when the modern one fails.
+    text = _script_text()
+    assert "SW_RESTORE" in text and "MoveWindow" in text
+    assert "PrintWindow($rect.Hwnd, $hdc, 2)" in text
+    assert "PrintWindow($rect.Hwnd, $hdc, 0)" in text
+    assert "CopyFromScreen" in text, "screen fallback was removed"
+
+
+def test_script_reports_paths_as_utf8():
+    # Non-ASCII output paths must survive the round trip to the caller.
+    assert "[System.Text.Encoding]::UTF8" in _script_text()
+
+
 # ------------------------------------------------------------- end-to-end
 
 def test_capture_success(fake_env, tmp_path, monkeypatch):

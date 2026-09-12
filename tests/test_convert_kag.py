@@ -942,16 +942,26 @@ def test_message_layers_outrank_the_character_layers():
     assert "{z-index:8000 !important}" in js
 
 
-def test_no_extra_message_backing():
-    """Owner: this game draws its own message frame, so an added translucent
-    backing is redundant."""
+def test_message_backing_uses_the_games_own_parameters():
+    """KAG3 system/Config.tjs sets frameColor = 0x000000 with frameOpacity = 128
+    (= 50%). The frame ART is not rendered by this conversion, so without this the
+    dialogue sat directly on the CG (owner: "底衬我没看到恢复"). Our own earlier
+    override was reverted in both directions: no extra colour of our invention and
+    no wholesale `transparent` that also kills the game's backing."""
     js = ck.RUNTIME_SHIM_IIFE
-    # our own translucent backing is gone, but the GAME's backing must survive:
-    # forcing background-color:transparent on the message layers removed that too
-    # (owner: "删除多了，两层底衬都没了")
-    assert "rgba(0,0,0,.5)" not in js
+    assert ".message_outer{background-color:rgba(0,0,0,.5)}" in js
     assert "background-color:transparent" not in js
-    assert "background-color" not in js.split("pointer-events:none")[0].split("z-index:8000")[-1]
+
+
+def test_r_and_style_affect_appended_ch_runs():
+    """KAG3 [r] must start a new line for text appended by [ch], and [style
+    align=] must align it -- otherwise the choice prompt and the first option
+    share one line (owner: "第一个选项不要和描述放在同一行，换一下行吧")."""
+    js, _n = ck._shim_js((), None, {"ch", "r", "style"})
+    assert "__kag3_break" in js
+    assert "__kag3_align" in js
+    assert "text-align" in js
+    assert "kag3ch" in js
 
 
 def test_configured_waits_are_dropped_in_skip_mode():

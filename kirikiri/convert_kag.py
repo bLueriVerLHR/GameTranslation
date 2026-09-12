@@ -417,8 +417,16 @@ NOOP_PLUS_REAL_JS = r"""
         }).last();
         if (!$i.length) $i = $(".message_inner").last();
         if (!$i.length) { this.kag.ftag.nextOrder(); return; }
-        var $p = $i.find("p").last();
-        if (!$p.length) { $p = $('<p class="kag3ch"></p>'); $i.append($p); }
+        var $p;
+        if (window.__kag3_break || !$i.find("p").length) {
+          // KAG3 [r] means "start a new line": a fresh paragraph per run
+          $p = $('<p class="kag3ch"></p>');
+          $i.append($p);
+          window.__kag3_break = false;
+        } else {
+          $p = $i.find("p").last();
+        }
+        if (window.__kag3_align) $p.css("text-align", window.__kag3_align);
         var $prev = $i.find("span").last();
         var $s = $("<span></span>");
         if ($prev.length) {
@@ -432,6 +440,32 @@ NOOP_PLUS_REAL_JS = r"""
       } catch (e) {}
       this.kag.ftag.nextOrder();
     };
+  })();
+
+  // [r] (KAG3 newline) and [style align=..] have to work for the runs we append
+  // from [ch], otherwise the choice prompt and the first item share one line
+  // (owner: "第一个选项不要和描述放在同一行，换一下行吧") and every option loses
+  // the alignment the macro asked for.
+  (function () {
+    var T = tyrano.plugin.kag.tag;
+    var r = T["r"];
+    if (r && r.start && !r.__kag3_wrapped) {
+      var _rs = r.start;
+      r.__kag3_wrapped = true;
+      r.start = function (pm) {
+        window.__kag3_break = true;
+        return _rs.call(this, pm);
+      };
+    }
+    var st = T["style"];
+    if (st && st.start && !st.__kag3_wrapped) {
+      var _ss = st.start;
+      st.__kag3_wrapped = true;
+      st.start = function (pm) {
+        if (pm && pm.align) window.__kag3_align = String(pm.align);
+        return _ss.call(this, pm);
+      };
+    }
   })();
 })();
 """
@@ -1377,8 +1411,13 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "            '#tyrano_base div[class*=\"message\"][class*=\"_fore\"] *,' +",
     "            '#tyrano_base div[class*=\"message\"][class*=\"_back\"] *' +",
     "            '{pointer-events:auto !important}' +",
-    "            // NOTE: no background override of any kind. The game draws its own",
-    "            // backing (KAG3 frameColor/frameOpacity); forcing transparent removed it.",
+    "            // Message backing, using the game's OWN parameters: its KAG3",
+    "            // system/Config.tjs sets frameColor = 0x000000 with",
+    "            // frameOpacity = 128 (= 50%). The frame ART is not rendered by this",
+    "            // conversion, so without this the dialogue sat directly on the CG",
+    "            // (owner: \"底衬我没看到恢复\"). Absolute black at 50% is the engine",
+    "            // default too, so this matches both.",
+    "            '.message_outer{background-color:rgba(0,0,0,.5)}' +",
     "            // Text must never paint outside its window: Tyrano's default",
     "            // line box is taller than KAG3's, so a long KAG3 message",
     "            // can grow past the window and cover the bottom-right system",

@@ -41,6 +41,32 @@ def fake_unpacked(tmp_path):
 
 
 class TestConvertKsLine:
+    @pytest.mark.parametrize("ending", ["", "\n", "\r\n"])
+    def test_inline_dialogue_survives(self, fake_unpacked, ending):
+        source = '[font size=24]Hello[r]World[l]' + ending
+        assert ck.convert_ks_line(source, str(fake_unpacked), set()) == source
+
+    def test_text_leading_wait_is_converted(self, fake_unpacked):
+        source = 'Hello[wait time=5]World[l]\n'
+        assert ck.convert_ks_line(source, str(fake_unpacked), set()) == (
+            'Hello[kagwaitskip time=5]World[l]\n')
+
+    @pytest.mark.parametrize("tag", [
+        'trans method=universal time=500', 'image storage="black" layer=4',
+        'wait time=5', 's',
+    ])
+    def test_at_and_bracket_semantics_match(self, fake_unpacked, tag):
+        convert = lambda text: ck.convert_ks_line(text, str(fake_unpacked), set())
+        assert convert('@' + tag + '\r\n') == convert('[' + tag + ']\r\n')
+
+    def test_unclosed_tag_and_plain_text_are_preserved(self, fake_unpacked):
+        for source in ['Hello [unfinished', 'Hello world\n', '; [s]\n']:
+            assert ck.convert_ks_line(source, str(fake_unpacked), set()) == source
+
+    def test_inline_condition_is_balanced_without_losing_text(self):
+        source = ['Hello[if exp="f.x"]World\n', '[endif]\n']
+        assert ck._balance_if_endif(source) == source
+
     def test_storage_ext_completed(self, fake_unpacked):
         out = ck.convert_ks_line('[image storage="black" page=fore layer=base]\n',
                                  str(fake_unpacked), set(), False)
@@ -110,9 +136,18 @@ class TestConvertKsLine:
         out = ck.convert_ks_line("[cm]\\\n", str(fake_unpacked), set(), False)
         assert not out.rstrip("\n").endswith("\\")
 
+    def test_continuation_between_tags_is_not_a_tyrano_escape(self, fake_unpacked):
+        source = '[if exp="f.x"][wait time=5]\\[endif]\\\n'
+        out = ck.convert_ks_line(source, str(fake_unpacked), set())
+        assert out == '[if exp="f.x"][kagwaitskip time=5][endif]\n'
+
+    def test_literal_escaped_tag_and_quoted_brackets_are_scanned_like_tyrano(self):
+        text = r'visible \[if] [ptext text="[[literal]]"] [endif]'
+        assert [x.split()[0] for x in ck._scan_tags(text)] == ["ptext", "endif"]
+
     def test_at_syntax_converted(self, fake_unpacked):
         out = ck.convert_ks_line("@s\n", str(fake_unpacked), set(), False)
-        assert out.strip() == "[s]"
+        assert out.strip() == "[kag3stop]"
 
     def test_label_kept(self, fake_unpacked):
         out = ck.convert_ks_line("*start|タイトル\n", str(fake_unpacked), set(), False)
@@ -122,12 +157,12 @@ class TestConvertKsLine:
         out = ck.convert_ks_line("; comment\n", str(fake_unpacked), set(), False)
         assert out.strip() == "; comment"
 
-    def test_multitag_split(self, fake_unpacked):
+    def test_multitag_preserves_order(self, fake_unpacked):
         out = ck.convert_ks_line('[if exp="sf.mpg_mode==0"][image storage="black" layer=4][endif]\n',
                                  str(fake_unpacked), set(), False)
-        lines = [l for l in out.splitlines() if l.strip()]
-        assert len(lines) == 3
-        assert lines[0].startswith("[if")
+        tags = ck._scan_tags(out)
+        assert [t.split()[0] for t in tags] == ["if", "freeimage", "image", "endif"]
+        assert 'black.png' in out
 
     def test_zoomrot_dropped(self, fake_unpacked):
         out = ck.convert_ks_line("class ZoomRotPlugin extends KAGPlugin\n",
@@ -481,6 +516,30 @@ class TestAssetMap:
                                  str(fake_unpacked), set(), False)
         assert "TITLE.MA" in out
 
+    def test_existing_output_assets_are_indexed(self, tmp_path):
+        out_data = tmp_path / "data"
+        (out_data / "fgimage" / "nested").mkdir(parents=True)
+        (out_data / "fgimage" / "nested" / "BLACK.PNG").write_bytes(b"PNG")
+        (out_data / "sound").mkdir()
+        (out_data / "sound" / "click.ogg").write_bytes(b"OggS")
+
+        amap, full = ck._asset_map_from_output(str(out_data))
+
+        assert amap["black"] == "fgimage/nested/BLACK.PNG"
+        assert full["black.png"] == "fgimage/nested/BLACK.PNG"
+        assert amap["click"] == "sound/click.ogg"
+
+    def test_existing_output_prefers_image_for_shared_stem(self, tmp_path):
+        out_data = tmp_path / "data"
+        (out_data / "fgimage").mkdir(parents=True)
+        (out_data / "fgimage" / "map.ma").write_text("0: x;", encoding="utf-8")
+        (out_data / "fgimage" / "map.png").write_bytes(b"PNG")
+
+        amap, full = ck._asset_map_from_output(str(out_data))
+
+        assert amap["map"] == "fgimage/map.png"
+        assert full["map.ma"] == "fgimage/map.ma"
+
 
 class TestRegionImage:
     def test_region_detected(self):
@@ -732,8 +791,7 @@ def test_injected_style_statement_is_terminated():
     visible). node --check cannot see this -- it is not a syntax error.
     """
     js = ck.RUNTIME_SHIM_IIFE
-    assert "'.message_inner p,.message_inner p span{'" in js
-    assert "font-size:22px !important" in js
+    assert ".message_inner p.kag3ch{" in js
     # the concatenated statement ends with a terminator before the append
     # (rule-agnostic: the last CSS rule before the statement must end `}';`)
     assert re.search(r"\}';\s*\(document\.head", js), js[-700:]
@@ -744,18 +802,13 @@ def test_message_text_is_clipped_to_its_window():
     assert ".message_inner{overflow:hidden}" in ck.RUNTIME_SHIM_IIFE
 
 
-def test_message_font_uses_the_kag3_metrics_not_a_shrinking_fit():
-    """Owner decision: never resize text to make it fit.
-
-    Shrinking produced uneven sizes between messages. The real cause was that
-    Tyrano's message text is larger than the original's, so fewer characters fit
-    per line; using the game's own KAG3 metrics (Config.tjs defaultFontSize 22 /
-    defaultLineSpacing 6) restores the original wrap points, so nothing needs
-    rescaling.
-    """
+def test_message_font_keeps_source_metrics_without_shrinking():
+    """Global overrides damage small nameplates and explicit source styling."""
     js = ck.RUNTIME_SHIM_IIFE
-    assert "font-size:22px !important" in js
-    assert "line-height:28px !important" in js
+    assert "font-size:22px !important" not in js
+    assert "line-height:28px !important" not in js
+    assert 'var font = this.kag.stat.font || {}' in ck.NOOP_PLUS_REAL_JS
+    assert '$s.css("font-size", font.size + "px")' in ck.NOOP_PLUS_REAL_JS
     # the measurement helper may report an overflow, but must not resize
     assert "window.__kag3_fit_message" in js
     assert "setTimeout(run, 150)" in js          # debounce: no per-frame reflow
@@ -928,13 +981,11 @@ def test_dropped_tag_keeps_line_ending_even_without_one():
         ck._DROPPED_TAGS.clear()
 
 
-def test_message_text_has_a_safe_area_for_engine_controls():
-    """KAG3 reserved the bottom-right control space through its message frame
-    margins, which Tyrano ignores."""
+def test_message_layout_does_not_hardcode_control_padding():
+    """Source margins must govern each window, especially small nameplates."""
     js = ck.RUNTIME_SHIM_IIFE
-    assert "padding-right:190px" in js
-    assert "padding-bottom:44px" in js
-    assert "box-sizing:border-box" in js
+    assert "padding-right:190px" not in js
+    assert "padding-bottom:44px" not in js
 
 
 def test_message_layers_outrank_the_character_layers():
@@ -966,8 +1017,11 @@ def test_r_and_style_affect_appended_ch_runs():
     align=] must align it -- otherwise the choice prompt and the first option
     share one line (owner: "第一个选项不要和描述放在同一行，换一下行吧")."""
     js, _n = ck._shim_js((), None, {"ch", "r", "style"})
-    assert "__kag3_break" in js
-    assert "__kag3_align" in js
+    assert "getMessageInnerLayer" in js
+    assert "getMessageCurrentSpan" in js
+    assert "setNewParagraph" in js
+    assert "__kag3_break" not in js
+    assert "__kag3_align" not in js
     assert "text-align" in js
     assert "kag3ch" in js
 
@@ -1028,20 +1082,33 @@ def test_ch_renders_message_text_instead_of_being_a_noop():
     assert 'T["font"]' in js or "T['font']" in js
 
 
+def test_ch_uses_the_active_link_span_without_creating_paragraphs():
+    """Choice text must remain inside exactly the link span Tyrano created."""
+    js, _n = ck._shim_js((), None, {"ch", "link", "endlink"})
+    assert "this.kag.getMessageInnerLayer()" in js
+    assert "this.kag.getMessageCurrentSpan()" in js
+    assert "$current.append($s)" in js
+    assert "this.kag.setNewParagraph($i)" in js
+    assert "<p class=\"kag3ch\"" not in js
+    assert '$(".message_inner")' not in js.split('var ch = T["ch"]', 1)[1].split(
+        "// [r]", 1)[0]
+
+
 def test_font_colour_recording_is_wrapped_once():
     js, _n = ck._shim_js((), None, {"ch"})
     assert "__kag3_wrapped" in js
 
 
-def test_position_never_moves_the_message_layer():
-    """KAG3 [position layer=message1 frame=.. top=599] is the frame origin of the
-    name plate, not a command to move the window: applying left/top pushed the
-    windows out of frame, and overflow:hidden then clipped the dialogue and every
-    choice item away (owner: "选项文字消失了"). Only frame/colour/margins are used."""
+def test_position_delegates_complete_geometry_to_native_tag():
+    """Frame resolution must happen before native outer/inner layout."""
     js, _n = ck._shim_js((), None, {"position", "locate"})
     pos = js.split('T["position"]')[-1].split('T["locate"]')[0]
-    assert "background-image" in pos          # frame art
-    assert "marginl" in pos or "margin-left" in pos
+    assert "__kag3_asset_path" in pos
+    assert "probe.onload" in pos
+    assert "args.width" in pos and "args.height" in pos
+    assert "_ps.call(owner, args)" in pos
+    assert 'outer.css("background-color"' in pos
+    assert '"./data/image/" + path' in pos
     for geom in ('j.css("left"', 'j.css("top"', 'j.css("width"', 'j.css("height"'):
         assert geom not in pos, geom
 

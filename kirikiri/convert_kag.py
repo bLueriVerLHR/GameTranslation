@@ -416,34 +416,30 @@ NOOP_PLUS_REAL_JS = r"""
         // push later choice items past the window, where overflow:hidden clips them
         // (measured: items 80px apart in a 113px window -> only the first visible).
         if (txt.replace(/[\s\u3000]/g, "") === "") { this.kag.ftag.nextOrder(); return; }
-        var $i = $(".message_inner").filter(function () {
-          return $(this).find("span").length > 0;
-        }).last();
-        if (!$i.length) $i = $(".message_inner").last();
+        var $i = this.kag.getMessageInnerLayer();
         if (!$i.length) { this.kag.ftag.nextOrder(); return; }
-        var $p;
-        if (window.__kag3_break || !$i.find("p").length) {
-          // KAG3 [r] means "start a new line": a fresh paragraph per run
-          $p = $('<p class="kag3ch"></p>');
-          $i.append($p);
-          window.__kag3_break = false;
-        } else {
-          $p = $i.find("p").last();
-        }
-        if (window.__kag3_align) $p.css("text-align", window.__kag3_align);
+        if (!$i.find("p").length) this.kag.setNewParagraph($i);
+        // Keep the engine's single paragraph. [r] already appends a break;
+        // extra paragraphs make setMessageCurrentSpan duplicate link regions.
+        var $p = $i.find("p").last().addClass("kag3ch");
         // Mark this window as [ch]-composed so it is exempt from the hard clip:
         // choice items legitimately need more room than the 113px dialogue window.
         $i.addClass("kag3ch-msg");
-        var $prev = $i.find("span").last();
+        var $current = this.kag.getMessageCurrentSpan();
+        if (!$current.length) $current = this.kag.setMessageCurrentSpan();
+        var $prev = $current;
         var $s = $("<span></span>");
         if ($prev.length) {
           var st = $prev.attr("style");
           if (st) $s.attr("style", st);
         }
-        var col = cssColor(window.__kag3_font.color);
+        var font = this.kag.stat.font || {};
+        var col = cssColor(font.color);
         if (col) $s.css("color", col);
         $s.text(txt);
-        $p.append($s);
+        if (font.size) $s.css("font-size", font.size + "px");
+        if (font.face) $s.css("font-family", font.face);
+        $current.append($s);
       } catch (e) {}
       this.kag.ftag.nextOrder();
     };
@@ -455,21 +451,16 @@ NOOP_PLUS_REAL_JS = r"""
   // the alignment the macro asked for.
   (function () {
     var T = tyrano.plugin.kag.tag;
-    var r = T["r"];
-    if (r && r.start && !r.__kag3_wrapped) {
-      var _rs = r.start;
-      r.__kag3_wrapped = true;
-      r.start = function (pm) {
-        window.__kag3_break = true;
-        return _rs.call(this, pm);
-      };
-    }
     var st = T["style"];
     if (st && st.start && !st.__kag3_wrapped) {
       var _ss = st.start;
       st.__kag3_wrapped = true;
       st.start = function (pm) {
-        if (pm && pm.align) window.__kag3_align = String(pm.align);
+        if (pm && pm.align) {
+          var inner = this.kag.getMessageInnerLayer();
+          inner.css("text-align", String(pm.align));
+          inner.find("p").css("text-align", String(pm.align));
+        }
         return _ss.call(this, pm);
       };
     }
@@ -492,66 +483,43 @@ NOOP_PLUS_REAL_JS = r"""
       var _ps = P.start;
       P.__kag3_wrapped = true;
       P.start = function (pm) {
-        try {
-          var name = String(pm.layer == null ? "" : pm.layer);
-          var j = null;
-          if (name !== "" && name !== "base") {
-            try { j = this.kag.layer.getLayer(name, pm.page || "fore"); } catch (e) { j = null; }
-          }
-          if (j && j.length) {
-            // NOTE: deliberately NOT setting left/top/width/height. Tyrano already
-            // places the message windows; KAG3's `[position ... top=599]` (the name
-            // plate's own frame origin) moved them out of frame, so the dialogue and
-            // the choice items were painted outside the backing box, where
-            // overflow:hidden clipped them (measured: window at viewport y=1087 on an
-            // 800px-tall page; owner: "选项文字消失了").
-            // The frame belongs to the message WINDOW, not to the layer: the layer
-            // is a full-screen div, so painting it removed the scene background and
-            // left the name plate without a box of its own (its text then centred
-            // across the whole layer).
-            var $w = j.find(".message_outer").first();
-            if (!$w.length) $w = j.find(".message_inner").first();
-            if (!$w.length) $w = j;
-            if (has(pm.color)) {
-              var c = String(pm.color).replace(/^0x/i, "").replace(/^#/, "");
-              if (/^[0-9a-fA-F]{6}$/.test(c)) {
-                var a = has(pm.opacity) ? num(pm.opacity, 255) : 255;
-                $w.css("background-color", "rgba(" + parseInt(c.substr(0, 2), 16) + "," +
-                       parseInt(c.substr(2, 2), 16) + "," + parseInt(c.substr(4, 2), 16) + "," +
-                       Math.max(0, Math.min(1, a / 255)) + ")");
-              }
-            }
-            if (has(pm.frame) && typeof __kag3_asset_path === "function") {
-              var fpath = __kag3_asset_path(String(pm.frame));
-              if (fpath) {
-                $w.css({ "background-image": "url(" + fpath + ")",
-                         "background-repeat": "no-repeat",
-                         "background-position": "left top" });
-                // Size the window to the frame art and put it where the game asked.
-                var probe = new Image();
-                probe.onload = function () {
-                  try {
-                    $w.css({ width: probe.naturalWidth + "px",
-                             height: probe.naturalHeight + "px",
-                             position: "absolute",
-                             left: num(pm.left, 0) + "px",
-                             top: num(pm.top, 0) + "px" });
-                  } catch (e) {}
-                };
-                probe.src = fpath;
-              }
-            }
-            var ml = num(pm.marginl, 0), mt = num(pm.margint, 0);
-            var mr = num(pm.marginr, 0), mb = num(pm.marginb, 0);
-            if (ml || mt || mr || mb) {
-              j.find(".message_inner, .message_outer").css({
-                "box-sizing": "border-box",
-                "padding-left": ml + "px", "padding-top": mt + "px",
-                "padding-right": mr + "px", "padding-bottom": mb + "px" });
+        // Resolve once, then let the native tag size BOTH outer and inner boxes.
+        // Never modify geometry asynchronously after native nextOrder().
+        var owner = this;
+        var args = Object.assign({}, pm);
+        if (!args.layer) args.layer = this.kag.stat.current_layer;
+        if (!args.page) args.page = this.kag.stat.current_page || "fore";
+        var finish = function () {
+          var result = _ps.call(owner, args);
+          // Tyrano clears background-color whenever a frame image is used.
+          // KAG3 layers the frame over its configured translucent backing.
+          if (has(args.frame) && args.frame !== "none") {
+            var color = has(args.color) ? args.color : owner.kag.config.frameColor;
+            if (has(color)) {
+              var outer = owner.kag.layer.getLayer(args.layer, args.page).find(".message_outer");
+              outer.css("background-color", $.convertColor(String(color)));
             }
           }
-        } catch (e) {}
-        return _ps.call(this, pm);
+          return result;
+        };
+        if (!has(args.frame) || args.frame === "none") return finish();
+        var path = typeof window.__kag3_asset_path === "function"
+          ? window.__kag3_asset_path(String(args.frame)) : "";
+        if (!path) return finish();
+        // Native position prefixes relative frames with ./data/image/.
+        args.frame = path.replace(/^\.\/data\//, "../");
+        if (has(args.width) && has(args.height)) return finish();
+        var probe = new Image();
+        probe.onload = function () {
+          if (!has(args.width)) args.width = String(probe.naturalWidth);
+          if (!has(args.height)) args.height = String(probe.naturalHeight);
+          finish();
+        };
+        probe.onerror = function () {
+          console.warn("KAG3 position: frame could not load: " + path);
+          finish();
+        };
+        probe.src = path.indexOf("../") === 0 ? "./data/image/" + path : path;
       };
     }
 
@@ -1398,7 +1366,7 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "      var __kag3_asset_path = function (s) {",
     "        if (!s) return s;",
     "        var t = String(s);",
-    "        if (/[.]/.test(t) || t.indexOf('http') === 0 ||",
+    "        if (t.indexOf('http') === 0 ||",
     "            t.charAt(0) === '/' || t.indexOf('../') === 0) return s;",
     "        var r = __kag3_assets()[t.toLowerCase()];",
     "        return r ? '../' + r : s;",
@@ -1546,23 +1514,8 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "            // tail vanished -- owner: \"选项文字消失了\"). Normal dialogue keeps",
     "            // the hard clip.",
     "            '.message_inner.kag3ch-msg{overflow:visible !important}' +",
-    "            // Use the game's own KAG3 metrics (Config.tjs defaultFontSize 22,",
-    "            // defaultLineSpacing 6) so the line breaks land where the original",
-    "            // had them and nothing needs rescaling. Applies to the message",
-    "            // window only, and overrides the engine's inline per-message size.",
-    "            '.message_inner p,.message_inner p span{' +",
-    "            'font-size:22px !important;line-height:28px !important}' +",
-    "            // Paragraphs created by our [ch] must not add their own margins:",
-    "            // the default ones cost about 24px per line, so four choice items",
-    "            // needed 234px inside a 113px window and the tail was clipped away.",
-    "            '.message_inner p.kag3ch{margin:0 !important;padding:0 !important}' +",
-    "            // Safe area for Tyrano's own control bar (skip/auto/menu icons sit",
-    "            // at the bottom right). KAG3 reserved that space through its",
-    "            // message frame's margins, which Tyrano ignores, so without this",
-    "            // the last line runs underneath the icons (reported in play-test).",
-    "            '.message_inner>p{box-sizing:border-box !important;' +",
-    "            'max-width:100% !important;padding-right:190px !important;' +",
-    "            'padding-bottom:44px !important}';",
+    "            // Keep source font sizes and native window margins, including nameplates.",
+    "            '.message_inner p.kag3ch{margin:0 !important;padding:0 !important}';",
     "          (document.head || document.documentElement).appendChild(s);",
     "        } catch (e) {}",
     "      })();",
@@ -1819,15 +1772,16 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "              var el = new Audio(url);",
     "              this._el = el;",
     "              this._apply();",
-    "              el.addEventListener('ended', function () { if (!el.loop) { self.status = 'stop'; } });",
+    "              el.addEventListener('ended', function () { if (self._el === el && !el.loop) { self.status = 'stop'; } });",
     "              el.addEventListener('error', function () {",
+    "                if (self._el !== el) return;",
     "                self.status = 'stop';",
     "                __kag3_log('se error ' + url);",
     "              });",
     "              var pr = null;",
-    "              try { pr = el.play(); } catch (e) {}",
-    "              if (pr && pr.catch) { pr.catch(function () { self.status = 'stop'; }); }",
     "              this.status = 'play';",
+    "              try { pr = el.play(); } catch (e) { this.status = 'stop'; }",
+    "              if (pr && pr.catch) { pr.catch(function () { if (self._el === el) self.status = 'stop'; }); }",
     "              __kag3_log('se play ' + st + ' -> ' + url);",
     "              return this;",
     "            },",
@@ -2066,6 +2020,39 @@ def _asset_map_full(unpacked):
     return _asset_map(unpacked)[1]
 
 
+def _asset_map_from_output(out_data):
+    """Index canonical assets already present in a Tyrano ``data`` tree.
+
+    ``--scenario-only`` intentionally keeps the prior converted assets. The
+    runtime resolver must include those files even when the reduced source
+    tree used for a quick scenario rebuild contains no asset folders. Values
+    use the same ``<folder>/<file>`` form returned by ``_asset_map``.
+    """
+    asset_dirs = ("bgimage", "fgimage", "image", "bgm", "sound", "video")
+    img_exts = ("png", "jpg", "jpeg", "gif", "bmp", "webp")
+    amap = {}
+    full = {}
+
+    def _scan(want_img):
+        for asset_dir in asset_dirs:
+            root = os.path.join(out_data, asset_dir)
+            if not os.path.isdir(root):
+                continue
+            for dp, _, fns in os.walk(root):
+                for fn in sorted(fns):
+                    ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
+                    if (ext in img_exts) != want_img:
+                        continue
+                    base = fn.rsplit(".", 1)[0].lower() if "." in fn else fn.lower()
+                    rel = os.path.relpath(os.path.join(dp, fn), out_data).replace("\\", "/")
+                    full.setdefault(base + ("." + ext if ext else ""), rel)
+                    amap.setdefault(base, rel)
+
+    _scan(True)
+    _scan(False)
+    return amap, full
+
+
 _ASSET_CACHE = {}
 
 
@@ -2175,6 +2162,11 @@ def _strip_continuation(line, in_script):
     """
     if in_script:
         return line
+    # Some KAG3 scripts join adjacent tags as `]\\[`. Tyrano treats the
+    # backslash as an escape and prints the second tag as text, which can also
+    # leave [if] blocks structurally open. This separator is unambiguous;
+    # ordinary `\\[` text escapes do not follow a closing tag.
+    line = re.sub(r"(?<=\])\\(?=\[)", "", line)
     s = line.rstrip("\r\n")
     if s.endswith("\\") and not s.endswith("\\\\"):
         return s[:-1] + line[len(s):]
@@ -2211,11 +2203,24 @@ def convert_ks_line(line, unpacked, macros, in_script=False):
         # @tag syntax -> [tag]. The line ending must survive: without it the
         # next source line is glued onto this one (a following `;` comment then
         # ends up mid-line, where Tyrano prints it as dialogue).
-        return "[" + s[1:] + "]" + line[len(line.rstrip("\r\n")):]
+        line = "[" + s[1:] + "]" + line[len(line.rstrip("\r\n")):]
     line = _strip_comment_tail(line)
-    # bare text line: keep
-    if not line.strip().startswith("["):
+    spans = list(_tag_spans(line))
+    if not spans:
         return line
+    # Transform each tag in isolation. Rebuilding from tag names alone loses
+    # dialogue, and rewriting a whole line applies the first tag's asset rules
+    # to unrelated tags (including scenario jumps).
+    if len(spans) != 1 or line.strip() != line[spans[0][0]:spans[0][1]]:
+        parts = []
+        pos = 0
+        for start, end in spans:
+            parts.append(line[pos:start])
+            parts.append(convert_ks_line(line[start:end], unpacked, macros) or "")
+            pos = end
+        parts.append(line[pos:])
+        return "".join(parts)
+    s = line.strip()
     # tag line: rewrite storage= attributes to include extensions for
     # ASSET tags only ([image]/[bg]/[playse]/[playbgm]/[movie]/...). KAG3
     # storage="X.ks" on [call]/[jump] must stay untouched (they are scenario
@@ -2312,11 +2317,6 @@ def convert_ks_line(line, unpacked, macros, in_script=False):
         lambda m: _dangling_call(m, unpacked),
         line,
     )
-    tags = _scan_tags(line)
-    if len(tags) > 1:
-        parts = ["[" + t + "]" for t in tags]
-        return "\n".join(re.sub(r'^\[s\](\s*)$', lambda m: '[kag3stop]' + m.group(1), p)
-                         for p in (_remap_part(p) for p in parts)) + "\n"
     line = re.sub(r'^\[s\](\s*)$', lambda m: '[kag3stop]' + m.group(1), line)
     return _remap_part(line)
 
@@ -2376,21 +2376,34 @@ def _replace_layer_image(part):
     return "[freeimage layer=%s%s]%s%s" % (lm.group(1), page, part.strip(), tail)
 
 
-def _scan_tags(text):
-    """Bracket-pairing tag scan (same semantics as Tyrano's parser):
-    returns the inner text of each top-level [tag ...]."""
-    out = []
+def _tag_spans(text):
+    """Yield Tyrano-compatible top-level tag spans with source offsets."""
     i, n = 0, len(text)
     while i < n:
+        if text[i] == "\\":
+            i += 2
+            continue
         if text[i] == "[":
             depth, j = 0, i
+            quote = ""
+            escaped = False
             while j < n:
-                if text[j] == "[":
+                char = text[j]
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif quote:
+                    if char == quote:
+                        quote = ""
+                elif char in "\"'`":
+                    quote = char
+                elif char == "[":
                     depth += 1
-                elif text[j] == "]":
+                elif char == "]":
                     depth -= 1
                     if depth == 0:
-                        out.append(text[i + 1:j])
+                        yield i, j + 1
                         i = j + 1
                         break
                 j += 1
@@ -2398,7 +2411,11 @@ def _scan_tags(text):
                 break
         else:
             i += 1
-    return out
+
+
+def _scan_tags(text):
+    """Return the inner text of each complete top-level tag."""
+    return [text[start + 1:end - 1] for start, end in _tag_spans(text)]
 
 
 def _export_globals(js_text):
@@ -2470,26 +2487,8 @@ def _balance_if_endif(lines):
         m_endmacro = re.match(r'^\[endmacro\](\s*)$', s)
         if m_endmacro and depth > 0:
             inject()
-        if s.startswith("["):
-            tags = []
-            i, n = 0, len(s)
-            while i < n:
-                if s[i] == "[":
-                    db, j = 0, i
-                    while j < n:
-                        if s[j] == "[":
-                            db += 1
-                        elif s[j] == "]":
-                            db -= 1
-                            if db == 0:
-                                tags.append((i, j + 1, s[i + 1:j]))
-                                i = j + 1
-                                break
-                        j += 1
-                    else:
-                        break
-                else:
-                    i += 1
+        if "[" in s and not s.startswith((";", "*", "/*")):
+            tags = [(a, b, s[a + 1:b - 1]) for a, b in _tag_spans(s)]
             rebuilt = ""
             pos = 0
             changed = False
@@ -2822,6 +2821,22 @@ def _convert_videos(unpacked, out_data, video_dir, stats):
     return vmap
 
 
+def _video_map_from_output(out_data):
+    """Rebuild the runtime video resolver from retained converted files."""
+    root = os.path.join(out_data, "video")
+    if not os.path.isdir(root):
+        return {}
+    vmap = {}
+    for fn in sorted(os.listdir(root)):
+        path = os.path.join(root, fn)
+        if not os.path.isfile(path):
+            continue
+        stem = os.path.splitext(fn)[0].lower()
+        vmap.setdefault(stem, fn)
+        vmap.setdefault(fn.lower(), fn)
+    return vmap
+
+
 def _convert_assets(unpacked, out_data, stats):
     """Copy/convert asset dirs into Tyrano data/ layout (recursive)."""
     mapping = [
@@ -3071,6 +3086,7 @@ def main():
         _convert_assets(unpacked, out_data, stats)
         video_map = _convert_videos(unpacked, out_data, args.video_dir, stats)
     else:
+        video_map = _video_map_from_output(out_data)
         log.info("scenario-only: assets reused from existing output")
 
     # game-specific Config.tjs settings (window size from the KAG3 game)
@@ -3131,9 +3147,17 @@ def main():
     # asset name maps for the runtime storage resolver (extensionless KAG3
     # storages) and the clickable-map engine (.ma files, _p region images).
     amap, full_map = _asset_map(unpacked)
+    if args.scenario_only:
+        retained_amap, retained_full = _asset_map_from_output(out_data)
+        for key, value in retained_amap.items():
+            amap.setdefault(key, value)
+        for key, value in retained_full.items():
+            full_map.setdefault(key, value)
     _ASSET_CACHE[unpacked] = (amap, full_map)
     ma_map = {k.rsplit(".", 1)[0]: v for k, v in full_map.items() if k.endswith(".ma")}
-    asset_js = "window.__kag3_assets = " + json.dumps(amap, ensure_ascii=False) + ";\n"
+    runtime_assets = dict(amap)
+    runtime_assets.update(full_map)
+    asset_js = "window.__kag3_assets = " + json.dumps(runtime_assets, ensure_ascii=False) + ";\n"
     asset_ma_js = "window.__kag3_assets_ma = " + json.dumps(ma_map, ensure_ascii=False) + ";\n"
     # name -> converted movie, for the KAG3 video shim ([openvideo storage=X])
     asset_video_js = "window.__kag3_videos = " + json.dumps(

@@ -46,6 +46,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kirikiri.ks_extract import load_ks  # noqa: E402
+from rpgmaker.config import find_node  # noqa: E402
 
 log = logging.getLogger("check_iscript_js")
 
@@ -78,7 +79,10 @@ def check_block(body):
                                          encoding="utf-8") as fh:
             fh.write(body)
             tmp = fh.name
-        proc = subprocess.run(["node", "--check", tmp],
+        node = find_node()
+        if not node:
+            raise FileNotFoundError("node")
+        proc = subprocess.run([node, "--check", tmp],
                               capture_output=True, text=True)
         if proc.returncode == 0:
             return None

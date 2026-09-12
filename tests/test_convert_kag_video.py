@@ -50,6 +50,21 @@ def test_no_movies_returns_empty_map(tmp_path):
                               Counter()) == {}
 
 
+def test_retained_video_map_supports_stem_and_filename(tmp_path):
+    video = tmp_path / "data" / "video"
+    video.mkdir(parents=True)
+    (video / "Scene01.webm").write_bytes(b"webm")
+
+    vmap = ck._video_map_from_output(str(tmp_path / "data"))
+
+    assert vmap["scene01"] == "Scene01.webm"
+    assert vmap["scene01.webm"] == "Scene01.webm"
+
+
+def test_retained_video_map_handles_missing_directory(tmp_path):
+    assert ck._video_map_from_output(str(tmp_path / "data")) == {}
+
+
 def test_both_extension_forms_resolve(tmp_path):
     # Scripts reference movies both with and without the extension
     # ([openvideo storage="&mpglist[...].file"] vs a literal .wmv).

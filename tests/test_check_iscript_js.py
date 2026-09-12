@@ -8,7 +8,6 @@ JavaScript, and it must not invent problems in valid blocks.
 """
 import json
 import os
-import shutil
 import sys
 
 import pytest
@@ -17,8 +16,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from tools import check_iscript_js as cij  # noqa: E402
+from rpgmaker.config import find_node  # noqa: E402
 
-NODE = shutil.which("node")
+NODE = find_node()
 needs_node = pytest.mark.skipif(NODE is None, reason="node not installed")
 
 

@@ -289,6 +289,12 @@ _POSIX_ANCHOR_TOKENS = ("/usr/bin", "/usr/local/bin", "/usr/sbin", "/opt",
 
 TOOLS = (
     Tool(
+        key="node", env="NODE", exe=("node", "node.exe"),
+        probe=("*/nvm/installs/*/node.exe", "nodejs/node.exe"),
+        purpose="JavaScript runtime regression tests",
+        hint="install Node.js or set NODE",
+    ),
+    Tool(
         key="ffmpeg", env="FFMPEG", exe=("ffmpeg",),
         probe=(
             "ffmpeg*/bin/ffmpeg.exe",
@@ -553,6 +559,10 @@ def find_rg():
 
 def find_git():
     return resolve_tool("git")
+
+
+def find_node():
+    return resolve_tool("node")
 
 
 def find_npx():

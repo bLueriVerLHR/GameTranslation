@@ -1,4 +1,4 @@
-﻿"""KAG3 (.ks) -> TyranoScript project converter.
+"""KAG3 (.ks) -> TyranoScript project converter.
 
 Converts an extracted KiriKiri/KAG3 game directory (xp3tool extract output)
 into a standard TyranoScript project layout that the tyrano/pipeline.py
@@ -1076,22 +1076,106 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "            // on the picture. A translucent backing behind the window (and",
     "            // behind the name plate, which is another message layer) makes",
     "            // it readable without hiding the art.",
-    "            '.message_outer{background-color:rgba(0,0,0,.5) !important}';",
+    "            '.message_outer{background-color:rgba(0,0,0,.5) !important}' +",
+    "            // Text must never paint outside its window: Tyrano's default",
+    "            // line box is taller than KAG3's, so a three-line KAG3 message",
+    "            // can grow past the window and cover the bottom-right system",
+    "            // buttons. Clipping is the hard guarantee; __kag3_fit_message",
+    "            // below squeezes the text back in so nothing is lost either.",
+    "            '.message_inner{overflow:hidden}' +",
+    "            // The engine writes each message's font-size/line-height as inline",
+    "            // styles on the <span> (kag.tag.js sets them per message), which",
+    "            // would defeat a fit applied to .message_inner. This rule turns on",
+    "            // inheritance ONLY for an element the fit function has marked, so",
+    "            // an unmarked message keeps the engine's own styling unchanged.",
+    "            '.message_inner[data-kag3-fit]>p,' +",
+    "            '.message_inner[data-kag3-fit]>p>span{font-size:inherit !important;' +",
+    "            'line-height:inherit !important}';",
     "          (document.head || document.documentElement).appendChild(s);",
     "        } catch (e) {}",
     "      })();",
-    "      // KAG3 [button graphic=X] art lives in bgimage/fgimage (mirrored",
-    "      // into image/ during conversion); Tyrano loads it from",
-    "      // ./data/image/ without appending an extension, so resolve the",
-    "      // extensionless graphic name through the asset map too.",
+    "      // ---- message text stays inside its window ----------------------",
+    "      // KAG3 sets a tight line height; Tyrano's default (about 1.6em) is",
+    "      // taller, so the same three-line message can outgrow the message",
+    "      // window and paint over the system buttons at the bottom right.",
+    "      // Re-fit by squeezing in this order: line height towards KAG3's",
+    "      // ~1.25em, then the font size, and rely on the overflow:hidden rule",
+    "      // as the last resort. Everything is read from the element's own",
+    "      // computed style, so the fit adapts to whatever geometry a game uses",
+    "      // (this corpus' window is about 839x115 at 28px).",
+    "      window.__kag3_fit_message = function (el) {",
+    "        try {",
+    "          if (!el || !el.clientHeight) return false;",
+    "          var span = el.querySelector('.current_span') || el.querySelector('p');",
+    "          // The scale currently applied by us, so the engine's own per-message",
+    "          // font size can be recovered (it lives in the span's inline style and",
+    "          // stays readable even while our inheritance rule is active).",
+    "          var k = parseFloat(el.getAttribute('data-kag3-k') || '1') || 1;",
+    "          // Base font size for THIS message: prefer the engine's own inline",
+    "          // declaration on the span (our scaling never touches it). Only a",
+    "          // computed value carries our own scale, so only that one needs the",
+    "          // division -- dividing an inline value would double-correct it.",
+    "          var inlineFs = (span && span.style) ? (parseFloat(span.style.fontSize) || 0) : 0;",
+    "          var want;",
+    "          if (inlineFs) {",
+    "            want = inlineFs;",
+    "          } else {",
+    "            want = (parseFloat(getComputedStyle(span || el).fontSize) || 28) / k;",
+    "          }",
+    "          // measure with nothing applied and no inline size of our own",
+    "          el.removeAttribute('data-kag3-fit');",
+    "          el.removeAttribute('data-kag3-k');",
+    "          el.style.fontSize = '';",
+    "          el.style.lineHeight = '';",
+    "          var fits = function () { return el.scrollHeight <= el.clientHeight + 1; };",
+    "          if (fits()) return false;",
+    "          // squeeze: a KAG3-like unitless line height (it follows the font",
+    "          // size, keeping the search monotone), then the font in 4% steps",
+    "          var scale = 1;",
+    "          el.setAttribute('data-kag3-fit', '1');",
+    "          el.style.lineHeight = '1.25';",
+    "          el.style.fontSize = want + 'px';",
+    "          while (scale > 0.72 && !fits()) {",
+    "            scale -= 0.04;",
+    "            el.style.fontSize = (want * scale) + 'px';",
+    "          }",
+    "          el.setAttribute('data-kag3-k', String(scale));",
+    "          return true;",
+    "        } catch (e) { return false; }",
+    "      };",
+    "      // Fire on any DOM change but only run after the text settles: the",
+    "      // typewriter rewrites the message every frame, and measuring there",
+    "      // would force a layout per frame.",
+    "      (function () {",
+    "        try {",
+    "          var t = null;",
+    "          var run = function () {",
+    "            t = null;",
+    "            $('.message_inner').each(function () { window.__kag3_fit_message(this); });",
+    "          };",
+    "          new MutationObserver(function () {",
+    "            if (t) clearTimeout(t);",
+    "            t = setTimeout(run, 150);",
+    "          }).observe(document.body, { childList: true, subtree: true, characterData: true });",
+    "        } catch (e) {}",
+    "      })();",
+    "      // KAG3 [button graphic=X] art lives in bgimage/fgimage; the",
+    "      // dispatcher hook above already resolved pm.graphic to",
+    "      // '../<dir>/<file>' through the asset map. Do not resolve it a",
+    "      // second time here: assigning the bare map value made Tyrano",
+    "      // prepend its own folder and request",
+    "      // ./data/image/bgimage/x.png (measured 404 on every system button).",
     "      var _btn = kag.ftag.master_tag && kag.ftag.master_tag.button;",
     "      if (_btn && _btn.start) {",
     "        var _btns = _btn.start;",
     "        _btn.start = function (pm) {",
-    "          var g = pm && pm.graphic ? String(pm.graphic) : '';",
-    "          if (g && !/[.]/.test(g) && g.indexOf('http') !== 0) {",
-    "            var r = __kag3_assets()[g.toLowerCase()];",
-    "            if (r) { __kag3_log('button graphic ' + g + ' -> ' + r); pm.graphic = r; }",
+    "          // Safety net for graphics whose name is built at runtime",
+    "          // (graphic=\"&tf.x\"): the conversion-time rewrite cannot see",
+    "          // those. Delegates to the very same resolver as the dispatcher",
+    "          // hook, so the asset-map lookup has one implementation.",
+    "          if (pm && pm.graphic) {",
+    "            var _g = __kag3_asset_path(pm.graphic);",
+    "            if (_g !== pm.graphic) pm.graphic = _g;",
     "          }",
     "          // KAG3 '[current layer=messageN][locate x=0 y=0][button]'",
     "          // anchors the button at the message area origin; Tyrano puts",
@@ -1345,6 +1429,10 @@ RUNTIME_SHIM_IIFE = "\n".join([
 # ---------------------------------------------------------------------------
 
 STORAGE_ATTR_RE = re.compile(r'(storage\s*=\s*)(?:"([^"]*)"|\'([^\']*)\'|([^\s>\]]+))')
+# KAG3 [button graphic=X] loads its art through the image folder as well, so it
+# needs the same treatment as storage= (only `button` uses graphic= in this
+# corpus -- measured 70 sites).
+GRAPHIC_ATTR_RE = re.compile(r'(graphic\s*=\s*)(?:"([^"]*)"|\'([^\']*)\'|([^\s>\]]+))')
 
 
 def _wait_to_waitskip(m):
@@ -1507,6 +1595,42 @@ def _convert_exp(exp):
     return exp
 
 
+def _strip_comment_tail(line):
+    """Drop a KAG3 trailing `;` comment from a line.
+
+    KAG3 treats an unquoted `;` as a comment wherever it appears in a line --
+    this game's script writes `[er];`, `[endmacro];` and even a backslash
+    followed by `;` for that reason. TyranoScript only ignores `;` at the START of a line, so a
+    surviving tail is parsed as message text and printed into the window.
+
+    Only a tail whose preceding text ends with `]` (i.e. it follows a tag) or
+    with a stray line-continuation backslash is removed, so a `;` inside an
+    attribute value (`exp="{a:1;b:2}"`) or inside dialogue text is never
+    touched.
+    """
+    i, n, quote = 0, len(line), ""
+    if line.lstrip().startswith(";"):
+        return line
+    while i < n:
+        c = line[i]
+        if quote:
+            if c == "\\":
+                i += 2
+                continue
+            if c == quote:
+                quote = ""
+        elif c in "\"'":
+            quote = c
+        elif c == ";":
+            before = line[:i].rstrip()
+            if before.endswith("\\"):
+                before = before[:-1].rstrip()
+            if before.endswith("]"):
+                return before + line[len(line.rstrip("\r\n")):]
+        i += 1
+    return line
+
+
 def _strip_continuation(line, in_script):
     """Remove KAG3 line-continuation backslashes (trailing '\').
 
@@ -1550,10 +1674,13 @@ def convert_ks_line(line, unpacked, macros, in_script=False):
     if s.startswith("*"):
         return line
     if s.startswith("@"):
-        # @tag syntax -> [tag]
-        return "[" + s[1:] + "]"
+        # @tag syntax -> [tag]. The line ending must survive: without it the
+        # next source line is glued onto this one (a following `;` comment then
+        # ends up mid-line, where Tyrano prints it as dialogue).
+        return "[" + s[1:] + "]" + line[len(line.rstrip("\r\n")):]
+    line = _strip_comment_tail(line)
     # bare text line: keep
-    if not s.startswith("["):
+    if not line.strip().startswith("["):
         return line
     # tag line: rewrite storage= attributes to include extensions for
     # ASSET tags only ([image]/[bg]/[playse]/[playbgm]/[movie]/...). KAG3
@@ -1569,6 +1696,18 @@ def convert_ks_line(line, unpacked, macros, in_script=False):
             lambda m: m.group(1) + '"' + _find_asset(unpacked, m.group(2) or m.group(3) or m.group(4) or "") + '"',
             line,
         )
+        if tag_name in ("button", "glink"):
+            # The button art is loaded by the engine through ./data/<folder>/,
+            # and Tyrano's own scenario runner calls master_tag[x].start
+            # directly (kag.tag.js nextOrder) so a runtime dispatcher hook is
+            # not guaranteed to see the tag. Rewriting here is dispatch-proof:
+            # _find_asset yields '../bgimage/X.PNG' and $.parseStorage pops the
+            # '..' segment, so `[button graphic="history_bot"]` lands on
+            # data/bgimage/HISTORY_bot.png instead of data/image/history_bot.
+            line = GRAPHIC_ATTR_RE.sub(
+                lambda m: m.group(1) + '"' + _find_asset(unpacked, m.group(2) or m.group(3) or m.group(4) or "") + '"',
+                line,
+            )
     line = re.sub(
         r'(exp|cond)\s*=\s*"([^"]*)"',
         lambda m: '%s="%s"' % (m.group(1), tjs2js.convert_expr(m.group(2))),
@@ -1684,7 +1823,13 @@ def _replace_layer_image(part):
         return part
     pm = re.search(r'\bpage\s*=\s*("(?:[^"]*)"|\'(?:[^\']*)\'|[^\s\]]+)', attrs)
     page = " page=%s" % pm.group(1) if pm else ""
-    return "[freeimage layer=%s%s]%s" % (lm.group(1), page, part.strip())
+    # Keep the original line ending: dropping it glues the NEXT source line
+    # onto this one, and a following `;` comment then lands in the middle of
+    # the tag line, where Tyrano parses it as dialogue text (KAG3 only treats
+    # `;` at the start of a line as a comment). That surfaced as comments
+    # being printed into the message window.
+    tail = part[len(part.rstrip("\r\n")):]
+    return "[freeimage layer=%s%s]%s%s" % (lm.group(1), page, part.strip(), tail)
 
 
 def _scan_tags(text):
@@ -1832,6 +1977,35 @@ def _balance_if_endif(lines):
 
 
 
+def _finalize_output_lines(lines):
+    """Last pass over the converted scenario: one line in, one line out.
+
+    Two invariants, both learned from real defects:
+
+    * no non-script line may end with a KAG3 `;` comment tail -- Tyrano only
+      ignores `;` at the start of a line, so a surviving tail is printed as
+      message text. Runs after every rewriting pass (the stray-[endif] repair
+      rebuilds lines) so nothing can reintroduce one.
+    * every entry must carry a line ending. An entry without one glues the next
+      entry onto it; that is how original `;` comments ended up inside tag
+      lines. [iscript] bodies are JavaScript and skipped.
+    """
+    out = []
+    in_script = False
+    for ln in lines:
+        s = ln.strip()
+        if s.startswith("[iscript") or s.startswith("@iscript"):
+            in_script = True
+        elif s.startswith("[endscript") or s.startswith("@endscript"):
+            in_script = False
+        if not in_script:
+            ln = _strip_comment_tail(ln)
+        if ln and not ln.endswith(("\n", "\r")):
+            ln += "\n"
+        out.append(ln)
+    return out
+
+
 def convert_scenario_file(src_path, unpacked, out_path, macros, stats):
     # .jsfix override: hand-rewritten JS version produced by a subagent
     # (or manual fix) takes priority over automatic TJS2->JS conversion.
@@ -1903,6 +2077,7 @@ def convert_scenario_file(src_path, unpacked, out_path, macros, stats):
             continue
         out_lines.append(nl)
     out_lines = _balance_if_endif(out_lines)
+    out_lines = _finalize_output_lines(out_lines)
     with open(out_path, "w", encoding="utf-8", newline="") as f:
         f.writelines(out_lines)
     stats["files"] += 1

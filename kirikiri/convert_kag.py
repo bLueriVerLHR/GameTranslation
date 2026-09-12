@@ -224,6 +224,21 @@ VIDEO_SHIM_JS = """\
     } catch (e) {}
     __kag3_vid.playing = false;
   };
+  // Tyrano's [layermode_movie] sets `min-width/height: 100%` AFTER applying
+  // width/height, so an explicit KAG3 box ([video width=800 height=600]) is
+  // silently overridden and the movie fills the whole canvas.  Measured:
+  // element 1024x768 (canvas) before, 800x600 after clearing min-*.  KAG3
+  // scales the frame INTO the box, so object-fit: contain reproduces that
+  // instead of stretching it.
+  var __kag3_vid_fit = function () {
+    try {
+      __kag3_vid_el().each(function () {
+        this.style.minWidth = '0';
+        this.style.minHeight = '0';
+        this.style.objectFit = 'contain';
+      });
+    } catch (e) {}
+  };
 
   tyrano.plugin.kag.tag['video'] = {
     start: function (pm) {
@@ -285,6 +300,7 @@ VIDEO_SHIM_JS = """\
       __kag3_vid.playing = true;
       try {
         kag.ftag.startTag('layermode_movie', opt);
+        __kag3_vid_fit();
       } catch (e) {
         __kag3_log('playvideo ERROR: ' + e);
         __kag3_vid.playing = false;

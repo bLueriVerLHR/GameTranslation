@@ -191,6 +191,63 @@ FAST_SKIP_SHIM_JS = '''
 '''
 
 
+def _strip_js_comments(text):
+    """Remove JS comments so a scan cannot mistake commented-out code for a real
+    registration.
+
+    This engine keeps several tags as COMMENTED-OUT definitions, e.g.
+    `//スタイル変更は未サポート` followed by `/* tyrano.plugin.kag.tag["style"] = ... */`.
+    Matching those made the shim drop its no-op for `[style]` while the engine
+    does not implement it either, so every `[style]` (59 call sites) raised
+    "tag style does not exist" -- a Tyrano alert() that BLOCKS the page (the
+    reported popup: no sound, nothing advances, browser says unresponsive).
+    """
+    out = []
+    i, n = 0, len(text)
+    state = "code"
+    while i < n:
+        c = text[i]
+        two = text[i:i + 2]
+        if state == "code":
+            if two == "//":
+                state = "line"
+                i += 2
+                continue
+            if two == "/*":
+                state = "block"
+                i += 2
+                continue
+            if c in "\"'":
+                quote = c
+                out.append(c)
+                i += 1
+                while i < n:
+                    out.append(text[i])
+                    if text[i] == "\\":
+                        i += 2
+                        out.append(text[i - 1] if i - 1 < n else "")
+                        continue
+                    if text[i] == quote:
+                        i += 1
+                        break
+                    i += 1
+                continue
+            out.append(c)
+            i += 1
+        elif state == "line":
+            if c == "\n":
+                state = "code"
+                out.append(c)
+            i += 1
+        else:  # block
+            if two == "*/":
+                state = "code"
+                i += 2
+                continue
+            i += 1
+    return "".join(out)
+
+
 def engine_tag_names(engine_dir):
     """Every tag name the TyranoScript engine itself registers.
 
@@ -223,12 +280,49 @@ def engine_tag_names(engine_dir):
                             errors="replace").read()
             except OSError:
                 continue
+            text = _strip_js_comments(text)
             for pat in pats:
                 found.update(m.lower() for m in pat.findall(text))
     return found
 
 
-def _shim_js(macros=(), engine_dir=None):
+def collect_scene_tags(unpacked):
+    """Every tag name the scenarios actually use (outside iscript/comments).
+
+    Used to guarantee the build can never hit Tyrano's undefined_tag error: any
+    name the corpus uses that neither the engine nor a game macro provides is
+    registered as a no-op. That error is shown through alert(), which BLOCKS the
+    page -- measured as repeated popups, no sound and "page unresponsive".
+    """
+    tags = set()
+    root = unpacked
+    for dirpath, _dirs, files in os.walk(root):
+        for fn in files:
+            if not fn.lower().endswith(".ks"):
+                continue
+            path = os.path.join(dirpath, fn)
+            try:
+                raw = open(path, "rb").read()
+                text = raw.decode(detect_encoding(raw), errors="replace")
+            except OSError:
+                continue
+            in_script = False
+            for line in text.splitlines():
+                s = line.strip()
+                if s.startswith("[iscript") or s.startswith("@iscript"):
+                    in_script = True
+                    continue
+                if s.startswith("[endscript") or s.startswith("@endscript"):
+                    in_script = False
+                    continue
+                if in_script or s.startswith(";"):
+                    continue
+                for m in re.finditer(r"\[([a-z_][a-z0-9_]*)", line, re.I):
+                    tags.add(m.group(1).lower())
+    return tags
+
+
+def _shim_js(macros=(), engine_dir=None, used_tags=None):
     """Generate the plugin js registering KAG3-only tags as no-ops.
 
     Only tags that TyranoScript does not implement AND are not game-defined
@@ -242,7 +336,12 @@ def _shim_js(macros=(), engine_dir=None):
     # disappear).
     real = set(VIDEO_TAGS)
     engine_tags = engine_tag_names(engine_dir) if engine_dir else set()
-    names = [n for n in SHIM_TAG_NAMES
+    # Anything the corpus uses that neither the engine nor a game macro provides
+    # gets a no-op too, so a missing tag can never raise Tyrano's blocking
+    # alert(). SHIM_TAG_NAMES alone is a hand-written list and missed names
+    # (measured: [style] with 59 call sites).
+    candidates = set(SHIM_TAG_NAMES) | {t.lower() for t in (used_tags or set())}
+    names = [n for n in sorted(candidates)
              if n.lower() not in macros and n.lower() not in real
              and n.lower() not in engine_tags]
     lines = [
@@ -2744,7 +2843,7 @@ def main():
     # name -> converted movie, for the KAG3 video shim ([openvideo storage=X])
     asset_video_js = "window.__kag3_videos = " + json.dumps(
         video_map, ensure_ascii=False) + ";\n"
-    shim_js, shim_n = _shim_js(macros, args.engine)
+    shim_js, shim_n = _shim_js(macros, args.engine, collect_scene_tags(args.unpacked))
     runtime_shim = "\n".join([
         "window.__kag3_portrait = " + ("true" if args.portrait else "false") + ";",
         RUNTIME_SHIM_IIFE,

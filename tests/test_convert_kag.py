@@ -814,6 +814,57 @@ def test_se_channels_are_backed_by_real_audio():
     assert "var rel = am[__kag3_stem(st)] || am[st.toLowerCase()];" in js
 
 
+def test_engine_scan_ignores_commented_out_registrations(tmp_path):
+    """A commented-out registration is not a registration.
+
+    This engine keeps `//スタイル変更は未サポート` followed by a commented-out
+    `tyrano.plugin.kag.tag["style"] = {...}`. Treating that as real made the shim
+    drop its no-op for [style] while the engine lacks the tag too, so every
+    [style] raised "tag style does not exist" -- a Tyrano alert() that BLOCKS the
+    page (reported as repeated popups, no sound, browser says unresponsive).
+    """
+    eng = tmp_path / "tyrano" / "plugins" / "kag"
+    eng.mkdir(parents=True)
+    (eng / "kag.tag.js").write_text(
+        '//style changes are not supported\n'
+        '/*\n'
+        'tyrano.plugin.kag.tag["style"] = { start: function () {} };\n'
+        '*/\n'
+        'tyrano.plugin.kag.tag["real"] = { start: function () {} };\n',
+        encoding="utf-8",
+    )
+    names = ck.engine_tag_names(str(tmp_path))
+    assert "real" in names
+    assert "style" not in names, "a commented-out registration must not count"
+
+
+def test_js_comment_stripper():
+    # a line comment is removed but the line break survives
+    line = ck._strip_js_comments("//a\nb")
+    assert "a" not in line and "b" in line
+    assert "style" not in ck._strip_js_comments('/* tag["style"] = 1; */')
+    # a string literal keeps its content, including // and /*
+    keep = ck._strip_js_comments('var u = "http://x/*y";')
+    assert "http://x/*y" in keep
+    # code after an unterminated-looking block is still stripped
+    assert "q" not in ck._strip_js_comments("/*\nq\n*/z").replace("z", "")
+
+
+def test_style_and_wq_keep_their_noops():
+    """Regression guard for the blocking-popup defect: the engine does not
+    implement [style] (its definition is commented out) and [style] appears 59
+    times in this corpus, so the shim must keep providing it."""
+    eng = os.path.join(".tools", "tyranoscript")
+    if not os.path.isdir(eng):
+        pytest.skip("engine source not present")
+    js, _n = ck._shim_js((), eng)
+    assert 'define("style")' in js
+    assert 'define("wq")' in js
+    # tags the engine really implements must NOT be shimmed
+    for real_tag in ("bg", "bgmopt", "fadeinbgm", "fadeoutse", "wa", "wb"):
+        assert ('define("%s")' % real_tag) not in js, real_tag
+
+
 def test_message_window_gets_a_translucent_backing():
     """KAG3 games usually draw a transparent message window over the CG art,
     so dialogue sits directly on the picture and is hard to read. The backing

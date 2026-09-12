@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Unit tests for the tyrano build pipeline: tyrano/build.py (asar unpack +
 save backend), tyrano/audio.py (ogg conversion + ref rewrite), tyrano/clean.py
-(MTool residue removal) and tyrano/verify.py.
+(MTool residue removal), tyrano/verify.py and the serve command's bind host.
 
 The asar steps monkeypatch tyrano.asar.extract so no Node.js is needed in
 tests; the audio conversion uses the fake ffmpeg from conftest.
@@ -370,3 +370,4 @@ class TestVerify:
             f.write(make_png_bytes(100, 100))
         problems = tv.verify(root)
         assert not any("png over 4096" in p for p in problems)
+

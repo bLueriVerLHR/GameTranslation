@@ -877,14 +877,21 @@ def test_style_and_wq_keep_their_noops():
 
 
 def test_layopt_is_a_real_implementation_not_a_noop():
-    """The engine has no [layopt] at all, so a no-op silently swallowed
-    visibility (2053 call sites) and layer offsets (112 sites). Symptom: stale
-    characters stayed on screen and the side characters of a three-character
-    shot were pushed off the frame."""
+    """The engine has no [layopt] at all, so a no-op silently swallowed layer
+    visibility (2053 call sites) and the scene could not hide a character it had
+    finished with (reported as characters staying on screen).
+
+    [layopt] must honour visible/opacity/index but NOT left/top: the game sets the
+    same offset on [image] as well, and applying both compounded it (measured a
+    -800px layer offset on top of the image offset), pushing the side characters
+    of a multi-character shot almost completely out of frame."""
     js, _n = ck._shim_js((), None, {"layopt"})
     assert '__kag3_real' in js
-    for piece in ('getLayer', 'visible', 'opacity', "j.css(\"left\"", "j.hide()"):
+    for piece in ('getLayer', 'visible', 'opacity', "j.hide()", 'z-index'):
         assert piece in js, piece
+    # no layer positioning here -- [image] carries the foreground position
+    assert 'j.css("left"' not in js
+    assert 'j.css("top"' not in js
 
 
 def test_layopt_never_overrides_an_engine_implementation():

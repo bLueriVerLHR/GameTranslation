@@ -370,12 +370,19 @@ def _shim_js(macros=(), engine_dir=None, used_tags=None):
     for name in sorted(names):
         lines.append('  define("%s");' % name)
     lines.append("""
-  // KAG3 [layopt] is NOT a no-op. The engine has no [layopt] at all, so the
-  // no-op was swallowing it: layer visibility (2053 sites) never changed, so
-  // every character a scene had ever loaded stayed on screen, and layer
-  // offsets (112 sites, e.g. `[layopt layer=lay_ch_left left=-200 top=0]`)
-  // were lost, pushing the side characters of a three-character shot off the
-  // frame.
+  // KAG3 [layopt] is NOT a no-op (the engine has no [layopt] at all), but it is
+  // also NOT a positioning tag.
+  //
+  // Measured evidence: the game sets the SAME offset twice --
+  //   [layopt layer=lay_ch_left left=&f.left_x top=&f.left_y]
+  //   [image  layer=lay_ch_left left=&f.left_x top=&f.left_y storage=...]
+  // and its own KAG3 docs (system/Config.tjs) describe [image]'s position as the
+  // foreground layer position while [position] is what carries left/top for
+  // MESSAGE layers (`[position layer=message1 frame=... left=0 top=599]`).
+  // Applying left/top here compounded the offset (measured -800px layer offset on
+  // top of the image offset), pushing the side characters of a multi-character
+  // shot almost completely off the frame. So: honour visibility/opacity/index,
+  // leave position to [image].
   (function () {
     var L = tyrano.plugin.kag.tag["layopt"];
     if (!L || L.__kag3_real) return;   // engine implements it -> engine wins
@@ -387,8 +394,7 @@ def _shim_js(macros=(), engine_dir=None, used_tags=None):
       return isNaN(n) ? NaN : n;
     };
     L.__kag3_real = true;
-    L.pm = { layer: "", page: "fore", visible: "", opacity: "", left: "",
-             top: "", index: "" };
+    L.pm = { layer: "", page: "fore", visible: "", opacity: "", index: "" };
     L.start = function (pm) {
       var name = String(pm.layer == null ? "" : pm.layer);
       if (name !== "" && name !== "base") {
@@ -399,9 +405,6 @@ def _shim_js(macros=(), engine_dir=None, used_tags=None):
           else if (isFalse(pm.visible)) j.hide();
           var op = num(pm.opacity);
           if (!isNaN(op)) j.css("opacity", Math.max(0, Math.min(1, op / 255)));
-          var lf = num(pm.left), tp = num(pm.top);
-          if (!isNaN(lf)) j.css("left", lf + "px");
-          if (!isNaN(tp)) j.css("top", tp + "px");
           var ix = num(pm.index);
           if (!isNaN(ix)) j.css("z-index", ix);
         }

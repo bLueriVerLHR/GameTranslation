@@ -110,3 +110,27 @@ def test_cli_arguments_reach_run(monkeypatch, port, states):
     monkeypatch.setattr(G, "run", fake)
     G.main(["--port", str(port), "--states", str(states)])
     assert seen == {"port": port, "states": states}
+
+
+def test_detects_a_character_pushed_almost_off_screen():
+    """Owner report: the side characters of a multi-character shot are invisible.
+    The measured cause was a compounded offset (layer -800px on top of the
+    image offset)."""
+    s = snap()
+    s["imgs"] = [{"src": "image/y_t009a.png", "rect": [0, 0, 1024, 768], "z": 3000,
+                  "layerOff": "-800px/0px", "imgOff": "-800px/0px", "artVis": 5}]
+    notes = G.judge(s)
+    assert any(n.startswith("OFFSCREEN") for n in notes), notes
+
+
+def test_a_mostly_visible_character_is_not_flagged():
+    s = snap()
+    s["imgs"] = [{"src": "image/y_t003e.png", "rect": [0, 0, 1024, 768], "z": 3000,
+                  "layerOff": "0px/0px", "imgOff": "0px/0px", "artVis": 100}]
+    assert G.judge(s) == []
+
+
+def test_snap_without_artvis_is_not_judged_offscreen():
+    s = snap()
+    s["imgs"] = [{"src": "bgimage/z_t001a.png", "rect": [0, 0, 1024, 768], "z": 10}]
+    assert G.judge(s) == []

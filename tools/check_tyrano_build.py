@@ -8,6 +8,8 @@ invariants that kept regressing between automated checks and play-testing:
   Z-ORDER    nothing may paint over the dialogue text (a sprite layer outranking
              the message layer; measured once as sprite z=4000 vs text z=1001)
   OVERSCALE  no image may be drawn larger than the game canvas
+  OFFSCREEN  a character's art must not end up almost entirely outside the
+             canvas (compounded layer+image offsets did exactly this)
   FIT        each message window must contain its own text (checked window by
              window, because the name plate is a separate message layer)
   FONTSIZE   one message must not mix font sizes (the old shrink-to-fit produced
@@ -53,6 +55,7 @@ JSON.stringify((function () {
   function z(e){var n=0,p=e;while(p&&p.nodeType===1){
     var v=parseInt(getComputedStyle(p).zIndex,10); if(!isNaN(v)){n=Math.max(n,v);} p=p.parentElement;} return n;}
   var base=document.getElementById('tyrano_base');
+  var bb=base.getBoundingClientRect();
   var o={base:base?rect(base):null};
   var vis=[], fonts={};
   document.querySelectorAll('.message_inner span').forEach(function(s){
@@ -84,7 +87,27 @@ JSON.stringify((function () {
     var cs=getComputedStyle(im);
     if(cs.display==='none'||cs.visibility==='hidden'||parseFloat(cs.opacity)<0.05)return;
     if(!im.naturalWidth)return;
-    imgs.push({src:String(im.src).split('/').slice(-2).join('/'), rect:R(b), z:z(im)});});
+    var o={src:String(im.src).split('/').slice(-2).join('/'), rect:R(b), z:z(im),
+           layerOff:(im.parentElement.style.left||'0px')+'/'+(im.parentElement.style.top||'0px'),
+           imgOff:(im.style.left||'0px')+'/'+(im.style.top||'0px')};
+    // how much of the ACTUAL art sits inside the canvas (alpha bounding box)
+    if(/^[ayz]_t\d/.test(String(im.src).split('/').pop())){
+      try{
+        var w=160,h=120,cv=document.createElement('canvas');cv.width=w;cv.height=h;
+        var g=cv.getContext('2d');g.drawImage(im,0,0,w,h);
+        var d=g.getImageData(0,0,w,h).data,x0=w,x1=-1,y0=h,y1=-1;
+        for(var yy=0;yy<h;yy++)for(var xx=0;xx<w;xx++){
+          if(d[(yy*w+xx)*4+3]>24){if(xx<x0)x0=xx;if(xx>x1)x1=xx;if(yy<y0)y0=yy;if(yy>y1)y1=yy;}}
+        if(x1>=0){
+          var ax0=b.left+(x0/w)*b.width, ax1=b.left+((x1+1)/w)*b.width;
+          var ay0=b.top+(y0/h)*b.height, ay1=b.top+((y1+1)/h)*b.height;
+          var vw=Math.max(0,Math.min(ax1,bb.right)-Math.max(ax0,bb.left));
+          var vh=Math.max(0,Math.min(ay1,bb.bottom)-Math.max(ay0,bb.top));
+          o.artVis=Math.round(100*(vw*vh)/Math.max(1,(ax1-ax0)*(ay1-ay0)));
+        }
+      }catch(e){}
+    }
+    imgs.push(o);});
   o.imgs=imgs;
   var ctrl=[];
   document.querySelectorAll('#tyrano_base *').forEach(function(e){
@@ -118,6 +141,16 @@ def judge(snap):
             if w > (bb[2] - bb[0]) * 1.02 or h > (bb[3] - bb[1]) * 1.02:
                 notes.append("OVERSCALE: %s %sx%s > canvas %sx%s" % (
                     im["src"], w, h, bb[2] - bb[0], bb[3] - bb[1]))
+        # OFFSCREEN: a character whose actual art is almost entirely outside the
+        # canvas (reported as \"the side characters of a multi-character shot are
+        # not visible\"). layerOff/imgOff are reported: a compounded offset is the
+        # usual cause.
+        for im in snap["imgs"]:
+            vis = im.get("artVis")
+            if vis is not None and vis < 40:
+                notes.append("OFFSCREEN: %s only %d%% of its art is on screen "
+                             "(layerOff=%s imgOff=%s)" % (
+                                 im["src"], vis, im.get("layerOff"), im.get("imgOff")))
         for win in snap.get("windows", []):
             wr, wt = win["rect"], win["text"]
             if wr[2] - wr[0] <= 20:

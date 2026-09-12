@@ -846,19 +846,22 @@ def test_skip_speed_is_configured_below_the_template_default():
 
 
 def test_fast_skip_driver_gate_and_scheduling():
-    """The driver must keep the gate that was measured to work.
+    """The driver must keep the gate that was measured to work, and must never
+    spin.
 
     It advances only when the topmost element at the screen centre is the event
-    layer (so choices/menus are never skipped through; measured 13.7 tags/s).
+    layer, so choices/menus are never skipped through (measured 13.7 tags/s).
     A wider gate was tried and advanced NOTHING (every tick refused during the
-    opening), so the strict rule stays and the rate comes from self-scheduling
-    plus config.skipSpeed = 1. The message window's visibility must NOT be a
-    condition: sections that run with a hidden window (common in openings)
-    then refused every tick and skip appeared to do nothing at all.
+    opening). A self-scheduling setTimeout(tick, 0) version was also tried and
+    was wrong: a 0 ms loop keeps the main thread saturated (the browser reports
+    "page unresponsive" and audio is starved). It runs on a plain interval and
+    returns immediately unless skip is on. The message window's visibility must
+    NOT be a condition: hidden-window sections then refused every tick and skip
+    appeared to do nothing at all.
     """
     js = ck.FAST_SKIP_SHIM_JS
-    assert 'indexOf("layer_event_click") >= 0' in js
-    assert "setTimeout(tick, 0)" in js  # self-scheduling, not a 30 ms interval
-    assert "setInterval" not in js
+    assert 'indexOf("layer_event_click")' in js
+    assert "setInterval" in js, "a 0 ms self-scheduling loop saturates the main thread"
+    assert "setTimeout(tick, 0)" not in js
     assert "is_strong_stop" in js
     assert "is_hide_message" not in js

@@ -161,32 +161,32 @@ TAG_MAP = {
 #
 # This drives the flow while skip is on. Gate (measured to work): advance only
 # when the topmost element at the screen centre is the event layer, i.e. when a
-# plain centre click would advance anyway. Choice screens, menus and clickable
-# maps put their elements above that layer and are therefore NOT skipped
-# through. A wider gate was tried and did not advance at all (0 tags/s during
-# the opening because every tick was refused), so the strict rule stays; the
-# rate comes from self-scheduling instead of a fixed interval.
+# plain centre click would advance anyway, so choices/menus are never skipped
+# through.
+#
+# The driver runs on a plain interval and does nothing unless skip is on. A
+# self-scheduling setTimeout(tick, 0) version was tried for a higher rate and
+# was WRONG: a 0 ms loop keeps the main thread saturated, which the browser
+# reports as "page unresponsive" and which starves audio, so the game looked
+# wedged and silent even for a player who never pressed skip. Never spin.
 FAST_SKIP_SHIM_JS = '''
 (function () {
   // TYRANO.kag does not exist yet while plugins are being parsed, so resolve
   // it inside the tick rather than bailing out at load time.
-  var tick = function () {
+  setInterval(function () {
     try {
       var kag = window.TYRANO && TYRANO.kag;
-      if (kag && kag.stat && kag.ftag && kag.stat.is_skip &&
-          !kag.stat.is_strong_stop && !kag.stat.is_stop &&
-          !kag.stat.is_adding_text && !kag.stat.is_click_text &&
-          typeof kag.tmp.cut_nextorder !== "function") {
-        var top = document.elementFromPoint(Math.round(window.innerWidth / 2),
-                                            Math.round(window.innerHeight / 2));
-        if (top && String(top.className).indexOf("layer_event_click") >= 0) {
-          kag.ftag.nextOrder();
-        }
-      }
+      if (!kag || !kag.stat || !kag.ftag) return;
+      if (!kag.stat.is_skip) return;
+      if (kag.stat.is_strong_stop || kag.stat.is_stop) return;
+      if (kag.stat.is_adding_text || kag.stat.is_click_text) return;
+      if (typeof kag.tmp.cut_nextorder === "function") return;
+      var top = document.elementFromPoint(Math.round(window.innerWidth / 2),
+                                        Math.round(window.innerHeight / 2));
+      if (!top || String(top.className).indexOf("layer_event_click") < 0) return;
+      kag.ftag.nextOrder();
     } catch (e) {}
-    setTimeout(tick, 0);
-  };
-  setTimeout(tick, 0);
+  }, 25);
 })();
 '''
 
@@ -755,6 +755,7 @@ MAP_ENGINE_JS = """\
     if (!r) r = map[__kag3_stem(key)];
     return r || null;
   };
+  var __kag3_jump_token = 0;
   var __kag3_jump = function (kag, storage, target) {
     try {
       // KAG3 map jump = window.process -> loadScenario+goToLabel+run,
@@ -774,7 +775,19 @@ MAP_ENGINE_JS = """\
         }
         if (kag.tmp && kag.tmp.wait_id) { clearTimeout(kag.tmp.wait_id); kag.tmp.wait_id = null; }
       } catch (e1) {}
-      kag.ftag.startTag('jump', { storage: String(storage || ''), target: String(target || '') });
+      // The tag pump must not be re-entered from inside the click handler that
+      // triggered the jump (defer one tick). NOTE: deferring did NOT fix the
+      // "page unresponsive" wedge (measured 4/4 still wedged); the actual cause
+      // was the fast-skip driver spinning on setTimeout(0). Kept because
+      // re-entering the pump from inside an event handler is still wrong.
+      var my = ++__kag3_jump_token;
+      setTimeout(function () {
+        if (my !== __kag3_jump_token) return;
+        try {
+          __kag3_log('jump ' + storage + ' ' + target);
+          kag.ftag.startTag('jump', { storage: String(storage || ''), target: String(target || '') });
+        } catch (e) {}
+      }, 0);
     } catch (e) {}
   };
   var __kag3_target_is_ui = function (e) {

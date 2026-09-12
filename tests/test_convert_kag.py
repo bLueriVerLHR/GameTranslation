@@ -2,6 +2,7 @@
 
 import os
 import sys
+import collections
 from collections import Counter
 from pathlib import Path
 
@@ -642,9 +643,81 @@ def test_freeimage_is_not_double_prefixed(fake_unpacked):
     assert out.strip() == "[freeimage layer=3]", out
 
 
+def test_layer_clear_keeps_the_source_line_ending(fake_unpacked):
+    """Injecting the [freeimage] clear must not eat the line ending.
+
+    Dropping it glues the next source line onto this one. A `;` comment is a
+    whole-line comment for KAG3 and for Tyrano's parser, but once it lands in
+    the middle of a tag line Tyrano reads it as message text -- which is
+    exactly how comments from the original script started showing up as
+    dialogue in the message window.
+    """
+    out = ck.convert_ks_line('[image layer=3 storage="y_t003e"]\r\n', fake_unpacked, ())
+    assert out.endswith("\r\n"), repr(out)
+    out_lf = ck.convert_ks_line('[image layer=3 storage="y_t003e"]\n', fake_unpacked, ())
+    assert out_lf.endswith("\n"), repr(out_lf)
+
+
+def test_layer_clear_keeps_a_line_without_ending_bare(fake_unpacked):
+    """A line that arrives without an ending must not gain one."""
+    out = ck.convert_ks_line('[image layer=3 storage="y_t003e"]', fake_unpacked, ())
+    assert not out.endswith(("\n", "\r")), repr(out)
+
+
+def test_comment_after_a_tag_line_stays_on_its_own_line(fake_unpacked, tmp_path):
+    r"""End-to-end guard for the reported defect: a backslash-continued tag
+    line followed by a `;` comment must not merge, and the output must not
+    carry a mid-line `;` (which Tyrano would print as dialogue)."""
+    src = tmp_path / "scenario"
+    ks = src / "t.ks"
+    ks.write_text(
+        '[image layer=&sf.lay_ch_left storage=&f.ini]\\\r\n'
+        '[image layer=&sf.lay_ch_center storage=&f.ini]\\\r\n'
+        ';画像ファイル名のクリア\r\n'
+        '[eval exp="f.t_left=f.ini"]\\\r\n',
+        encoding="cp932",
+    )
+    out_path = tmp_path / "out.ks"
+    ck.convert_scenario_file(str(ks), str(tmp_path), str(out_path), {},
+                             collections.defaultdict(int))
+    out_lines = out_path.read_text(encoding="utf-8").splitlines()
+    assert ";画像ファイル名のクリア" in out_lines, out_lines
+    glued = [l for l in out_lines if ";" in l and not l.lstrip().startswith(";")]
+    assert glued == [], glued
+
+
 # ---------------------------------------------------------------------------
 # Readability + fast-forward (play-test feedback).
 # ---------------------------------------------------------------------------
+
+
+def test_button_graphic_goes_through_the_asset_map_at_conversion_time(fake_unpacked):
+    """[button graphic=X] must be rewritten to the '../<dir>/<file>' form.
+
+    Tyrano's scenario runner dispatches plain tags by calling
+    master_tag[x].start directly (kag.tag.js nextOrder), so a runtime hook is
+    not guaranteed to see the tag. The engine then loads the graphic from
+    ./data/image/, which turned every system button into a broken-image
+    placeholder (measured: ./data/image/history_bot when the file sits at
+    data/bgimage/HISTORY_bot.png).
+    """
+    out = ck.convert_ks_line('[button graphic="telop1" exp="x()"]\n',
+                            str(fake_unpacked), set(), False)
+    # the map also accounts for format conversion (bmp -> png in the build)
+    assert 'graphic="../bgimage/telop1.png"' in out, out
+
+
+def test_button_graphic_resolution_has_one_implementation(fake_unpacked):
+    """Both hook points must delegate to __kag3_asset_path.
+
+    The dispatcher hook covers macro-generated and callback tags, the button
+    wrapper covers tags the engine dispatches itself. Neither may assign a bare
+    asset-map value ('bgimage/x.png'), which the engine would resolve to
+    ./data/image/bgimage/x.png and 404.
+    """
+    js = ck.RUNTIME_SHIM_IIFE
+    assert "pm.graphic = r;" not in js
+    assert js.count("__kag3_asset_path(pm.graphic)") == 2, js.count("__kag3_asset_path(pm.graphic)")
 
 
 def test_message_window_gets_a_translucent_backing():

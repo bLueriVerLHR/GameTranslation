@@ -730,7 +730,10 @@ def test_injected_style_statement_is_terminated():
     visible). node --check cannot see this -- it is not a syntax error.
     """
     js = ck.RUNTIME_SHIM_IIFE
-    assert "'.message_inner{overflow:hidden}';" in js, js[-600:]
+    assert "'.message_inner[data-kag3-fit]>p>span{font-size:inherit !important;'" in js
+    assert "line-height:inherit !important}'" in js
+    # the concatenated statement ends with a terminator before the append
+    assert "line-height:inherit !important}';" in js, js[-700:]
 
 
 def test_message_text_is_clipped_to_its_window():
@@ -738,15 +741,28 @@ def test_message_text_is_clipped_to_its_window():
     assert ".message_inner{overflow:hidden}" in ck.RUNTIME_SHIM_IIFE
 
 
+def test_fit_only_overrides_a_message_it_marked():
+    """The engine writes each message's font-size/line-height as inline styles
+    on the <span> (kag.tag.js), so a fit applied to .message_inner needs those
+    turned into inheritance -- but only for a marked element, otherwise an
+    unmarked message would lose the engine's own styling."""
+    js = ck.RUNTIME_SHIM_IIFE
+    assert ".message_inner[data-kag3-fit]>p," in js
+    assert "el.removeAttribute('data-kag3-fit')" in js
+    assert "el.setAttribute('data-kag3-fit', '1')" in js
+
+
 def test_message_text_is_squeezed_back_into_its_window():
     """Tyrano's default line box is taller than KAG3's, so a three-line KAG3
-    message can outgrow the window. The fit function must tighten the line
-    height first, then the font, reading the base values from the element's
-    own computed style so it adapts to any game's geometry."""
+    message can outgrow the window. The fit must measure without its own
+    overrides, recover the engine's per-message font size (stored scale in
+    data-kag3-k), then squeeze line height and font size until it fits."""
     js = ck.RUNTIME_SHIM_IIFE
     assert "window.__kag3_fit_message" in js
     assert "el.scrollHeight <= el.clientHeight + 1" in js
     assert "setTimeout(run, 150)" in js  # debounce: no per-frame reflow
+    assert "data-kag3-k" in js
+    assert "span.style.fontSize" in js  # the engine's own request is the base
 
 
 def test_message_window_gets_a_translucent_backing():

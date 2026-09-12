@@ -505,20 +505,41 @@ NOOP_PLUS_REAL_JS = r"""
             // the choice items were painted outside the backing box, where
             // overflow:hidden clipped them (measured: window at viewport y=1087 on an
             // 800px-tall page; owner: "选项文字消失了").
+            // The frame belongs to the message WINDOW, not to the layer: the layer
+            // is a full-screen div, so painting it removed the scene background and
+            // left the name plate without a box of its own (its text then centred
+            // across the whole layer).
+            var $w = j.find(".message_outer").first();
+            if (!$w.length) $w = j.find(".message_inner").first();
+            if (!$w.length) $w = j;
             if (has(pm.color)) {
-              // KAG3 frameColor 0xRRGGBB + frameOpacity 0..255
               var c = String(pm.color).replace(/^0x/i, "").replace(/^#/, "");
               if (/^[0-9a-fA-F]{6}$/.test(c)) {
                 var a = has(pm.opacity) ? num(pm.opacity, 255) : 255;
-                j.css("background-color", "rgba(" + parseInt(c.substr(0, 2), 16) + "," +
-                      parseInt(c.substr(2, 2), 16) + "," + parseInt(c.substr(4, 2), 16) + "," +
-                      Math.max(0, Math.min(1, a / 255)) + ")");
+                $w.css("background-color", "rgba(" + parseInt(c.substr(0, 2), 16) + "," +
+                       parseInt(c.substr(2, 2), 16) + "," + parseInt(c.substr(4, 2), 16) + "," +
+                       Math.max(0, Math.min(1, a / 255)) + ")");
               }
             }
             if (has(pm.frame) && typeof __kag3_asset_path === "function") {
               var fpath = __kag3_asset_path(String(pm.frame));
-              if (fpath) j.css({ "background-image": "url(" + fpath + ")",
-                                 "background-repeat": "no-repeat" });
+              if (fpath) {
+                $w.css({ "background-image": "url(" + fpath + ")",
+                         "background-repeat": "no-repeat",
+                         "background-position": "left top" });
+                // Size the window to the frame art and put it where the game asked.
+                var probe = new Image();
+                probe.onload = function () {
+                  try {
+                    $w.css({ width: probe.naturalWidth + "px",
+                             height: probe.naturalHeight + "px",
+                             position: "absolute",
+                             left: num(pm.left, 0) + "px",
+                             top: num(pm.top, 0) + "px" });
+                  } catch (e) {}
+                };
+                probe.src = fpath;
+              }
             }
             var ml = num(pm.marginl, 0), mt = num(pm.margint, 0);
             var mr = num(pm.marginr, 0), mb = num(pm.marginb, 0);
@@ -1372,6 +1393,9 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "        var r = __kag3_assets()[t.toLowerCase()];",
     "        return r ? '../' + r : s;",
     "      };",
+    "      // Expose it: the generated KAG3-tag shim is a separate script and needs",
+    "      // the same resolver for [position frame=..] and [button graphic=..].",
+    "      window.__kag3_asset_path = __kag3_asset_path;",
     "      var _resolve_storage = function (pm) {",
     "        if (!pm) return pm;",
     "        var s = pm.storage ? String(pm.storage) : '';",

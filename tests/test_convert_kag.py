@@ -720,6 +720,35 @@ def test_button_graphic_resolution_has_one_implementation(fake_unpacked):
     assert js.count("__kag3_asset_path(pm.graphic)") == 2, js.count("__kag3_asset_path(pm.graphic)")
 
 
+def test_injected_style_statement_is_terminated():
+    r"""The style injection must keep its statement terminator.
+
+    Without it JavaScript's automatic semicolon insertion reads
+    `'...' (document.head...)` as a call on the string, the TypeError is
+    swallowed by the surrounding try/catch and the whole style block silently
+    never gets injected (measured: data-kag3 missing, overflow computed as
+    visible). node --check cannot see this -- it is not a syntax error.
+    """
+    js = ck.RUNTIME_SHIM_IIFE
+    assert "'.message_inner{overflow:hidden}';" in js, js[-600:]
+
+
+def test_message_text_is_clipped_to_its_window():
+    """Hard guarantee: dialogue can never paint over the bottom-right UI."""
+    assert ".message_inner{overflow:hidden}" in ck.RUNTIME_SHIM_IIFE
+
+
+def test_message_text_is_squeezed_back_into_its_window():
+    """Tyrano's default line box is taller than KAG3's, so a three-line KAG3
+    message can outgrow the window. The fit function must tighten the line
+    height first, then the font, reading the base values from the element's
+    own computed style so it adapts to any game's geometry."""
+    js = ck.RUNTIME_SHIM_IIFE
+    assert "window.__kag3_fit_message" in js
+    assert "el.scrollHeight <= el.clientHeight + 1" in js
+    assert "setTimeout(run, 150)" in js  # debounce: no per-frame reflow
+
+
 def test_message_window_gets_a_translucent_backing():
     """KAG3 games usually draw a transparent message window over the CG art,
     so dialogue sits directly on the picture and is hard to read. The backing

@@ -72,6 +72,10 @@ GameTranslation/
 │   ├── build_tyrano_translation.py # TyranoScript：.ks 提取 → 标准工作包（整行键）
 │   ├── apply_tyrano_translation.py # TyranoScript：translated.json → 写回 .ks
 │   ├── qc_ks_kana.py          # KiriKiri：假名残留 QC（补丁树/字典值）
+│   ├── check_iscript_js.py    # KiriKiri：扫 [iscript] 块跑 node --check
+│   │                          #   （TJS→JS 转换错误不报错，只让脚本停摆）
+│   ├── transcode_video.py     # 影片 .wmv/.mpg → WebM(VP9+Opus)，带 ffprobe 自检
+│   │                          #   （convert_kag.py --video-dir 消费其输出）
 │   ├── downscale_images.py    # 把超过 4096 的 PNG 就地缩放到 ≤4096
 │   │                          #   （单一构建策略，替代旧 LowRes 变体；自动并行）
 │   ├── gen_translation_shards.py # 切成双文件块：ja.txt + zh.txt + context.md

@@ -248,7 +248,15 @@ class TestShim:
         assert 'tag["sysmenu"]' not in js
         assert 'tag["t_next"]' not in js
         assert 'tag["name_w"]' not in js
-        assert n == len(ck.SHIM_TAG_NAMES) - len(macros)
+        # Tags with a real implementation (VIDEO_TAGS) are excluded too: a
+        # no-op registration would win over the implementation and the
+        # feature would silently do nothing.
+        assert n == len(ck.SHIM_TAG_NAMES) - len(macros) - len(ck.VIDEO_TAGS)
+
+    def test_real_implementations_are_not_shimmed_as_noops(self):
+        js, _n = ck._shim_js()
+        for tag in ck.VIDEO_TAGS:
+            assert ('tag["%s"] = { start: noop }' % tag) not in js, tag
 
     def test_non_macro_kept_in_shim(self):
         js, n = ck._shim_js(macros={"bgm"})

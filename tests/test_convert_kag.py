@@ -992,3 +992,20 @@ def test_fast_skip_driver_gate_and_scheduling():
     assert "setTimeout(tick, 0)" not in js
     assert "is_strong_stop" in js
     assert "is_hide_message" not in js
+
+
+def test_ch_renders_message_text_instead_of_being_a_noop():
+    """[ch text=X] is how this game outputs BOTH dialogue and every choice item.
+    As a no-op the choice text never appeared: [SELECT_CENTER] expands to
+    [link ...][font color=0xFFFF00][ch text="%sel_1"][font color="default"][endlink]
+    so the player got an empty message with invisible clickable areas."""
+    js, _n = ck._shim_js((), None, {"ch"})
+    assert "ch.__kag3_real" in js
+    assert "kag3ch" in js                      # the appended text container
+    assert 'cssColor' in js                      # [font color=0xRRGGBB] support
+    assert 'T["font"]' in js or "T['font']" in js
+
+
+def test_font_colour_recording_is_wrapped_once():
+    js, _n = ck._shim_js((), None, {"ch"})
+    assert "__kag3_wrapped" in js

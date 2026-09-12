@@ -329,6 +329,113 @@ def collect_scene_tags(unpacked):
     return tags
 
 
+NOOP_PLUS_REAL_JS = r"""
+  // ---------------------------------------------------------------------
+  // Real implementations for tags whose no-op silently changed behaviour.
+  // ---------------------------------------------------------------------
+
+  // [layopt] is NOT a no-op: the engine has no [layopt] at all, so a no-op
+  // swallowed layer visibility (2053 call sites: characters the scene had
+  // finished with stayed on screen) .
+  //
+  // It is NOT a positioning tag either. The game writes the same offset on both
+  //   [layopt layer=lay_ch_left left=&f.left_x top=&f.left_y]
+  //   [image  layer=lay_ch_left left=&f.left_x top=&f.left_y storage=...]
+  // and its own KAG3 docs (system/Config.tjs) describe [image] as the foreground
+  // position while [position] carries left/top for MESSAGE layers (e.g.
+  // `[position layer=message1 frame=name01_ti_0 left=0 top=599]`). Applying the
+  // offset here compounded it (measured: a -800px layer offset on top of the
+  // image offset), which pushed the side characters of a multi-character shot
+  // almost completely out of frame. So: visibility/opacity/index only.
+  (function () {
+    var T = tyrano.plugin.kag.tag;
+    var L = T["layopt"];
+    if (!L || L.__kag3_real) return;        // engine implements it -> engine wins
+    var isTrue = function (v) { return v === true || String(v) === "true"; };
+    var isFalse = function (v) { return v === false || String(v) === "false"; };
+    var num = function (v) {
+      if (v === null || v === undefined || v === "") return NaN;
+      var n = parseFloat(v);
+      return isNaN(n) ? NaN : n;
+    };
+    L.__kag3_real = true;
+    L.pm = { layer: "", page: "fore", visible: "", opacity: "", index: "" };
+    L.start = function (pm) {
+      var name = String(pm.layer == null ? "" : pm.layer);
+      if (name !== "" && name !== "base") {
+        var j = null;
+        try { j = this.kag.layer.getLayer(name, pm.page || "fore"); } catch (e) { j = null; }
+        if (j && j.length) {
+          if (isTrue(pm.visible)) j.show();
+          else if (isFalse(pm.visible)) j.hide();
+          var op = num(pm.opacity);
+          if (!isNaN(op)) j.css("opacity", Math.max(0, Math.min(1, op / 255)));
+          var ix = num(pm.index);
+          if (!isNaN(ix)) j.css("z-index", ix);
+        }
+      }
+      this.kag.ftag.nextOrder();
+    };
+  })();
+
+  // [ch text=X] writes text into the CURRENT message. This game composes both
+  // dialogue and every choice item with it, so as a no-op the choice text never
+  // appeared at all: [SELECT_NORMAL] emits
+  //   [link storage=.. target=..][font color=0xFFFF00][ch text="%sel_1"]...
+  // leaving the player an empty message plus invisible clickable areas.
+  (function () {
+    var T = tyrano.plugin.kag.tag;
+    var ch = T["ch"];
+    if (!ch || ch.__kag3_real) return;
+    window.__kag3_font = window.__kag3_font || {};
+    // Remember what the engine's own [font] tag was asked for, so appended runs
+    // match the surrounding text.
+    var f = T["font"];
+    if (f && f.start && !f.__kag3_wrapped) {
+      var _fs = f.start;
+      f.__kag3_wrapped = true;
+      f.start = function (pm) {
+        if (pm) {
+          if (pm.color != null && pm.color !== "") window.__kag3_font.color = String(pm.color);
+          if (pm.size != null && pm.size !== "") window.__kag3_font.size = String(pm.size);
+        }
+        return _fs.call(this, pm);
+      };
+    }
+    var cssColor = function (v) {
+      if (v == null || v === "" || v === "default") return null;
+      var s = String(v).replace(/^0x/i, "").replace(/^#/, "");
+      return /^[0-9a-fA-F]{6}$/.test(s) ? ("#" + s) : null;
+    };
+    ch.__kag3_real = true;
+    ch.pm = { text: "", layer: "", page: "" };
+    ch.start = function (pm) {
+      try {
+        var txt = (pm && pm.text != null) ? String(pm.text) : "";
+        var $i = $(".message_inner").filter(function () {
+          return $(this).find("span").length > 0;
+        }).last();
+        if (!$i.length) $i = $(".message_inner").last();
+        if (!$i.length) { this.kag.ftag.nextOrder(); return; }
+        var $p = $i.find("p").last();
+        if (!$p.length) { $p = $('<p class="kag3ch"></p>'); $i.append($p); }
+        var $prev = $i.find("span").last();
+        var $s = $("<span></span>");
+        if ($prev.length) {
+          var st = $prev.attr("style");
+          if (st) $s.attr("style", st);
+        }
+        var col = cssColor(window.__kag3_font.color);
+        if (col) $s.css("color", col);
+        $s.text(txt);
+        $p.append($s);
+      } catch (e) {}
+      this.kag.ftag.nextOrder();
+    };
+  })();
+})();
+"""
+
 def _shim_js(macros=(), engine_dir=None, used_tags=None):
     """Generate the plugin js registering KAG3-only tags as no-ops.
 
@@ -369,50 +476,7 @@ def _shim_js(macros=(), engine_dir=None, used_tags=None):
     ]
     for name in sorted(names):
         lines.append('  define("%s");' % name)
-    lines.append("""
-  // KAG3 [layopt] is NOT a no-op (the engine has no [layopt] at all), but it is
-  // also NOT a positioning tag.
-  //
-  // Measured evidence: the game sets the SAME offset twice --
-  //   [layopt layer=lay_ch_left left=&f.left_x top=&f.left_y]
-  //   [image  layer=lay_ch_left left=&f.left_x top=&f.left_y storage=...]
-  // and its own KAG3 docs (system/Config.tjs) describe [image]'s position as the
-  // foreground layer position while [position] is what carries left/top for
-  // MESSAGE layers (`[position layer=message1 frame=... left=0 top=599]`).
-  // Applying left/top here compounded the offset (measured -800px layer offset on
-  // top of the image offset), pushing the side characters of a multi-character
-  // shot almost completely off the frame. So: honour visibility/opacity/index,
-  // leave position to [image].
-  (function () {
-    var L = tyrano.plugin.kag.tag["layopt"];
-    if (!L || L.__kag3_real) return;   // engine implements it -> engine wins
-    var isTrue = function (v) { return v === true || String(v) === "true"; };
-    var isFalse = function (v) { return v === false || String(v) === "false"; };
-    var num = function (v) {
-      if (v === null || v === undefined || v === "") return NaN;
-      var n = parseFloat(v);
-      return isNaN(n) ? NaN : n;
-    };
-    L.__kag3_real = true;
-    L.pm = { layer: "", page: "fore", visible: "", opacity: "", index: "" };
-    L.start = function (pm) {
-      var name = String(pm.layer == null ? "" : pm.layer);
-      if (name !== "" && name !== "base") {
-        var j = null;
-        try { j = this.kag.layer.getLayer(name, pm.page || "fore"); } catch (e) { j = null; }
-        if (j && j.length) {
-          if (isTrue(pm.visible)) j.show();
-          else if (isFalse(pm.visible)) j.hide();
-          var op = num(pm.opacity);
-          if (!isNaN(op)) j.css("opacity", Math.max(0, Math.min(1, op / 255)));
-          var ix = num(pm.index);
-          if (!isNaN(ix)) j.css("z-index", ix);
-        }
-      }
-      this.kag.ftag.nextOrder();
-    };
-  })();
-})();""")
+    lines.append(NOOP_PLUS_REAL_JS)
     return "\n".join(lines) + "\n", len(names)
 
 

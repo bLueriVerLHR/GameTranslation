@@ -576,7 +576,7 @@ NOOP_PLUS_REAL_JS = r"""
 })();
 """
 
-def _shim_js(macros=(), engine_dir=None, used_tags=None):
+def _shim_js(macros=(), engine_dir=None, used_tags=None, usage=None):
     """Generate the plugin js registering KAG3-only tags as no-ops.
 
     Only tags that TyranoScript does not implement AND are not game-defined
@@ -615,6 +615,16 @@ def _shim_js(macros=(), engine_dir=None, used_tags=None):
         "  };",
     ]
     for name in sorted(names):
+        rec = (usage or {}).get(name.lower()) or {}
+        attrs = sorted((rec.get("attrs") or {}).keys())
+        lines.append("")
+        lines.append("  // [%s] -- KAG3 tag, NOT implemented by TyranoScript: "
+                     "%d call site(s)." % (name, rec.get("count", 0)))
+        if attrs:
+            lines.append("  //   arguments seen: %s" % ", ".join(attrs[:12]))
+        for ex in (rec.get("examples") or [])[:2]:
+            lines.append("  //   example: %s" % ex)
+        lines.append("  //   INTENT: %s" % tag_intent(name, usage or {}))
         lines.append('  define("%s");' % name)
     lines.append(NOOP_PLUS_REAL_JS)
     return "\n".join(lines) + "\n", len(names)
@@ -3128,7 +3138,9 @@ def main():
     # name -> converted movie, for the KAG3 video shim ([openvideo storage=X])
     asset_video_js = "window.__kag3_videos = " + json.dumps(
         video_map, ensure_ascii=False) + ";\n"
-    shim_js, shim_n = _shim_js(macros, args.engine, collect_scene_tags(args.unpacked))
+    tag_usage = collect_tag_usage(args.unpacked)
+    shim_js, shim_n = _shim_js(macros, args.engine,
+                               collect_scene_tags(args.unpacked), tag_usage)
     runtime_shim = "\n".join([
         "window.__kag3_portrait = " + ("true" if args.portrait else "false") + ";",
         RUNTIME_SHIM_IIFE,
@@ -3200,9 +3212,272 @@ def main():
              stats["tlg"], stats["tlg_fail"], stats["bmp"], stats["bmp_fail"],
              stats["copied"])
     log.info("shim tags: %d; game macros: %d", stats["shim_tags"], len(macros))
+    # Intent inventory: hand-writing the real behaviour later starts from this.
+    shim_names = re.findall(r'define\("([^"]+)"\)', shim_js)
+    intents_path = write_intents(out, tag_usage, shim_names,
+                                 dropped=_DROPPED_TAGS,
+                                 degraded=SYSTEM_ISCRIPT_DROP)
+    log.info("intents -> %s (%d stubbed tags, %d dropped)",
+             os.path.basename(intents_path), len(shim_names), len(_DROPPED_TAGS))
     log.info("done -> %s", out)
     return 0
 
+
+# ---------------------------------------------------------------------------
+# Intent preservation for stubbed-out KAG3 tags.
+#
+# The converter leaves many KAG3-only tags as no-ops and drops a few constructs
+# outright. That is acceptable as a first pass, but the project must record WHAT
+# each one was supposed to do -- otherwise hand-writing the real behaviour later
+# is guesswork (owner directive: 将所有意图都保留下来，即便是空函数，也需要
+# 标注意图，方便后续撰写一样的逻辑).
+# ---------------------------------------------------------------------------
+
+# Curated intent notes, keyed by lowercase tag name. Anything not listed gets a
+# note derived from its own call sites, so nothing is silently opaque.
+KAG3_TAG_INTENT = {
+    "t_bmp": "display a character sprite: choose the left/centre/right layer from "
+             "place= and draw bmp_l/bmp_c/bmp_r on it",
+    "t_fadein": "fade a character sprite in (same placement rules as t_bmp)",
+    "t_fadeout": "fade a character sprite out",
+    "t_off": "hide a character (all, or one side) and clear its saved state",
+    "t_move": "move a character sprite to a new position",
+    "t_move2": "move a character sprite along both axes",
+    "t_mov_init": "reset all character sprite positions to their defaults",
+    "t_pos_init": "reset the stored character positions",
+    "t_pos_chg": "change the stored character positions",
+    "t_pos_tai": "swap two characters' positions",
+    "t_pos_ret": "restore previously saved character positions",
+    "t_alpha_set": "set a character's alpha (transparency)",
+    "t_sepia_set": "set a character's sepia (greyscale tint) amount",
+    "t_flipud_set": "set a character's vertical flip",
+    "t_ripple_in": "character entrance with a ripple effect",
+    "t_ripple_out": "character exit with a ripple effect",
+    "t_sepia": "apply a sepia tone to the current characters",
+    "t_ripple": "apply a ripple (wave) distortion to the characters",
+    "m_quake": "screen shake with the given amplitude and duration",
+    "m_quake_in": "screen shake entrance",
+    "m_fadein": "fade the whole screen in",
+    "m_fadeout": "fade the whole screen out",
+    "m_tr_in": "screen transition in",
+    "m_tr_out": "screen transition out",
+    "m_mos_in": "mosaic transition in",
+    "m_mos_out": "mosaic transition out",
+    "m_turn_in": "page-turn transition in",
+    "m_turn_out": "page-turn transition out",
+    "m_wave_in": "wave transition in",
+    "m_wave_out": "wave transition out",
+    "flash": "white/colour flash overlay for the given duration",
+    "quake": "screen shake",
+    "mask_chips": "draw the masking overlay used by the adult scenes",
+    "cgroom_bmp": "draw a CG inside the gallery room",
+    "slide_wait": "wait until the current slide/gallery animation finishes",
+    "rnd_tr": "pick one of the given transitions at random",
+    "tr": "scripted transition (method table lives in Config.tjs)",
+    "bgm_fs": "fade the BGM out to silence",
+    "bgm_fs_w": "fade the BGM out to silence and wait",
+    "bgm_fi": "fade the BGM in",
+    "bgm_l_s": "loop a BGM segment",
+    "tips_off": "close the tips (hint) window",
+    "tips_on": "open the tips (hint) window",
+    "tips_w_on": "open the wide tips window",
+    "mes_tips_on": "show a message inside the tips window",
+    "mes_tips_off": "hide the tips message",
+    "name_tips_on": "show the speaker name inside the tips window",
+    "name_tips_off": "hide the tips speaker name",
+    "mes_size": "switch the message window size (0 = normal, 1 = small/wide)",
+    "mes_wide": "switch the message window to its wide layout",
+    "anime_disp": "run a scripted animation sequence",
+    "anime_bot": "run an animation sequence from the bottom bar",
+    "anime_auto": "play the animation in auto mode",
+    "anime_manu": "play the animation in manual mode",
+    "anime_off": "stop the animation sequence",
+    "anime_mode_on": "enable animation mode",
+    "anime_mode_off": "disable animation mode",
+    "start_anime": "begin the animation sequence",
+    "start_anime_nowait": "begin the animation sequence without waiting",
+    "stop_anime": "stop the animation sequence",
+    "stop_anime_nowait": "stop the animation sequence without waiting",
+    "zoomrot": "zoom and rotate the current layer",
+    "wzoomrot": "zoom and rotate the current layer, waiting for completion",
+    "zoom_on": "enable the zoom/rotate effect",
+    "zoom_off": "disable the zoom/rotate effect",
+    "evcg_a": "show a differential CG (variation A)",
+    "evcg_b": "show a differential CG (variation B)",
+    "evcg_cng": "switch the differential CG",
+    "evcg_cng_off": "stop switching the differential CG",
+    "siru_on": "show the marker/backdrop badge",
+    "siru_off": "hide the marker/backdrop badge",
+    "skip_bot": "show the skip button",
+    "skip_bot_off": "hide the skip button",
+    "config_bot": "show the config button",
+    "history_bot": "show the history (backlog) button",
+    "save_bot": "show the save button",
+    "load_bot": "show the load button",
+    "q_save_bot": "show the quick-save button",
+    "q_load_bot": "show the quick-load button",
+    "voice_bot": "show the voice-repeat button",
+    "menu_bot": "show the menu button",
+    "vo": "play a character voice file (storage=...)",
+    "vo_s": "play a voice and stop the one currently playing",
+    "vo_cof": "configure voice playback",
+    "se_cof": "configure SE playback",
+    "bgm_cof": "configure BGM playback",
+    "bgm_s": "start a BGM",
+    "se_stop": "stop the SE channel",
+    "se_l": "loop an SE",
+    "h_bmp": "draw a horizontal (banner) image",
+    "faid_in": "fade a layer in",
+    "faid_out": "fade a layer out",
+    "faid_in_t": "fade a layer in over a given time",
+    "faid_out_t": "fade a layer out over a given time",
+    "faid_in_fs": "fade a layer in (full-screen variant)",
+    "tr_fs": "full-screen transition",
+    "flash_fs": "full-screen flash",
+    "t_bmp_fs": "full-screen sprite draw",
+    "t_fadein_fs": "full-screen sprite fade-in",
+    "move_in_fs": "full-screen move-in transition",
+    "t_ripple_in_fs": "full-screen ripple entrance",
+    "scroll_u2d": "scroll the background upwards to downwards",
+    "scroll_d2u": "scroll the background downwards to upwards",
+    "scroll_l2r": "scroll the background left to right",
+    "scroll_r2l": "scroll the background right to left",
+    "mpeg_load": "load an MPEG movie for playback",
+    "mpeg_disp": "display the loaded MPEG movie",
+    "mpeg_effect": "apply an effect to MPEG playback",
+    "mpeg": "play an MPEG movie",
+    "start_mpeg": "begin MPEG playback",
+    "stop_mpeg": "stop MPEG playback",
+    "preparevideo": "prepare the video channel",
+    "openvideo": "open a video file into the channel",
+    "playvideo": "start video playback",
+    "stopvideo": "stop video playback",
+    "clearvideolayer": "clear the video layer",
+    "videolayer": "choose the layer a video renders into",
+    "pv_start": "start the promotional video",
+    "pv_end": "end the promotional video",
+    "movie_seen": "record that a movie has been viewed (gallery unlock)",
+    "seen_list": "add entries to the CG/movie seen list",
+    "seen_ani_list": "add entries to the animation seen list",
+    "movie_seen2": "record a second kind of movie view (gallery unlock)",
+    "seen2": "second seen-list variant",
+    "seen": "add to the seen list",
+    "staff_roll_wait": "wait until the staff roll finishes",
+    "mapdisablie": "disable the clickable map region",
+    "clickskip": "enable or disable click-to-skip",
+    "tempsave": "write a temporary (auto) save",
+    "tempload": "load the temporary (auto) save",
+    "locksnapshot": "lock the snapshot save slot",
+    "unlocksnapshot": "unlock the snapshot save slot",
+    "mes_return": "return to the previous message",
+    "resetwait": "clear any pending wait",
+    "hact": "start a hair/effect animation",
+    "endhact": "end a hair/effect animation",
+    "link2": "a second kind of choice link",
+    "pimage": "print an image into the message layer",
+    "select_clear": "clear the current choice list",
+    "startanchor": "define an anchor position",
+    "disablestore": "disable saving",
+    "loadplugin": "load a KAG plugin",
+    "resetstyle": "reset the message style to defaults",
+    "hr": "draw a horizontal rule inside the message layer",
+    "wm": "show the message window",
+    "stoptrans": "stop a running transition",
+    "wv": "wait for the video channel to finish",
+    "ws": "wait for the SE channel to finish",
+    "wq": "wait for the BGM to finish",
+    "wa": "wait for all audio channels",
+    "wb": "wait for the BGM (alias of wq)",
+    "ruby": "draw ruby (furigana) text over the message",
+    "laycount": "count/inspect the layers in use",
+    "select_normal": "show a standard choice menu",
+    "select_center": "show a centred choice menu",
+    "select_wide": "show a wide choice menu",
+}
+
+
+def collect_tag_usage(unpacked):
+    """Per-tag usage from the corpus: call count, attributes, example sites.
+
+    Drives the intent comments: a stub with neither a recorded intent nor call
+    sites cannot be reimplemented later, so nothing stays unannotated.
+    """
+    usage = {}
+    for dirpath, _dirs, files in os.walk(unpacked):
+        for fn in files:
+            if not fn.lower().endswith(".ks"):
+                continue
+            path = os.path.join(dirpath, fn)
+            try:
+                raw = open(path, "rb").read()
+                text = raw.decode(detect_encoding(raw), errors="replace")
+            except OSError:
+                continue
+            rel = os.path.relpath(path, unpacked).replace("\\", "/")
+            in_script = False
+            for lineno, line in enumerate(text.splitlines(), 1):
+                s = line.strip()
+                if s.startswith("[iscript") or s.startswith("@iscript"):
+                    in_script = True
+                    continue
+                if s.startswith("[endscript") or s.startswith("@endscript"):
+                    in_script = False
+                    continue
+                if in_script or s.startswith(";"):
+                    continue
+                for m in re.finditer(r"\[([a-z_][a-z0-9_]*)\b([^\]]*)\]", line, re.I):
+                    name = m.group(1).lower()
+                    rec = usage.setdefault(name, {"count": 0, "attrs": {}, "examples": []})
+                    rec["count"] += 1
+                    for a in re.findall(r"([a-z_][a-z0-9_]*)\s*=", m.group(2), re.I):
+                        rec["attrs"][a.lower()] = rec["attrs"].get(a.lower(), 0) + 1
+                    if len(rec["examples"]) < 3:
+                        rec["examples"].append("%s:%d: %s" % (
+                            rel, lineno, m.group(0)[:110]))
+    return usage
+
+
+def tag_intent(name, usage):
+    """One-line statement of what a stubbed tag is supposed to do."""
+    note = KAG3_TAG_INTENT.get(name.lower())
+    rec = (usage or {}).get(name.lower()) or {}
+    if note:
+        return note
+    attrs = sorted((rec.get("attrs") or {}).keys())
+    if attrs:
+        return ("unknown KAG3 tag - infer from its call sites; called with: "
+                + ", ".join(attrs[:8]))
+    return "unknown KAG3 tag with no recorded arguments - inspect its call sites"
+
+
+def write_intents(out_dir, usage, shim_names, dropped=(), degraded=()):
+    """Emit the machine-readable intent inventory into the built project.
+
+    Hand-writing the real behaviour later starts from this file: every stubbed
+    tag with its call count, arguments, examples and intended behaviour.
+    """
+    data = {
+        "note": ("Conversion intent inventory. Every entry is a KAG3 construct the "
+                 "converter did not implement (or deliberately dropped). Use it when "
+                 "replacing a stub with real logic."),
+        "stubbed_tags": [
+            {
+                "tag": n,
+                "calls": (usage.get(n) or {}).get("count", 0),
+                "arguments": sorted(((usage.get(n) or {}).get("attrs") or {}).keys()),
+                "examples": (usage.get(n) or {}).get("examples", []),
+                "intent": tag_intent(n, usage),
+                "status": "no-op stub",
+            }
+            for n in sorted(shim_names)
+        ],
+        "dropped_tags": sorted(dropped),
+        "degraded_files": sorted(degraded),
+    }
+    path = os.path.join(out_dir, "_kag3_intents.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
+    return path
 
 if __name__ == "__main__":
     sys.exit(main())

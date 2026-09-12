@@ -536,6 +536,43 @@ KAG3 里这三行是一个整体含义：
 `[position]` 与 `[button]` 共用同一个解析器（实测：`name01_ti_0` ->
 `../bgimage/name01_ti_0.png`）。
 
+#### 13) 转换必须保留「意图」（owner 指令，2026-09）
+
+> “你要在转换的时候，将所有意图都保留下来，即便是空函数，也需要标注意图，
+> 方便后续撕写一样的逻辑。”
+
+第一阶段转换必然会把很多 KAG3 构图留成空操作（或者直接丢弃）。**但“留下
+空操作”不等于“留下信息”** —— 没注释的空操作会让后续手写变成猜谜。
+
+现在每处未实现都带四件东西：
+
+| 字段 | 含义 |
+|---|---|
+| `calls` | 全语料调用次数（0 表示本作未用到） |
+| `arguments` | 实际传过的参数名（按出现次数） |
+| `examples` | 1-3 条**逐字**调用点（`文件:行`） |
+| `intent` | 这个标签应该做什么（人工策展表，未收录的则根据调用点生成） |
+
+产物分两份：
+
+1. **生成的垫片脚本里**逐条注释（空操作定义正上方）—— 读 JS 就能看到意图；
+2. **输出根目录 `_kag3_intents.json`** —— 机器可读清单，包含全部 stub、
+   被丢弃的标签（如 `button`）、被降级（iscript 注释掉）的 25 个文件。
+
+实测本作：**90 个 stub 全部带意图文案**（33 个有真实调用点，57 个本作未用到）；
+例如：
+
+```
+// [t_bmp] -- KAG3 tag, NOT implemented by TyranoScript: 748 call site(s).
+//   arguments seen: bmp_c, bmp_l, bmp_r, place
+//   example: scenario/newgame.ks:193: [T_BMP bmp_l="a_t003d" place=0]
+//   INTENT: display a character sprite: choose the left/centre/right layer
+//           from place= and draw bmp_l/bmp_c/bmp_r on it
+```
+
+**这条规则适用于后续所有新增/修改**：任何“暂时不实现”只能以带 `intent` 的
+形式存在；没有意图文案的空函数/空标签视为缺陷。
+
 ### 3.4 可读性与快进（试玩反馈，已修）
 
 1. **消息窗底衬**：KAG3 游戏普遍把消息窗做成**透明美术**直接压在 CG 上，

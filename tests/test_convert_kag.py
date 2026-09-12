@@ -1,5 +1,6 @@
 """Unit tests for kirikiri/convert_kag.py (KAG3 -> TyranoScript converter)."""
 
+import json
 import os
 import re
 import sys
@@ -1060,3 +1061,56 @@ def test_ch_skips_empty_runs():
     pushes later choice items out of the window."""
     js, _n = ck._shim_js((), None, {"ch"})
     assert "u3000" in js          # ideographic space is treated as empty
+
+
+def test_collect_tag_usage_records_count_attrs_and_examples(tmp_path):
+    """The inventory must say how a tag is actually called: without the call sites
+    and argument names, reimplementing it later is guesswork."""
+    game = tmp_path / "scenario"
+    game.mkdir(parents=True)
+    (game / "a.ks").write_text(
+        "[T_BMP bmp_c=\"x\" place=1]\n"
+        "; [T_BMP ignored=1]\n"          # comment: not a call site
+        "[iscript]\n[T_BMP nope=1]\n[endscript]\n"
+        "[T_BMP bmp_l=\"y\" place=0]\n",
+        encoding="utf-8")
+    usage = ck.collect_tag_usage(str(tmp_path))
+    rec = usage["t_bmp"]
+    assert rec["count"] == 2, rec
+    assert set(rec["attrs"]) == {"bmp_c", "bmp_l", "place"}
+    assert any("a.ks:1:" in e for e in rec["examples"])
+    assert len(rec["examples"]) <= 3
+
+
+def test_tag_intent_uses_the_curated_note_then_falls_back_to_arguments():
+    usage = {"t_bmp": {"count": 2, "attrs": {"place": 1}, "examples": []},
+             "mystery": {"count": 1, "attrs": {"foo": 1, "bar": 1}, "examples": []}}
+    assert "sprite" in ck.tag_intent("t_bmp", usage)
+    note = ck.tag_intent("mystery", usage)
+    assert "foo" in note and "bar" in note
+    assert ck.tag_intent("nothing", usage).startswith("unknown")
+
+
+def test_shim_annotates_every_stub_with_its_intent():
+    usage = {"t_bmp": {"count": 748, "attrs": {"place": 700},
+                       "examples": ["newgame.ks:193: [T_BMP place=0]"]}}
+    js, _n = ck._shim_js((), None, {"t_bmp"}, usage)
+    block = js.split("// [t_bmp]")[1].split("define(")[0]
+    assert "748 call site(s)" in block
+    assert "arguments seen: place" in block
+    assert "newgame.ks:193" in block
+    assert "INTENT:" in block and "sprite" in block
+
+
+def test_write_intents_emits_a_machine_readable_inventory(tmp_path):
+    usage = {"t_bmp": {"count": 3, "attrs": {"place": 2}, "examples": ["x.ks:1: [t]"]}}
+    path = ck.write_intents(str(tmp_path), usage, ["t_bmp", "unused_tag"],
+                            dropped=["button"], degraded=["slide.ks"])
+    data = json.load(open(path, encoding="utf-8"))
+    tags = {e["tag"]: e for e in data["stubbed_tags"]}
+    assert tags["t_bmp"]["calls"] == 3
+    assert tags["t_bmp"]["intent"].startswith("display a character sprite")
+    assert tags["unused_tag"]["calls"] == 0          # still listed, marked unused
+    assert data["dropped_tags"] == ["button"]
+    assert data["degraded_files"] == ["slide.ks"]
+    assert "intent" in data["note"].lower()

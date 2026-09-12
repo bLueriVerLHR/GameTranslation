@@ -300,6 +300,67 @@ KAG3 构建的自动化验证一直卡在“怎么从标题进剧情”：盲点
 同一构建在 1000×629 窗口下视口是 1000×629，重启后变成 976×490（DPI 缩放），
 同一比例会把按钮点偏（实测 x 算成 854，正确约 780）。
 
+### 3.7 静默失效类缺陷：垫片遮蔽 + 运行期 API 面（试玩反馈第 3 批，已修）
+
+这两类缺陷的共同点是**不报错、不崩、就是功能没了**。
+
+#### 1) 空操作标签会静默关闭引擎功能（“引擎优先” pass）
+
+垫片把 KAG3-only 标签注册为空操作，但如果某个名字**引擎也实现**，后注册的
+空操作就赢了一一功能静默消失。实测本引擎被遮蔽的 **10 个**：
+`bg`、`bgmopt`、`close`、`fadeinbgm`、`fadeoutse`、`ruby`、`style`、`wa`、`wb`、`wq`
+（合计 134 处调用，其中 `style` 59 处关系选项排版、`bgmopt`/`fadeinbgm`/
+`fadeoutse` 关系音频音量与淡入淡出）。
+
+修法（两道）：
+
+- **编译期**：`engine_tag_names(engine_dir)` 扫描引擎源码，把引擎已注册的名字
+  从空操作名单里删掉（实测空操作 89 → 79），扫三种注册写法：
+  `tyrano.plugin.kag.tag["x"]`、`tyrano.plugin.kag.tag.x`、`plugin.kag.tag["x"]`；
+- **运行期**：注册前先查 `tyrano.plugin.kag.tag[name]`，已存在就跳过并记入
+  `window.__kag3_shim_skipped`（新旧引擎都不会退回静默失效）。
+
+**教训**：查“某个名字会不会被遮蔽”时必须把**所有注册写法**都扫到。
+第一次只用两种正则，查出来“只有 10 个”；后来补上
+`plugin.kag.tag[..]` 这种写法，才把 `playse`/`stopse`/`seopt` 这类音频标签
+看全（结果是它们本来就没被遮蔽，但“查不到”与“不存在”必须区分开）。
+
+#### 2) 运行期 API 面：不存在的 `kag.x()` 会让按钮“看着是坏的”
+
+游戏自带 UI 的 `exp=` / iscript 调用了一堆 KAG3 运行期方法；**缺一个就抛错，
+按钮就什么都不做**（owner 的原话：“点了没反应”）。系统化的查法：
+枚举场景里所有 `kag.<方法>(` 调用点，与垫片对比，缺的打上。实测：
+
+| 方法 | 调用次数 | 作用 |
+| --- | --- | --- |
+| `getBookMarkPageName` / `getBookMarkDate` | 65 / 60 | 存档界面显示 |
+| **`skipToStop`** | **10** | **游戏自带快进按钮** |
+| **`showHistoryByKey`** | **10** | **历史/回想按钮** |
+| `saveBookMark` / `restoreBookMark` / `storeBookMark` | 8 | 存/读档 |
+| `enterAutoMode` / `cancelAutoMode` / `goToStartWithAsk` | 6 | 自动/回标题 |
+| `addPlugin` / `close` | 2 | 插件/退出 |
+
+修法：`skipToStop` 真实实现（→ 开 skip）；其余给打印日志的 stub，
+保证不抛错（存读档由引擎自己的菜单承担）。
+
+#### 3) `kag.se[]` 必须是真音频通道
+
+游戏的语音/音效系统从 iscript 驱动：`kag.se[0].setOptions(%[gvolume:80])` +
+`kag.se[0].play(%[storage:'vo_xxx'])` + 到处判断 `kag.se[0].status == 'play'`。
+原先垫片里 `kag.se` 是**空壳**（`play()` 什么都不做、`status` 恒为 `'stop'`）
+⇒ **人声完全静音**。
+
+现在每个通道背后是一个真的 `HTMLAudioElement`：storage 经资产映射解析
+（实测 `se003` → `./data/sound/se003.wav`）、`gvolume` → volume、
+`ended` → `status='stop'`、`loop` → `loop`。实测：
+`readyState=4`、`duration=0.41s`、播到 `currentTime=0.405`、结束后 `status` 回 `stop`。
+
+#### 4) 快进还必须跳过硬等待
+
+引擎只在 `skippable === 'true'` 时丢掉等待（`[wait canskip=false]` 与 `[wt]`
+都不丢），所以 skip 会在每一个硬等待上停住。现在 skip 开启时
+`wait`/`wt`/`waittrig` 直接短路到 `nextOrder()`；正常播放不受影响。
+
 ### 3.4 可读性与快进（试玩反馈，已修）
 
 1. **消息窗底衬**：KAG3 游戏普遍把消息窗做成**透明美术**直接压在 CG 上，

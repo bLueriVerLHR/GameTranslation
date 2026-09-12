@@ -272,23 +272,23 @@ class TestShim:
         # Tags with a real implementation (VIDEO_TAGS) are excluded too: a
         # no-op registration would win over the implementation and the
         # feature would silently do nothing.
-        assert n == len(ck.SHIM_TAG_NAMES) - len(macros) - len(ck.VIDEO_TAGS)
+        assert n <= len(ck.SHIM_TAG_NAMES) - len(macros) - len(ck.VIDEO_TAGS)
 
     def test_real_implementations_are_not_shimmed_as_noops(self):
         js, _n = ck._shim_js()
         for tag in ck.VIDEO_TAGS:
-            assert ('tag["%s"] = { start: noop }' % tag) not in js, tag
+            assert ('define("%s")' % tag) not in js, tag
 
     def test_non_macro_kept_in_shim(self):
         js, n = ck._shim_js(macros={"bgm"})
-        assert 'tag["loadplugin"]' in js
+        assert 'define("loadplugin")' in js
 
     def test_shim_has_noop_start(self):
         js, _ = ck._shim_js()
         assert "start: noop" in js
-        # every shimmed tag has a start handler
+        # every shimmed tag is registered through the guarded define()
         for name in ck.SHIM_TAG_NAMES[:5]:
-            assert 'tag["%s"] = { start: noop };' % name in js
+            assert 'define("%s");' % name in js
 
 
 class TestWaitskipShim:
@@ -763,6 +763,55 @@ def test_message_text_is_squeezed_back_into_its_window():
     assert "setTimeout(run, 150)" in js  # debounce: no per-frame reflow
     assert "data-kag3-k" in js
     assert "span.style.fontSize" in js  # the engine's own request is the base
+
+
+def test_engine_tags_are_never_registered_as_no_ops(tmp_path):
+    """A shim no-op must never shadow a tag the engine implements.
+
+    A later registration wins, so a no-op silently DISABLES a working engine
+    feature. Measured on this engine: bg, bgmopt, close, fadeinbgm, fadeoutse,
+    ruby, style, wa, wb, wq were all masked that way.
+    """
+    eng = tmp_path / "tyrano" / "plugins" / "kag"
+    eng.mkdir(parents=True)
+    (eng / "kag.tag_audio.js").write_text(
+        'tyrano.plugin.kag.tag["playse"] = { start: function () {} };\n'
+        'tyrano.plugin.kag.tag.bgmopt = { start: function () {} };\n',
+        encoding="utf-8",
+    )
+    js, _n = ck._shim_js((), str(tmp_path))
+    assert 'define("playse")' not in js
+    assert 'define("bgmopt")' not in js
+    # a runtime guard too: the engine wins whoever registered first
+    assert "if (tyrano.plugin.kag.tag[name])" in js
+    assert "window.__kag3_shim_skipped" in js
+
+
+def test_engine_tag_names_reads_all_registration_forms(tmp_path):
+    eng = tmp_path / "tyrano"
+    eng.mkdir()
+    (eng / "a.js").write_text(
+        'tyrano.plugin.kag.tag["alpha"] = {};\n'
+        'tyrano.plugin.kag.tag.beta = {};\n'
+        'plugin.kag.tag["gamma"] = {};\n',
+        encoding="utf-8",
+    )
+    assert ck.engine_tag_names(str(tmp_path)) >= {"alpha", "beta", "gamma"}
+
+
+def test_se_channels_are_backed_by_real_audio():
+    """The game's voice system plays through kag.se[i] from iscript
+    (`kag.se[0].play(%[storage:...])` + `kag.se[0].status` + setOptions
+    gvolume). A stub channel means silent voice -- the reported defect."""
+    js = ck.RUNTIME_SHIM_IIFE
+    assert "var _se_make" in js
+    assert "new Audio(url)" in js
+    assert "status: 'stop'" in js
+    assert "this.status = 'play';" in js
+    # the old stub did nothing at all
+    assert "play: function (o) { return this; }" not in js
+    # extensionless KAG3 names must resolve through the asset map
+    assert "var rel = am[__kag3_stem(st)] || am[st.toLowerCase()];" in js
 
 
 def test_message_window_gets_a_translucent_backing():

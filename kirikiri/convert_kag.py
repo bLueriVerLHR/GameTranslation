@@ -159,29 +159,34 @@ TAG_MAP = {
 # player clicks once more, which is useless when the point of skipping is to
 # fast-forward a build for testing.
 #
-# This drives the flow while skip is on. It only advances when a plain click at
-# the screen centre would advance anyway (the topmost element there is the
-# event layer), so choice screens and menus -- which put their buttons above
-# it -- are NOT skipped through.
+# This drives the flow while skip is on. Gate (measured to work): advance only
+# when the topmost element at the screen centre is the event layer, i.e. when a
+# plain centre click would advance anyway. Choice screens, menus and clickable
+# maps put their elements above that layer and are therefore NOT skipped
+# through. A wider gate was tried and did not advance at all (0 tags/s during
+# the opening because every tick was refused), so the strict rule stays; the
+# rate comes from self-scheduling instead of a fixed interval.
 FAST_SKIP_SHIM_JS = '''
 (function () {
   // TYRANO.kag does not exist yet while plugins are being parsed, so resolve
   // it inside the tick rather than bailing out at load time.
-  setInterval(function () {
+  var tick = function () {
     try {
       var kag = window.TYRANO && TYRANO.kag;
-      if (!kag || !kag.stat || !kag.ftag) return;
-      if (!kag.stat.is_skip) return;
-      if (kag.stat.is_strong_stop || kag.stat.is_stop) return;
-      if (kag.stat.is_adding_text || kag.stat.is_click_text) return;
-      if (kag.stat.is_hide_message) return;
-      if (typeof kag.tmp.cut_nextorder === "function") return;
-      var top = document.elementFromPoint(Math.round(window.innerWidth / 2),
-                                        Math.round(window.innerHeight / 2));
-      if (!top || String(top.className).indexOf("layer_event_click") < 0) return;
-      kag.ftag.nextOrder();
+      if (kag && kag.stat && kag.ftag && kag.stat.is_skip &&
+          !kag.stat.is_strong_stop && !kag.stat.is_stop &&
+          !kag.stat.is_adding_text && !kag.stat.is_click_text &&
+          typeof kag.tmp.cut_nextorder !== "function") {
+        var top = document.elementFromPoint(Math.round(window.innerWidth / 2),
+                                            Math.round(window.innerHeight / 2));
+        if (top && String(top.className).indexOf("layer_event_click") >= 0) {
+          kag.ftag.nextOrder();
+        }
+      }
     } catch (e) {}
-  }, 30);
+    setTimeout(tick, 0);
+  };
+  setTimeout(tick, 0);
 })();
 '''
 
@@ -2679,10 +2684,13 @@ def main():
         cfg = re.sub(r"(?m)^;?\s*chSpeeds\.normal\s*=.*$", ";chSpeeds.normal = 3;", cfg)
         cfg = re.sub(r"(?m)^;?\s*chSpeeds\.slow\s*=.*$", ";chSpeeds.slow = 5;", cfg)
         # skip speed: Tyrano waits config.skipSpeed ms per printed line while
-        # skipping (kag.tag.js: the timeout after showing all characters).
-        # The template's 30 ms caps skipping at 33 lines/s, which is the
-        # dominant cost when fast-forwarding a build for testing.
-        cfg = re.sub(r"(?m)^;?\s*skipSpeed\s*=.*$", ";skipSpeed = 10;", cfg)
+        # skipping (kag.tag.js: after all characters are shown it does
+        # setTimeout(nextOrder, skipSpeed)), so it caps skipping at
+        # 1000/skipSpeed lines per second. The template's 30 ms caps it at
+        # 33 lines/s, which dominates fast-forwarding a build for testing;
+        # 1 ms lets the flow run as fast as the browser allows. Only skip mode
+        # reads this, so normal reading speed is unaffected.
+        cfg = re.sub(r"(?m)^;?\s*skipSpeed\s*=.*$", ";skipSpeed = 1;", cfg)
         if args.portrait:
             # default message window sits in the bottom black area
             # (image area is the top 768x576 of the 768x1024 canvas)

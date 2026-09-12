@@ -834,11 +834,31 @@ def test_configured_waits_are_dropped_in_skip_mode():
 
 
 def test_skip_speed_is_configured_below_the_template_default():
-    """The template's 30 ms per line caps skipping at ~33 lines/s; the
-    converter lowers it. Asserted through the source because it is applied by
-    main()'s Config.tjs rewrite."""
+    """The template's 30 ms per line caps skipping at ~33 lines/s, so the
+    converter lowers it (measured: 13.7 tags/s before, dominated by the driver
+    gate rather than this value; 1 ms removes this cap entirely). Asserted
+    through the source because it is applied by main()'s Config.tjs rewrite."""
     import inspect
 
     src = inspect.getsource(ck.main)
     assert "skipSpeed" in src
-    assert ";skipSpeed = 10;" in src
+    assert ";skipSpeed = 1;" in src
+
+
+def test_fast_skip_driver_gate_and_scheduling():
+    """The driver must keep the gate that was measured to work.
+
+    It advances only when the topmost element at the screen centre is the event
+    layer (so choices/menus are never skipped through; measured 13.7 tags/s).
+    A wider gate was tried and advanced NOTHING (every tick refused during the
+    opening), so the strict rule stays and the rate comes from self-scheduling
+    plus config.skipSpeed = 1. The message window's visibility must NOT be a
+    condition: sections that run with a hidden window (common in openings)
+    then refused every tick and skip appeared to do nothing at all.
+    """
+    js = ck.FAST_SKIP_SHIM_JS
+    assert 'indexOf("layer_event_click") >= 0' in js
+    assert "setTimeout(tick, 0)" in js  # self-scheduling, not a 30 ms interval
+    assert "setInterval" not in js
+    assert "is_strong_stop" in js
+    assert "is_hide_message" not in js

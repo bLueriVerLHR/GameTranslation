@@ -2078,6 +2078,23 @@ def _convert_assets(unpacked, out_data, stats):
         _walk(src_dir, "")
 
 
+def _decoder_mtime():
+    """Newest mtime among the code that decides what a converted image looks
+    like.  A cache that only compares source vs target timestamps cannot see a
+    decoder fix, so a corrected decoder would silently keep serving images
+    built by the old one (measured: the B/R channel-order fix left every
+    already-converted PNG red/blue swapped until they were deleted by hand).
+    """
+    newest = 0.0
+    for path in (getattr(tlg, "__file__", None), __file__):
+        if path:
+            try:
+                newest = max(newest, os.path.getmtime(path))
+            except OSError:
+                pass
+    return newest
+
+
 def _up_to_date(src, dst):
     """True when `dst` already exists and is not older than `src`.
 
@@ -2086,11 +2103,23 @@ def _up_to_date(src, dst):
     up-to-date target makes a second build cheap, which is what makes it
     practical to iterate on the generated shim/code without paying for the
     image work again.
+
+    Image targets are additionally invalidated when the decoder itself is
+    newer than the target, so a decoder fix always regenerates them.
     """
     try:
-        return os.path.getmtime(dst) >= os.path.getmtime(src)
+        t_dst = os.path.getmtime(dst)
     except OSError:
         return False
+    try:
+        t_src = os.path.getmtime(src)
+    except OSError:
+        return False
+    if t_dst < t_src:
+        return False
+    if dst.lower().endswith(".png") and t_dst < _decoder_mtime():
+        return False
+    return True
 
 
 def _convert_tlg(src, dst, stats):

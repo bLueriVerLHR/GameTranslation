@@ -10,6 +10,11 @@ Supports:
   - tag-at-end ("tags" base image blending) via load_base callback
 
 Output: RGBA bytes (width * height * 4).
+
+The algorithm works in the layout TLG actually stores and GARbro declares as
+`PixelFormats.Bgra32` - byte order B,G,R,A.  That layout is kept internally and
+converted exactly once, at the single return point of decode(): see `_swap_rb`,
+which records the real bug this prevents.
 """
 
 import struct
@@ -708,6 +713,28 @@ def _blend_image(base, base_w, base_h, overlay, ov_w, ov_h, off_x, off_y, method
     return bytes(out)
 
 
+def _swap_rb(buf):
+    """Convert between the internal B,G,R,A layout and the R,G,B,A one.
+
+    TLG stores pixels as B,G,R,A (GARbro's decoder keeps that layout and
+    declares its buffer `PixelFormats.Bgra32`).  The decoders below inherit it,
+    so this is the one and only place that maps it onto the RGBA contract of
+    decode(); the operation is its own inverse.
+
+    Why it matters (measured 2026-08): without it every converted image came
+    out red/blue swapped.  Character sprites rendered blue-skinned, and event
+    stills rendered blue for artwork whose pre-rendered movie (decoded by
+    ffmpeg, so independent of this decoder) is pink.  Pillow was being handed
+    B,G,R,A bytes as if they were R,G,B,A, i.e. it read blue as red.
+    """
+    out = bytearray(len(buf))
+    out[0::4] = buf[2::4]
+    out[1::4] = buf[1::4]
+    out[2::4] = buf[0::4]
+    out[3::4] = buf[3::4]
+    return bytes(out)
+
+
 def decode(data, load_base=None):
     """Decode TLG data -> RGBA bytes. load_base(name) -> (w, h, rgba) for
     games that reference a base image via trailing tags; optional."""
@@ -741,8 +768,13 @@ def decode(data, load_base=None):
                     oy = int.from_bytes(off_y, "little") & 0xFFFF if off_y else 0
                     m = int.from_bytes(method, "little") if method else 1
                     if brgba and len(brgba) == bw * bh * 4:
-                        return _blend_image(brgba, bw, bh, rgba, width, height, ox, oy, m)
-    return rgba
+                        # the caller hands us RGBA, the blend works on the
+                        # internal B,G,R,A buffers, and the result goes back
+                        # out through the RGBA contract (see _swap_rb)
+                        blended = _blend_image(_swap_rb(brgba), bw, bh, rgba,
+                                               width, height, ox, oy, m)
+                        return _swap_rb(blended)
+    return _swap_rb(rgba)
 
 
 def decode_to_png(data, out_path, load_base=None):

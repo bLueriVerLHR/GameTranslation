@@ -1,5 +1,6 @@
 """Unit tests for kirikiri/tlg.py (TLG5/TLG6 decoder)."""
 
+import os
 import random
 import struct
 import sys
@@ -206,7 +207,7 @@ class TestDecode:
             assert len(rgba) == w * h * 4, (w, h)
 
     def test_decode_real_file(self):
-        p = Path(__file__).resolve().parent.parent / "tmp" / "taimanin_work" / "unpacked"
+        p = Path(__file__).resolve().parent.parent / "tmp" / "kiri_work" / "unpacked"
         real = sorted(p.glob("**/*.tlg"))
         if not real:
             pytest.skip("no real TLG files present")
@@ -265,9 +266,10 @@ class TestRegressionBugs:
         data = self._filtered_image()
         rgba = tlg.decode(data)
         assert len(rgba) == 64 * 8 * 4
-        # pixels are BGRA bytes: [B, G, R, A]
+        # pixels are RGBA bytes: [R, G, B, A]
         # filter 2: r=r0+g0, g=g0, b=b0+g0 with MED prediction from
         # zeroline (3-color, alpha=0xFF); verified against C# GARbro decode.
+        # (r and b are equal here, so B/R order does not show in this value)
         assert bytes(rgba[0:4]) == b"\x02\x01\x02\xff"
         assert bytes(rgba[4:8]) == b"\x06\x03\x06\xff"
         assert bytes(rgba[8:12]) == b"\x0c\x06\x0c\xff"
@@ -275,14 +277,51 @@ class TestRegressionBugs:
     def test_filtered_decode_matches_garbro_reference(self):
         # Decode the C#-verified reference (hex dump produced by compiling
         # GARbro ImageTLG.cs TLG6 path verbatim) for the same synthetic file.
+        # GARbro's buffer is B,G,R,A; decode() returns the R,G,B,A contract,
+        # so the reference is recorded here already channel-swapped.
         data = self._filtered_image()
         rgba = tlg.decode(data)
         ref_hex = (
             "020102ff060306ff0c060cff140a14ff1e0f1eff2a152aff381c38ff"
-            "482448ff3a9d3aff2e172eff249224ff1c0e1cff168b16ff120912ff"
+            "482448ff"  # first 9 pixels, unchanged: r == b for filter 2 here
+            "3a9d3aff2e172eff249224ff1c0e1cff168b16ff120912ff"
             "108810ff100810ff"
         )
         assert rgba[:64].hex() == ref_hex
+
+    def test_swap_rb_moves_channels_and_is_its_own_inverse(self):
+        # Regression: decode() used to return the decoder's internal B,G,R,A
+        # buffers while documenting RGBA, so Pillow read blue as red and every
+        # converted image was red/blue swapped (sprites came out blue-skinned,
+        # event stills blue where the matching pre-rendered movie is pink).
+        assert tlg._swap_rb(b"\x01\x02\x03\x04") == b"\x03\x02\x01\x04"
+        assert tlg._swap_rb(b"\xff\x00\x10\x80") == b"\x10\x00\xff\x80"
+        once = tlg._swap_rb(b"\x01\x02\x03\x04\x05\x06\x07\x08")
+        assert tlg._swap_rb(once) == b"\x01\x02\x03\x04\x05\x06\x07\x08"
+
+    def test_decode_contract_is_rgba_on_real_fixture(self):
+        from PIL import Image
+
+        fixture = Path(__file__).resolve().parent / "fixtures" / "tlg"
+        files = sorted(fixture.glob("*.tlg"))
+        if not files:
+            pytest.skip("no TLG fixtures present")
+        data = files[0].read_bytes()
+        _v, w, h, _c, _o = tlg.parse_header(data)
+        rgba = tlg.decode(data)
+        # the fixture must have pixels where R and B differ, otherwise the
+        # order assertion below could never fail (non-vacuous check)
+        r = rgba[0::4]
+        b = rgba[2::4]
+        assert r != b, "fixture has no R/B distinction to test with"
+        # and the returned buffer must be R,G,B,A, i.e. equal to what Pillow
+        # reads back from the PNG written through decode_to_png
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "x.png")
+            tlg.decode_to_png(data, out)
+            back = Image.open(out).convert("RGBA").tobytes()
+        assert back == rgba
 
     def test_filtered_various_filters(self):
         # Every filter type 0..31 must decode without error and differ from
@@ -323,9 +362,9 @@ class TestGarbroFixture:
 
     The .tlg/.bmp pairs under tests/fixtures/tlg/ were produced by GARbro
     (authoritative TLG decoder): tlg = original game file, bmp = GARbro
-    export. GARbro GUI exports alpha-flattened 32bpp BMP (bottom-up rows),
-    so we compare RGB only after flipping rows and channel-swapping
-    (decoder output is BGRA bytes).
+    export. GARbro GUI exports alpha-flattened 32bpp BMP (bottom-up rows).
+    decode() returns RGBA, so the BMP's B,G,R,X rows are read in R,G,B order
+    and the planes line up directly.
     """
 
     FIXTURE = Path(__file__).resolve().parent / "fixtures" / "tlg"
@@ -350,13 +389,12 @@ class TestGarbroFixture:
             ver, w, h, colors, _ = tlg.parse_header(data)
             rgba = tlg.decode(data)
             assert len(rgba) == w * h * 4
-            # BGRA bytes -> RGBA planes
-            import array
-            px = array.array("B", rgba)
+            # decode() returns R,G,B,A - read the planes straight through
             rows = []
             for y in range(h):
-                row = px[y * w * 4:(y + 1) * w * 4]
-                rows.append([(row[x + 2], row[x + 1], row[x]) for x in range(0, w * 4, 4)])
+                row = rgba[y * w * 4:(y + 1) * w * 4]
+                rows.append([(row[x], row[x + 1], row[x + 2])
+                             for x in range(0, w * 4, 4)])
             got_rgb = [c for r in rows for c in r]
 
             with bmp_path.open("rb") as f:
@@ -395,7 +433,7 @@ class TestNumbaPath:
         assert fast == pure
 
     def test_real_fast_matches_pure(self):
-        p = Path(__file__).resolve().parent.parent / "tmp" / "taimanin_work" / "unpacked"
+        p = Path(__file__).resolve().parent.parent / "tmp" / "kiri_work" / "unpacked"
         real = sorted(p.glob("**/*.tlg"))
         if not real:
             pytest.skip("no real TLG files present")

@@ -151,6 +151,41 @@ TAG_MAP = {
 }
 
 
+# Hands-free fast-forward (--fast-skip).
+#
+# Tyrano checks skip mode only when a wait tag STARTS (its [l]/[p] return
+# early, and the engine drops skippable waits), so a click wait that is already
+# armed keeps waiting: pressing "skip" looks like it does nothing until the
+# player clicks once more, which is useless when the point of skipping is to
+# fast-forward a build for testing.
+#
+# This drives the flow while skip is on. It only advances when a plain click at
+# the screen centre would advance anyway (the topmost element there is the
+# event layer), so choice screens and menus -- which put their buttons above
+# it -- are NOT skipped through.
+FAST_SKIP_SHIM_JS = '''
+(function () {
+  // TYRANO.kag does not exist yet while plugins are being parsed, so resolve
+  // it inside the tick rather than bailing out at load time.
+  setInterval(function () {
+    try {
+      var kag = window.TYRANO && TYRANO.kag;
+      if (!kag || !kag.stat || !kag.ftag) return;
+      if (!kag.stat.is_skip) return;
+      if (kag.stat.is_strong_stop || kag.stat.is_stop) return;
+      if (kag.stat.is_adding_text || kag.stat.is_click_text) return;
+      if (kag.stat.is_hide_message) return;
+      if (typeof kag.tmp.cut_nextorder === "function") return;
+      var top = document.elementFromPoint(Math.round(window.innerWidth / 2),
+                                        Math.round(window.innerHeight / 2));
+      if (!top || String(top.className).indexOf("layer_event_click") < 0) return;
+      kag.ftag.nextOrder();
+    } catch (e) {}
+  }, 30);
+})();
+'''
+
+
 def _shim_js(macros=()):
     """Generate the plugin js registering KAG3-only tags as no-ops.
 
@@ -385,6 +420,11 @@ WAITSKIP_SHIM_JS = """\
   tyrano.plugin.kag.tag['kagwaitskip'] = {
     start: function (pm) {
       var kag = this.kag;
+      // Skip mode: the engine drops skippable waits outright while skipping
+      // (kag.tag.js: `if (is_skip && pm.skippable === "true") nextOrder()`).
+      // Without the same check here every [wait]/[wm]/[wt] ran its full
+      // duration during skip, which is what made fast-forwarding feel slow.
+      if (kag.stat.is_skip) { return kag.ftag.nextOrder(); }
       var ms = parseInt(pm.time) || 1000;
       var finished = false;
       var on_click = function () {
@@ -1030,7 +1070,13 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "          s.setAttribute('data-kag3', 'free-layer-clickthrough');",
     "          s.textContent =",
     "            '.layer_free{pointer-events:none !important}' +",
-    "            '.layer_free>*{pointer-events:auto !important}';",
+    "            '.layer_free>*{pointer-events:auto !important}' +",
+    "            // Dialogue readability: KAG3 games usually draw their message",
+    "            // window as transparent art over the CG, so text sits directly",
+    "            // on the picture. A translucent backing behind the window (and",
+    "            // behind the name plate, which is another message layer) makes",
+    "            // it readable without hiding the art.",
+    "            '.message_outer{background-color:rgba(0,0,0,.5) !important}';",
     "          (document.head || document.documentElement).appendChild(s);",
     "        } catch (e) {}",
     "      })();",
@@ -2227,6 +2273,9 @@ def main():
                          "<stem>.webm (default: <unpacked>/_video_webm).  A "
                          "movie with no WebM is copied as-is and warned about, "
                          "since browsers cannot play WMV")
+    ap.add_argument("--fast-skip", action="store_true",
+                    help="drive the flow while skip mode is on, so skipping "
+                         "fast-forwards without a click per line (debugging)")
     ap.add_argument("--portrait", action="store_true",
                     help="768x1024 portrait layout: art scaled to the top, "
                          "message text in the bottom black area")
@@ -2312,6 +2361,11 @@ def main():
         cfg = re.sub(r"(?m)^;?\s*chSpeeds\.fast\s*=.*$", ";chSpeeds.fast = 1;", cfg)
         cfg = re.sub(r"(?m)^;?\s*chSpeeds\.normal\s*=.*$", ";chSpeeds.normal = 3;", cfg)
         cfg = re.sub(r"(?m)^;?\s*chSpeeds\.slow\s*=.*$", ";chSpeeds.slow = 5;", cfg)
+        # skip speed: Tyrano waits config.skipSpeed ms per printed line while
+        # skipping (kag.tag.js: the timeout after showing all characters).
+        # The template's 30 ms caps skipping at 33 lines/s, which is the
+        # dominant cost when fast-forwarding a build for testing.
+        cfg = re.sub(r"(?m)^;?\s*skipSpeed\s*=.*$", ";skipSpeed = 10;", cfg)
         if args.portrait:
             # default message window sits in the bottom black area
             # (image area is the top 768x576 of the 768x1024 canvas)
@@ -2356,6 +2410,7 @@ def main():
     runtime_shim = "\n".join([
         "window.__kag3_portrait = " + ("true" if args.portrait else "false") + ";",
         RUNTIME_SHIM_IIFE,
+        FAST_SKIP_SHIM_JS if args.fast_skip else "",
         tjs2js.SPRINTF_SHIM,
         asset_js,
         asset_ma_js,

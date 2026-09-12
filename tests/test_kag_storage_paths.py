@@ -54,7 +54,25 @@ def test_resolve_accepts_a_resolved_path_not_only_a_bare_name():
     js = ck.MAP_ENGINE_JS
     fn = js.split("var __kag3_resolve = function")[1].split("var __kag3_jump")[0]
     assert DOT_SLASH_STRIP in fn, fn[:400]
-    assert "replace(/^.*\\//, '')" in fn, fn[:400]
+    assert "__kag3_stem(key)" in fn, fn[:400]
+
+
+def test_stem_is_the_one_place_a_path_becomes_a_map_key():
+    # Map keys are bare basenames; every derivation from a path must use this,
+    # or a lookup silently misses.  Measured failure: the title menu's region
+    # image was never found (hasRegionCanvas: false) because its key was built
+    # as "fgimage/title_p" after the canonical path change - the artwork drew
+    # but no click could be hit-tested.
+    js = ck.MAP_ENGINE_JS
+    assert "var __kag3_stem = function" in js
+    stem = js.split("var __kag3_stem")[1].split("};\n")[0]
+    assert DOT_SLASH_STRIP in stem, stem[:300]        # drop ../
+    assert "replace(/^.*[\\\\/]/, '')" in stem, stem[:300]   # drop dirs
+    assert "replace(/\\.[^.]+$/, '')" in stem, stem[:300]   # drop extension
+    assert ".toLowerCase()" in stem
+    # no inline re-derivation left behind
+    assert js.count("__kag3_stem(") >= 2
+    assert "replace(/\\.[^.]+$/, '').toLowerCase()" not in js
 
 
 def test_tag_hook_still_emits_the_relative_form():

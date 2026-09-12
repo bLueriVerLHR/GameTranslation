@@ -512,6 +512,30 @@ KAG3 用消息框的 `marginl/marginr/margint/marginb`
 全部在窗口内可见、底衬只有游戏自带那一层（`rgb(38,85,121)`）；
 对白窗口位置正常（`message0` 回到视口内）+ 名字框在其上方。
 
+#### 12) `[position]` 定义的是「消息窗」，不是「图层」（已修）
+
+KAG3 里这三行是一个整体含义：
+```
+[position layer=message1 frame="name01_ti_N" left=0 top=599 marginl=-4 marginr=0]
+```
+= “在这里画这个窗口，用这张帧图，文字按这些内缩”。
+
+**坑（两个试玩事故同源）**：我第一版把底衬色刷在了**图层**上，而 Tyrano 的消息层
+是全屏（1024×768）的 div，于是：
+
+- 整个场景背景被盖住（owner：“背景全没了”）；
+- 名字没有自己的框，`[style align=center]` 就在 790px 宽的整层里居中
+  （owner：“人名还是居中的状态”）。
+
+**修法**：帧图与底衬色只作用于层内的**消息窗元素**（`.message_outer`），
+按帧图自然尺寸定大小、按 `left/top` 定位；**绝不给图层刷底色**。
+
+**同时修掉一个隐形 bug**：`__kag3_asset_path` 只存在于 runtime shim 的闭包里，
+而自动生成的标签垫片是**另一个脚本**，看不到它 —— 所以 `[position frame=]`
+一直解析失败、帧图从未绘制过。现已 `window.__kag3_asset_path = ...` 暴露出去，
+`[position]` 与 `[button]` 共用同一个解析器（实测：`name01_ti_0` ->
+`../bgimage/name01_ti_0.png`）。
+
 ### 3.4 可读性与快进（试玩反馈，已修）
 
 1. **消息窗底衬**：KAG3 游戏普遍把消息窗做成**透明美术**直接压在 CG 上，

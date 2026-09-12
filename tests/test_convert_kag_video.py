@@ -143,3 +143,16 @@ def test_video_shim_wv_cannot_stall_forever():
     assert "if (!v.playing)" in js
     assert "nextOrder" in js
     assert "'ended'" in js and "'error'" in js
+
+
+def test_video_shim_applies_the_kag3_box_over_tyrano_min_sizes():
+    # Tyrano sets min-width/height:100% AFTER width/height, which silently
+    # overrides KAG3's [video width=.. height=..] box (measured: the element
+    # ended up 1024x768, the full canvas, instead of 800x600).
+    js = ck.VIDEO_SHIM_JS
+    assert "__kag3_vid_fit" in js
+    assert "minWidth = '0'" in js and "minHeight = '0'" in js
+    assert "objectFit = 'contain'" in js
+    # ...and it must actually be applied when the movie starts
+    play = js.split("tag['playvideo']")[1]
+    assert "__kag3_vid_fit()" in play

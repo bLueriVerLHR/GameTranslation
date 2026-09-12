@@ -170,7 +170,7 @@ KAG3 由吉里吉里 2 SDK 的 `KAGParser.dll` 解析 `.ks`；常见变体：
 | 2 | **`[wt]` 未映射** | 273 处 | 既不在 `SHIM_TAG_NAMES`、也不是 Tyrano 原生标签 → 未定义标签。KAG3 的 `[wt]`=等转场结束；应映射为等待或空操作（后面一般有 `[wait]` 兑底）。 |
 | 3 | **KAG3 保留颜色名** | 少量 | `[image storage="wh"]` 被当成文件名 → 404。实测 `black` 能在构建里解析到一张真图，但 `wh` 不行 → 应生成纯色图。 |
 | 4 | **素材被复制三份** | — | `_asset_map` 把同一图写进 `bgimage/`+`fgimage/`+`image/`（实测每图 3 份）。源素材 298 MB 时会膨胀到 ~900 MB，需按引用解析后只放一份（或建索引 + 单副本）。 |
-| 5 | **`.wmv`/`.mpg` 浏览器不能播** | 80 个 / 955 MB | 已解决（见 §5）：先跑 `tools/transcode_video.py` 转 WebM，再用 `convert_kag.py --video-dir <dir>` 构建。 |
+| 5 | **`.wmv`/`.mpg` 浏览器不能播** | 80 个 / 955 MB | 已解决（见 §5）：先跑 `tools/transcode_video.py` 转 WebM，再用 `convert_kag.py --video-dir <dir>` 构建；影片几何保真也已修（§5.6）。 |
 
 ## 5. 影片：转码 + KAG3 视频标签映射（已跑通）
 
@@ -219,7 +219,7 @@ KAG3 把播放拆成一串共享状态的标签；Tyrano 没有等价序列，�
 [preparevideo]                            空操作
 [openvideo storage=X]                     记文件（经 __kag3_videos 映射到 .webm）
 [wv]                                      播放前=等就绪；播放后=等结束
-[playvideo]                               发出一次 layermode_movie（不等）
+[playvideo]                               发出一次 layermode_movie（不等）+ 修几何
 [stopvideo] / [clearvideolayer]           停并移除元素
 ```
 
@@ -243,13 +243,25 @@ video: readyState=4, paused=false, 1024x768, currentTime 5.89 -> 10.03
 
 即真正取到、解码成功、实时播放。
 
-### 5.6 尚未做（已知不足，勿当成已完成）
+### 5.6 几何保真（已修）
 
-**几何/适配保真**：KAG3 的 `[video width=800 height=600]` 是把影片放进一个
-800×600 的框（1024×768 的片子被缩放进去），而 `layermode_movie` 的
-`fit` 默认行为不同 —— 当前影片会显示得比预期小。需要把 KAG3 的框映射
-到 `layermode_movie` 的 `fit/width/height` 语义（可能需要 `fit=false`）。
-另外 `[mpeg_disp]`（54 处）仍为原样（未确认它在做什么）。
+KAG3 的 `[video width=800 height=600]` 是把影片放进一个 800×600 的框，
+1024×768 的片子按比例缩放进去。但 Tyrano 的 `[layermode_movie]` 在应用
+`width`/`height` **之后**又强制 `min-width/min-height: 100%` —— 显式尺寸
+被静默盖掉，影片占满整个画布。**实测**（在页面里量元素）：
+
+| | 元素尺寸 | `min-width/height` |
+| --- | --- | --- |
+| 修正前 | **1024×768**（= 画布） | `100%` |
+| 修正后 | **800×600**（= KAG3 的框） | `0px` |
+
+修法：`playvideo` 发出 `layermode_movie` 后立即将其元素的
+`min-width/min-height` 置 0，并设 `object-fit: contain`（按比例适配，
+而不是拉伸）—— 与 KAG3 把画格缩放进框的行为一致。
+
+**已验证**：重建后量到元素直接就是 800×600（先前的“手动修正”已成空操作）。
+但**精确的画面合成仍取决于真实场景的图层/混合状态**，单独驱动标签无法
+复现 —— 这一条需真实场景端到端才能定论。
 
 ### 已在实测中被推翻的两个初始判断（勿重蹈）
 

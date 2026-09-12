@@ -639,17 +639,26 @@ MAP_ENGINE_JS = """\
     };
     try_load();
   };
+  // Map keys are bare basenames ("title_p"), while a storage value may now be
+  // a full canonical path ("fgimage/TITLE.MA") or the resolved
+  // "../<dir>/<file>" form.  Every place that derives a key from a path must
+  // go through this, or the lookup silently misses - measured: the title
+  // menu's region image was never found ("hasRegionCanvas: false"), so the
+  // buttons rendered but no click could be hit-tested.
+  var __kag3_stem = function (name) {
+    return String(name == null ? '' : name)
+      .replace(/^\\.\\.\\//, '')
+      .replace(/^.*[\\\\/]/, '')
+      .replace(/\\.[^.]+$/, '')
+      .toLowerCase();
+  };
   var __kag3_resolve = function (name, map) {
     var s = String(name == null ? '' : name);
     if (!s) return null;
-    // accept both a bare name and a resolved "../<dir>/<file>" path
     var key = s.replace(/^\\.\\.\\//, '').toLowerCase();
     var r = map[key];
     if (!r) r = map[key.replace(/\\.[^.]+$/, '')];
-    if (!r) {
-      var stem = key.replace(/^.*\\//, '').replace(/\\.[^.]+$/, '');
-      r = map[stem];
-    }
+    if (!r) r = map[__kag3_stem(key)];
     return r || null;
   };
   var __kag3_jump = function (kag, storage, target) {
@@ -786,7 +795,7 @@ MAP_ENGINE_JS = """\
       var text = __kag3_fetch_text(rel);
       var actions = text === null ? {} : __kag3_parse_ma(text);
       var map = __kag3_map_set(layerName, actions, rel);
-      var base = rel.replace(/\\.[^.]+$/, '').toLowerCase();
+      var base = __kag3_stem(rel);
       var reg = __kag3_assets()[base + '_p'];
       __kag3_log('mapaction ' + layerName + ' <- ' + rel + ' (' + Object.keys(actions).length +
                  ' regions' + (reg ? ', region ' + reg : ', no region image') + ')');
@@ -977,7 +986,7 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "          var before = String(pm.storage || '');",
     "          pm = _resolve_storage(pm) || pm;",
     "          __kag3_map_clear(layerName);",
-    "          var base = String(pm.storage || '').replace(/\\.[^.]+$/, '').toLowerCase();",
+    "          var base = __kag3_stem(pm.storage);",
     "          var maRel = __kag3_assets_ma()[base];",
     "          if (maRel) {",
     "            var text = __kag3_fetch_text(maRel);",

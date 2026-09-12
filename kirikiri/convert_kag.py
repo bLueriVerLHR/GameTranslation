@@ -1,4 +1,4 @@
-"""KAG3 (.ks) -> TyranoScript project converter.
+﻿"""KAG3 (.ks) -> TyranoScript project converter.
 
 Converts an extracted KiriKiri/KAG3 game directory (xp3tool extract output)
 into a standard TyranoScript project layout that the tyrano/pipeline.py
@@ -461,16 +461,25 @@ MAP_ENGINE_JS = """\
   };
   var __kag3_assets = function () { return window.__kag3_assets || {}; };
   var __kag3_assets_ma = function () { return window.__kag3_assets_ma || {}; };
+  // Storage values resolved by the tag hook look like "../fgimage/x.png":
+  // they are relative to the data/<folder>/ a tag prepends.  A consumer that
+  // builds a URL itself (this shim, whose page is at the site root) must drop
+  // the leading "../" or it escapes data/ entirely - measured: a bare
+  // "../fgimage/TITLE.MA" was requested as "/fgimage/TITLE.MA" (404).
+  var __kag3_data_url = function (rel) {
+    return './data/' + String(rel == null ? '' : rel).replace(/^\\.\\.\\//, '');
+  };
   var __kag3_fetch_text = function (rel) {
     if (!rel) return null;
-    // `rel` is a canonical path ("fgimage/x.ma"): each asset now lives in
-    // exactly one directory, so probing every folder is only a fallback for
-    // a bare name.
-    var urls = ['./data/' + rel];
-    if (rel.indexOf('/') < 0) {
+    // `rel` is a canonical path ("fgimage/x.ma") since each asset lives in
+    // exactly one place; the ../ form a tag would carry must be normalised
+    // because THIS consumer builds the URL from the page root.
+    var clean = String(rel).replace(/^\\.\\.\\//, '');
+    var urls = [__kag3_data_url(clean)];
+    if (clean.indexOf('/') < 0) {
       var folders = ['fgimage', 'bgimage', 'image', 'sound', 'bgm'];
       for (var i = 0; i < folders.length; i++) {
-        urls.push('./data/' + folders[i] + '/' + rel);
+        urls.push('./data/' + folders[i] + '/' + clean);
       }
     }
     for (var u = 0; u < urls.length; u++) {
@@ -621,18 +630,26 @@ MAP_ENGINE_JS = """\
       };
       img.onerror = function () { idx++; try_load(); };
       // canonical path first; the per-folder probes only matter for a bare
-      // name (each asset now exists in exactly one directory).
-      img.src = './data/' + (rel.indexOf('/') >= 0
-                             ? rel : folders[idx++] + '/' + rel);
+      // name.  A leading "../" must go: this URL is built from the page root,
+      // so "../fgimage/x.png" would escape data/ (measured 404).
+      var clean = String(rel).replace(/^\\.\\.\\//, '');
+      img.src = clean.indexOf('/') >= 0
+        ? __kag3_data_url(clean)
+        : './data/' + folders[idx++] + '/' + clean;
     };
     try_load();
   };
   var __kag3_resolve = function (name, map) {
-    var s = String(name || '');
+    var s = String(name == null ? '' : name);
     if (!s) return null;
-    var key = s.toLowerCase();
+    // accept both a bare name and a resolved "../<dir>/<file>" path
+    var key = s.replace(/^\\.\\.\\//, '').toLowerCase();
     var r = map[key];
     if (!r) r = map[key.replace(/\\.[^.]+$/, '')];
+    if (!r) {
+      var stem = key.replace(/^.*\\//, '').replace(/\\.[^.]+$/, '');
+      r = map[stem];
+    }
     return r || null;
   };
   var __kag3_jump = function (kag, storage, target) {
@@ -2052,7 +2069,25 @@ def _convert_assets(unpacked, out_data, stats):
         _walk(src_dir, "")
 
 
+def _up_to_date(src, dst):
+    """True when `dst` already exists and is not older than `src`.
+
+    Rebuilding a game re-runs the converter over the whole asset tree, and a
+    TLG decode is ~3.3 s per file (658 of them = ~35 min).  Skipping an
+    up-to-date target makes a second build cheap, which is what makes it
+    practical to iterate on the generated shim/code without paying for the
+    image work again.
+    """
+    try:
+        return os.path.getmtime(dst) >= os.path.getmtime(src)
+    except OSError:
+        return False
+
+
 def _convert_tlg(src, dst, stats):
+    if _up_to_date(src, dst):
+        stats["tlg_cached"] += 1
+        return
     try:
         with open(src, "rb") as f:
             data = f.read()
@@ -2067,6 +2102,9 @@ def _convert_tlg(src, dst, stats):
 
 
 def _convert_bmp(src, dst, stats):
+    if _up_to_date(src, dst):
+        stats["bmp_cached"] += 1
+        return
     try:
         from PIL import Image
         Image.open(src).convert("RGBA").save(dst, "PNG")

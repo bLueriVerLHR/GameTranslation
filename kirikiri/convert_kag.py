@@ -1596,33 +1596,49 @@ def convert_ks_line(line, unpacked, macros, in_script=False):
     tags = _scan_tags(line)
     if len(tags) > 1:
         parts = ["[" + t + "]" for t in tags]
-        return "\n".join(re.sub(r'^\[s\](\s*)$', lambda m: '[kag3stop]' + m.group(1), p) for p in parts) + "\n"
-    return re.sub(r'^\[s\](\s*)$', lambda m: '[kag3stop]' + m.group(1), line)
+        return "\n".join(re.sub(r'^\[s\](\s*)$', lambda m: '[kag3stop]' + m.group(1), p)
+                         for p in (_replace_layer_image(p) for p in parts)) + "\n"
+    line = re.sub(r'^\[s\](\s*)$', lambda m: '[kag3stop]' + m.group(1), line)
+    return _replace_layer_image(line)
 
 
-def _scan_tags(text):
-    """Bracket-pairing tag scan (same semantics as Tyrano's parser):
-    returns the inner text of each top-level [tag ...]."""
-    out = []
-    i, n = 0, len(text)
-    while i < n:
-        if text[i] == "[":
-            depth, j = 0, i
-            while j < n:
-                if text[j] == "[":
-                    depth += 1
-                elif text[j] == "]":
-                    depth -= 1
-                    if depth == 0:
-                        out.append(text[i + 1:j])
-                        i = j + 1
-                        break
-                j += 1
-            else:
-                break
-        else:
-            i += 1
-    return out
+def _replace_layer_image(part):
+    """KAG3 `[image layer=N ...]` REPLACES what layer N holds.
+
+    A KAG3 layer holds at most one image per page (fore/back). Tyrano's
+    `[image]` tag only ever appends or prepends a new <img> into the layer
+    (kag.tag.js), so under a naive name-for-name mapping the layer accumulates
+    every image ever drawn on it.
+
+    This game clears a character slot by drawing a transparent placeholder
+    (`storage=clear`) over it -- correct under replace semantics, but under
+    append semantics the placeholder is stacked ON TOP of the sprite, which
+    stays visible underneath. Every character a scene ever loaded therefore
+    stays on screen for the rest of the game (measured: one sprite layer
+    carried 6 images, and the same character appeared in two layers at once,
+    squeezed against the CG that had replaced the scene).
+
+    Fix: emit a layer clear with the SAME layer and page right before the
+    image. Tyrano evaluates a leading `&` in any parameter value
+    (`convertEntity`), so this game's dynamic layers (`layer=&tf.layer1`) work
+    here too. `layer=base` is skipped because the engine's [freeimage] refuses
+    the base layer, and the background is replaced properly by [bg].
+
+    Returns the (possibly prefixed) tag text.
+    """
+    m = re.match(r'^\[(image|graph)\b([^\]]*)\]$', part.strip(), re.I)
+    if not m:
+        return part
+    attrs = m.group(2)
+    lm = re.search(r'\blayer\s*=\s*("(?:[^"]*)"|\'(?:[^\']*)\'|[^\s\]]+)', attrs)
+    if not lm:
+        return part
+    layer = lm.group(1).strip('"\'')
+    if not layer or layer.lower() == "base":
+        return part
+    pm = re.search(r'\bpage\s*=\s*("(?:[^"]*)"|\'(?:[^\']*)\'|[^\s\]]+)', attrs)
+    page = " page=%s" % pm.group(1) if pm else ""
+    return "[freeimage layer=%s%s]%s" % (lm.group(1), page, part.strip())
 
 
 def _scan_tags(text):

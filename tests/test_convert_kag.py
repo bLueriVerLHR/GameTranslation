@@ -889,9 +889,13 @@ def test_layopt_is_a_real_implementation_not_a_noop():
     assert '__kag3_real' in js
     for piece in ('getLayer', 'visible', 'opacity', "j.hide()", 'z-index'):
         assert piece in js, piece
-    # no layer positioning here -- [image] carries the foreground position
-    assert 'j.css("left"' not in js
-    assert 'j.css("top"' not in js
+    # no layer positioning inside the LAYOPT block: the foreground position comes
+    # from [image], and applying it here as well compounded the offset (measured
+    # -800px). [position] is what positions message layers, so only that block may
+    # set left/top.
+    layopt_block = js.split('tyrano.plugin.kag.tag["layopt"]')[-1].split('T["position"]')[0]
+    assert 'j.css("left"' not in layopt_block
+    assert 'j.css("top"' not in layopt_block
 
 
 def test_layopt_never_overrides_an_engine_implementation():
@@ -948,9 +952,12 @@ def test_message_backing_uses_the_games_own_parameters():
     dialogue sat directly on the CG (owner: "底衬我没看到恢复"). Our own earlier
     override was reverted in both directions: no extra colour of our invention and
     no wholesale `transparent` that also kills the game's backing."""
+    import re as _re
     js = ck.RUNTIME_SHIM_IIFE
-    assert ".message_outer{background-color:rgba(0,0,0,.5)}" in js
-    assert "background-color:transparent" not in js
+    # the game's own backing is rendered again (the transparent override is gone),
+    # so ours must NOT be added on top of it (owner: "双层底衬")
+    assert not _re.search(r"\.message_outer\{[^}]*background", js)
+    assert not _re.search(r"\.message_inner\{[^}]*background", js)
 
 
 def test_r_and_style_affect_appended_ch_runs():
@@ -1023,3 +1030,33 @@ def test_ch_renders_message_text_instead_of_being_a_noop():
 def test_font_colour_recording_is_wrapped_once():
     js, _n = ck._shim_js((), None, {"ch"})
     assert "__kag3_wrapped" in js
+
+
+def test_position_never_moves_the_message_layer():
+    """KAG3 [position layer=message1 frame=.. top=599] is the frame origin of the
+    name plate, not a command to move the window: applying left/top pushed the
+    windows out of frame, and overflow:hidden then clipped the dialogue and every
+    choice item away (owner: "选项文字消失了"). Only frame/colour/margins are used."""
+    js, _n = ck._shim_js((), None, {"position", "locate"})
+    pos = js.split('T["position"]')[-1].split('T["locate"]')[0]
+    assert "background-image" in pos          # frame art
+    assert "marginl" in pos or "margin-left" in pos
+    for geom in ('j.css("left"', 'j.css("top"', 'j.css("width"', 'j.css("height"'):
+        assert geom not in pos, geom
+
+
+def test_ch_composed_messages_are_exempt_from_the_hard_clip():
+    """The dialogue window is 113px tall; choice items need more room, so the
+    windows our [ch] writes into must not be clipped."""
+    js = ck.RUNTIME_SHIM_IIFE
+    assert "kag3ch-msg" in js
+    assert ".message_inner.kag3ch-msg{overflow:visible !important}" in js
+    assert ".message_inner{overflow:hidden}" in js   # dialogue keeps the clip
+    assert "margin:0 !important;padding:0 !important" in js
+
+
+def test_ch_skips_empty_runs():
+    """An empty [ch] run must not open a paragraph: it costs a whole line and
+    pushes later choice items out of the window."""
+    js, _n = ck._shim_js((), None, {"ch"})
+    assert "u3000" in js          # ideographic space is treated as empty

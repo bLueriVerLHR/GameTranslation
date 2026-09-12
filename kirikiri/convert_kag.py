@@ -412,6 +412,10 @@ NOOP_PLUS_REAL_JS = r"""
     ch.start = function (pm) {
       try {
         var txt = (pm && pm.text != null) ? String(pm.text) : "";
+        // An empty run must not open a paragraph: it would cost a whole line and
+        // push later choice items past the window, where overflow:hidden clips them
+        // (measured: items 80px apart in a 113px window -> only the first visible).
+        if (txt.replace(/[\s\u3000]/g, "") === "") { this.kag.ftag.nextOrder(); return; }
         var $i = $(".message_inner").filter(function () {
           return $(this).find("span").length > 0;
         }).last();
@@ -427,6 +431,9 @@ NOOP_PLUS_REAL_JS = r"""
           $p = $i.find("p").last();
         }
         if (window.__kag3_align) $p.css("text-align", window.__kag3_align);
+        // Mark this window as [ch]-composed so it is exempt from the hard clip:
+        // choice items legitimately need more room than the 113px dialogue window.
+        $i.addClass("kag3ch-msg");
         var $prev = $i.find("span").last();
         var $s = $("<span></span>");
         if ($prev.length) {
@@ -464,6 +471,84 @@ NOOP_PLUS_REAL_JS = r"""
       st.start = function (pm) {
         if (pm && pm.align) window.__kag3_align = String(pm.align);
         return _ss.call(this, pm);
+      };
+    }
+  })();
+
+  // KAG3 message-layer positioning. Both tags were no-ops, which is why the
+  // speaker name was centred instead of sitting at the window's top-left, the
+  // message frame art was never drawn, and choice items lost their indentation.
+  (function () {
+    var T = tyrano.plugin.kag.tag;
+    var num = function (v, d) {
+      if (v === null || v === undefined || v === "") return d;
+      var n = parseFloat(v);
+      return isNaN(n) ? d : n;
+    };
+    var has = function (v) { return v !== null && v !== undefined && v !== ""; };
+
+    var P = T["position"];
+    if (P && P.start && !P.__kag3_wrapped) {
+      var _ps = P.start;
+      P.__kag3_wrapped = true;
+      P.start = function (pm) {
+        try {
+          var name = String(pm.layer == null ? "" : pm.layer);
+          var j = null;
+          if (name !== "" && name !== "base") {
+            try { j = this.kag.layer.getLayer(name, pm.page || "fore"); } catch (e) { j = null; }
+          }
+          if (j && j.length) {
+            // NOTE: deliberately NOT setting left/top/width/height. Tyrano already
+            // places the message windows; KAG3's `[position ... top=599]` (the name
+            // plate's own frame origin) moved them out of frame, so the dialogue and
+            // the choice items were painted outside the backing box, where
+            // overflow:hidden clipped them (measured: window at viewport y=1087 on an
+            // 800px-tall page; owner: "选项文字消失了").
+            if (has(pm.color)) {
+              // KAG3 frameColor 0xRRGGBB + frameOpacity 0..255
+              var c = String(pm.color).replace(/^0x/i, "").replace(/^#/, "");
+              if (/^[0-9a-fA-F]{6}$/.test(c)) {
+                var a = has(pm.opacity) ? num(pm.opacity, 255) : 255;
+                j.css("background-color", "rgba(" + parseInt(c.substr(0, 2), 16) + "," +
+                      parseInt(c.substr(2, 2), 16) + "," + parseInt(c.substr(4, 2), 16) + "," +
+                      Math.max(0, Math.min(1, a / 255)) + ")");
+              }
+            }
+            if (has(pm.frame) && typeof __kag3_asset_path === "function") {
+              var fpath = __kag3_asset_path(String(pm.frame));
+              if (fpath) j.css({ "background-image": "url(" + fpath + ")",
+                                 "background-repeat": "no-repeat" });
+            }
+            var ml = num(pm.marginl, 0), mt = num(pm.margint, 0);
+            var mr = num(pm.marginr, 0), mb = num(pm.marginb, 0);
+            if (ml || mt || mr || mb) {
+              j.find(".message_inner, .message_outer").css({
+                "box-sizing": "border-box",
+                "padding-left": ml + "px", "padding-top": mt + "px",
+                "padding-right": mr + "px", "padding-bottom": mb + "px" });
+            }
+          }
+        } catch (e) {}
+        return _ps.call(this, pm);
+      };
+    }
+
+    var LO = T["locate"];
+    if (LO && LO.start && !LO.__kag3_wrapped) {
+      var _ls = LO.start;
+      LO.__kag3_wrapped = true;
+      LO.start = function (pm) {
+        try {
+          var $mi = $(".message_inner").filter(function () {
+            return $(this).find("span").length > 0; }).last();
+          var $p = $mi.find("p").last();
+          if ($p.length) {
+            if (has(pm.x)) $p.css("left", num(pm.x, 0) + "px");
+            if (has(pm.y)) $p.css("top", num(pm.y, 0) + "px");
+          }
+        } catch (e) {}
+        return _ls.call(this, pm);
       };
     }
   })();
@@ -1411,25 +1496,32 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "            '#tyrano_base div[class*=\"message\"][class*=\"_fore\"] *,' +",
     "            '#tyrano_base div[class*=\"message\"][class*=\"_back\"] *' +",
     "            '{pointer-events:auto !important}' +",
-    "            // Message backing, using the game's OWN parameters: its KAG3",
-    "            // system/Config.tjs sets frameColor = 0x000000 with",
-    "            // frameOpacity = 128 (= 50%). The frame ART is not rendered by this",
-    "            // conversion, so without this the dialogue sat directly on the CG",
-    "            // (owner: \"底衬我没看到恢复\"). Absolute black at 50% is the engine",
-    "            // default too, so this matches both.",
-    "            '.message_outer{background-color:rgba(0,0,0,.5)}' +",
+    "            // NO backing of our own: the game's own backing is rendered again now",
+    "            // that the `background-color:transparent` override is gone, and adding",
+    "            // ours as well produced two stacked layers (owner: \"双层底衬\").",
+    "            // The frame colour/opacity comes from [position color= opacity=].",
     "            // Text must never paint outside its window: Tyrano's default",
     "            // line box is taller than KAG3's, so a long KAG3 message",
     "            // can grow past the window and cover the bottom-right system",
     "            // buttons. Clipping is the hard guarantee; __kag3_fit_message",
     "            // below only reports an overflow (it never resizes text).",
     "            '.message_inner{overflow:hidden}' +",
+    "            // [ch]-composed messages (choice lists, name plates) must not be",
+    "            // clipped: the game lays choice items out across more room than the",
+    "            // dialogue window (measured 113px window vs items 80px apart, so the",
+    "            // tail vanished -- owner: \"选项文字消失了\"). Normal dialogue keeps",
+    "            // the hard clip.",
+    "            '.message_inner.kag3ch-msg{overflow:visible !important}' +",
     "            // Use the game's own KAG3 metrics (Config.tjs defaultFontSize 22,",
     "            // defaultLineSpacing 6) so the line breaks land where the original",
     "            // had them and nothing needs rescaling. Applies to the message",
     "            // window only, and overrides the engine's inline per-message size.",
     "            '.message_inner p,.message_inner p span{' +",
     "            'font-size:22px !important;line-height:28px !important}' +",
+    "            // Paragraphs created by our [ch] must not add their own margins:",
+    "            // the default ones cost about 24px per line, so four choice items",
+    "            // needed 234px inside a 113px window and the tail was clipped away.",
+    "            '.message_inner p.kag3ch{margin:0 !important;padding:0 !important}' +",
     "            // Safe area for Tyrano's own control bar (skip/auto/menu icons sit",
     "            // at the bottom right). KAG3 reserved that space through its",
     "            // message frame's margins, which Tyrano ignores, so without this",

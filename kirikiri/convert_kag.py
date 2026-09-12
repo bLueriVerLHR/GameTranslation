@@ -74,6 +74,13 @@ log = logging.getLogger("convert_kag")
 # Registered as no-op plugin tags so scenarios do not hit undefined_tag.
 # ---------------------------------------------------------------------------
 
+# Tags dropped at conversion time. The game's own system-button row lives in
+# name.ks/define2.ks as [button graphic=...] (70 sites, no [endbutton]); the
+# owner judged the row unnecessary, it overlaps the message text, and its
+# buttons need kag.* methods Tyrano does not have. Tyrano's own control bar
+# still provides save/load/config/skip. Set from main(); tests may set it too.
+_DROPPED_TAGS = set()
+
 SHIM_TAG_NAMES = list(dict.fromkeys([
     "laycount", "startanchor",
     "disablestore", "loadplugin", "style", "resetstyle", "hr", "wm",
@@ -362,7 +369,47 @@ def _shim_js(macros=(), engine_dir=None, used_tags=None):
     ]
     for name in sorted(names):
         lines.append('  define("%s");' % name)
-    lines.append("})();")
+    lines.append("""
+  // KAG3 [layopt] is NOT a no-op. The engine has no [layopt] at all, so the
+  // no-op was swallowing it: layer visibility (2053 sites) never changed, so
+  // every character a scene had ever loaded stayed on screen, and layer
+  // offsets (112 sites, e.g. `[layopt layer=lay_ch_left left=-200 top=0]`)
+  // were lost, pushing the side characters of a three-character shot off the
+  // frame.
+  (function () {
+    var L = tyrano.plugin.kag.tag["layopt"];
+    if (!L || L.__kag3_real) return;   // engine implements it -> engine wins
+    var isTrue = function (v) { return v === true || String(v) === "true"; };
+    var isFalse = function (v) { return v === false || String(v) === "false"; };
+    var num = function (v) {
+      if (v === null || v === undefined || v === "") return NaN;
+      var n = parseFloat(v);
+      return isNaN(n) ? NaN : n;
+    };
+    L.__kag3_real = true;
+    L.pm = { layer: "", page: "fore", visible: "", opacity: "", left: "",
+             top: "", index: "" };
+    L.start = function (pm) {
+      var name = String(pm.layer == null ? "" : pm.layer);
+      if (name !== "" && name !== "base") {
+        var j = null;
+        try { j = this.kag.layer.getLayer(name, pm.page || "fore"); } catch (e) { j = null; }
+        if (j && j.length) {
+          if (isTrue(pm.visible)) j.show();
+          else if (isFalse(pm.visible)) j.hide();
+          var op = num(pm.opacity);
+          if (!isNaN(op)) j.css("opacity", Math.max(0, Math.min(1, op / 255)));
+          var lf = num(pm.left), tp = num(pm.top);
+          if (!isNaN(lf)) j.css("left", lf + "px");
+          if (!isNaN(tp)) j.css("top", tp + "px");
+          var ix = num(pm.index);
+          if (!isNaN(ix)) j.css("z-index", ix);
+        }
+      }
+      this.kag.ftag.nextOrder();
+    };
+  })();
+})();""")
     return "\n".join(lines) + "\n", len(names)
 
 
@@ -1256,7 +1303,14 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "            // an unmarked message keeps the engine's own styling unchanged.",
     "            '.message_inner[data-kag3-fit]>p,' +",
     "            '.message_inner[data-kag3-fit]>p>span{font-size:inherit !important;' +",
-    "            'line-height:inherit !important}';",
+    "            'line-height:inherit !important}' +",
+    "            // Safe area for Tyrano's own control bar (skip/auto/menu icons sit",
+    "            // at the bottom right). KAG3 reserved that space through its",
+    "            // message frame's margins, which Tyrano ignores, so without this",
+    "            // the last line runs underneath the icons (reported in play-test).",
+    "            '.message_inner>p{box-sizing:border-box !important;' +",
+    "            'max-width:100% !important;padding-right:190px !important;' +",
+    "            'padding-bottom:44px !important}';",
     "          (document.head || document.documentElement).appendChild(s);",
     "        } catch (e) {}",
     "      })();",
@@ -2041,9 +2095,19 @@ def convert_ks_line(line, unpacked, macros, in_script=False):
     if len(tags) > 1:
         parts = ["[" + t + "]" for t in tags]
         return "\n".join(re.sub(r'^\[s\](\s*)$', lambda m: '[kag3stop]' + m.group(1), p)
-                         for p in (_replace_layer_image(p) for p in parts)) + "\n"
+                         for p in (_remap_part(p) for p in parts)) + "\n"
     line = re.sub(r'^\[s\](\s*)$', lambda m: '[kag3stop]' + m.group(1), line)
-    return _replace_layer_image(line)
+    return _remap_part(line)
+
+
+def _remap_part(part):
+    """Convert one top-level tag part: drop disabled tags, then apply the
+    layer-replace rewrite."""
+    m = re.match(r'^\[([a-z_][a-z0-9_]*)\b', part.lstrip(), re.I)
+    if m and m.group(1).lower() in _DROPPED_TAGS:
+        # keep the line ending: dropping it glues the next source line on
+        return part[len(part.rstrip("\r\n")):]
+    return _replace_layer_image(part)
 
 
 def _replace_layer_image(part):
@@ -2696,6 +2760,10 @@ def main():
     ap.add_argument("unpacked", help="extracted KAG3 game dir (xp3tool extract)")
     ap.add_argument("engine", help="TyranoScript engine source tree (index.html + tyrano/)")
     ap.add_argument("out_dir", help="output TyranoScript project")
+    ap.add_argument("--keep-game-buttons", action="store_true",
+                    help="keep the game's own system-button row (default: dropped; "
+                         "it overlaps the message text and needs engine APIs "
+                         "Tyrano lacks)")
     ap.add_argument("--scenario-dir", default="scenario", help="scenario subdir in unpacked (default: scenario)")
     ap.add_argument("--scenario-only", action="store_true",
                     help="only re-convert scenario .ks (skip engine copy and assets)")
@@ -2715,6 +2783,12 @@ def main():
                          "message text in the bottom black area")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
+
+    # Tags dropped for this run (see _DROPPED_TAGS). Must be set before any
+    # scenario is converted, not next to the shim build.
+    _DROPPED_TAGS.clear()
+    if not getattr(args, "keep_game_buttons", False):
+        _DROPPED_TAGS.add("button")
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(levelname)s %(name)s: %(message)s")

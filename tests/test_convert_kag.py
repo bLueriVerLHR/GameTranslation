@@ -1,6 +1,7 @@
 """Unit tests for kirikiri/convert_kag.py (KAG3 -> TyranoScript converter)."""
 
 import os
+import re
 import sys
 import collections
 from collections import Counter
@@ -733,7 +734,8 @@ def test_injected_style_statement_is_terminated():
     assert "'.message_inner[data-kag3-fit]>p>span{font-size:inherit !important;'" in js
     assert "line-height:inherit !important}'" in js
     # the concatenated statement ends with a terminator before the append
-    assert "line-height:inherit !important}';" in js, js[-700:]
+    # (rule-agnostic: the last CSS rule before the statement must end `}';`)
+    assert re.search(r"\}';\s*\(document\.head", js), js[-700:]
 
 
 def test_message_text_is_clipped_to_its_window():
@@ -863,6 +865,55 @@ def test_style_and_wq_keep_their_noops():
     # tags the engine really implements must NOT be shimmed
     for real_tag in ("bg", "bgmopt", "fadeinbgm", "fadeoutse", "wa", "wb"):
         assert ('define("%s")' % real_tag) not in js, real_tag
+
+
+def test_layopt_is_a_real_implementation_not_a_noop():
+    """The engine has no [layopt] at all, so a no-op silently swallowed
+    visibility (2053 call sites) and layer offsets (112 sites). Symptom: stale
+    characters stayed on screen and the side characters of a three-character
+    shot were pushed off the frame."""
+    js, _n = ck._shim_js((), None, {"layopt"})
+    assert '__kag3_real' in js
+    for piece in ('getLayer', 'visible', 'opacity', "j.css(\"left\"", "j.hide()"):
+        assert piece in js, piece
+
+
+def test_layopt_never_overrides_an_engine_implementation():
+    js, _n = ck._shim_js((), None, {"layopt"})
+    assert 'if (!L || L.__kag3_real) return;' in js
+
+
+def test_game_button_row_is_dropped_by_default():
+    """The game's own system buttons overlap the message text and call engine
+    APIs Tyrano lacks; the owner judged the row unnecessary."""
+    ck._DROPPED_TAGS.clear()
+    ck._DROPPED_TAGS.add("button")
+    try:
+        kept = ck._remap_part('[button graphic="skip_bot" exp="x"]\r\n')
+        assert "button" not in kept.lower()
+        assert kept.endswith("\r\n"), "the line ending must survive (comment-glue bug)"
+        other = ck._remap_part('[cm]\n')
+        assert other == '[cm]\n'
+    finally:
+        ck._DROPPED_TAGS.clear()
+
+
+def test_dropped_tag_keeps_line_ending_even_without_one():
+    ck._DROPPED_TAGS.clear()
+    ck._DROPPED_TAGS.add("button")
+    try:
+        assert ck._remap_part("[button graphic=x]") in ("", "\n")
+    finally:
+        ck._DROPPED_TAGS.clear()
+
+
+def test_message_text_has_a_safe_area_for_engine_controls():
+    """KAG3 reserved the bottom-right control space through its message frame
+    margins, which Tyrano ignores."""
+    js = ck.RUNTIME_SHIM_IIFE
+    assert "padding-right:190px" in js
+    assert "padding-bottom:44px" in js
+    assert "box-sizing:border-box" in js
 
 
 def test_message_window_gets_a_translucent_backing():

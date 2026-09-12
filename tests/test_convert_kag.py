@@ -518,3 +518,70 @@ class TestRegionImage:
         out_im = _PIL.open(str(dst))
         assert out_im.mode == "L"
         assert out_im.tobytes() == idx
+
+
+# ---------------------------------------------------------------------------
+# Regressions found while play-testing a real build.
+# ---------------------------------------------------------------------------
+
+
+def test_free_layer_does_not_cover_the_click_event_layer():
+    """Tyrano draws [button] into the free layer, which stacks ABOVE
+    .layer_event_click (z-index 999999 vs 9999) and spans the whole canvas.
+
+    Tyrano binds click-to-advance to .layer_event_click, so while the free
+    layer accepts pointer events every click lands on it instead and a
+    [p]/[s] click wait can never be satisfied: the story shows a line and then
+    ignores every click (no tag runs, no error, no cursor movement).  KAG3
+    games build most of their UI out of [button] (sysmenu, save/load, ...), so
+    this hits every scene, not just menus.
+
+    The free layer itself must be click-through; its children (the actual
+    buttons) must stay clickable.
+    """
+    js = ck.RUNTIME_SHIM_IIFE
+    assert "data-kag3" in js and "free-layer-clickthrough" in js, js[:400]
+    assert ".layer_free{pointer-events:none !important}" in js, js[:400]
+    assert ".layer_free>*{pointer-events:auto !important}" in js, js[:400]
+
+
+def test_decoder_mtime_tracks_only_the_image_decoder():
+    """The image cache must invalidate when the decoder changes, but not when
+    unrelated converter code changes.
+
+    Including convert_kag.py in the decoder timestamp meant every shim or
+    scenario tweak reconverted all 748 images (~35 min per edit), which defeats
+    the cache; omitting the decoder entirely meant a decoder fix silently kept
+    serving images built by the old one.
+    """
+    from kirikiri import tlg as ktlg
+
+    mtime = ck._decoder_mtime()
+    assert mtime > 0
+    assert abs(mtime - os.path.getmtime(ktlg.__file__)) < 1.0
+    assert mtime < os.path.getmtime(ck.__file__), (
+        "convert_kag.py itself must not be part of the image cache key")
+
+
+def test_up_to_date_invalidates_images_when_decoder_is_newer(tmp_path):
+    src = tmp_path / "a.tlg"
+    dst = tmp_path / "a.png"
+    src.write_bytes(b"x")
+    dst.write_bytes(b"y")
+    now = os.path.getmtime(src)
+    os.utime(dst, (now + 100, now + 100))
+    assert ck._up_to_date(str(src), str(dst)) is True
+    # a decoder newer than the target forces a rebuild
+    os.utime(dst, (now - 100, now - 100))
+    assert ck._up_to_date(str(src), str(dst)) is False
+
+
+def test_up_to_date_keeps_non_image_targets_cheap(tmp_path):
+    """Non-image targets must not be tied to the decoder timestamp."""
+    src = tmp_path / "a.ks"
+    dst = tmp_path / "a.out"
+    src.write_bytes(b"x")
+    dst.write_bytes(b"y")
+    now = os.path.getmtime(src)
+    os.utime(dst, (now + 100, now + 100))
+    assert ck._up_to_date(str(src), str(dst)) is True

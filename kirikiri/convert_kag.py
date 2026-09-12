@@ -1014,6 +1014,26 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "      // KAG3 keeps the map alive across process()/jumps; scenarios",
     "      // disable it explicitly with [mapdisable] (e.g. the title's",
     "      // *game_start) or a new image load clears it (loadImages).",
+    "      // Tyrano draws [button] into the FREE layer, which sits ABOVE",
+    "      // .layer_event_click (z-index 999999 vs 9999) and spans the whole",
+    "      // canvas. Tyrano binds click-to-advance to .layer_event_click, so",
+    "      // while the free layer accepts pointer events every click targets",
+    "      // the free layer instead and a [p]/[s] click wait can never be",
+    "      // satisfied: the story looks frozen (no tag runs, no error,",
+    "      // nextOrder inert). The free layer must not intercept; its children",
+    "      // (the actual buttons) still must. A CSS rule covers layers created",
+    "      // after this script runs, so there is no initialisation ordering",
+    "      // race.",
+    "      (function () {",
+    "        try {",
+    "          var s = document.createElement('style');",
+    "          s.setAttribute('data-kag3', 'free-layer-clickthrough');",
+    "          s.textContent =",
+    "            '.layer_free{pointer-events:none !important}' +",
+    "            '.layer_free>*{pointer-events:auto !important}';",
+    "          (document.head || document.documentElement).appendChild(s);",
+    "        } catch (e) {}",
+    "      })();",
     "      // KAG3 [button graphic=X] art lives in bgimage/fgimage (mirrored",
     "      // into image/ during conversion); Tyrano loads it from",
     "      // ./data/image/ without appending an extension, so resolve the",
@@ -2079,14 +2099,18 @@ def _convert_assets(unpacked, out_data, stats):
 
 
 def _decoder_mtime():
-    """Newest mtime among the code that decides what a converted image looks
+    """Newest mtime of the code that decides what a converted image looks
     like.  A cache that only compares source vs target timestamps cannot see a
     decoder fix, so a corrected decoder would silently keep serving images
     built by the old one (measured: the B/R channel-order fix left every
     already-converted PNG red/blue swapped until they were deleted by hand).
+
+    Only the image decoder belongs here.  Including this module would make
+    every shim/scenario tweak invalidate all 748 images (~35 min per edit),
+    which is the opposite of what the cache is for.
     """
     newest = 0.0
-    for path in (getattr(tlg, "__file__", None), __file__):
+    for path in (getattr(tlg, "__file__", None),):
         if path:
             try:
                 newest = max(newest, os.path.getmtime(path))

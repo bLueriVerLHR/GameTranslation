@@ -169,12 +169,28 @@ KAG3 由吉里吉里 2 SDK 的 `KAGParser.dll` 解析 `.ks`；常见变体：
 | 1 | **动态引用的素材必须真实存在** | 无扩展名 133 处 + `&` 表达式 2851 处 | **真缺口**。不是语法问题，而是**提取范围**：`&f.t_voice[f.vnum]` 求值出无扩展名 KAG3 名，运行期靠 `__kag3_assets` 映射到实际文件；静态扫描没扒出来的文件就解析不到。→ 全量提取。 |
 | 2 | **素材被复制三份** | 每图 3 份 | **真缺口，已修**。见 §3.2。 |
 | 3 | **`.wmv`/`.mpg` 浏览器不能播** | 80 个 / 955 MB | **真缺口，已修**。见 §4。 |
-| 4 | **点击推进线程没真正实现** | `[T_NEXT]` 12053 处 | **真缺口，待修**。见 §3.2。 |
+| 4 | **点击推进被浮动层截断** | 全游戏每一幕 | **真缺口，已修**。见 §3.1。 |
 | — | ~~属性 `&表达式` 未展开~~ | 2851 | **不存在**（Tyrano 原生支持，见 §5.1） |
 | — | ~~`[wt]` 未映射的未定义标签~~ | 273 | **不存在**（`tyrano.plugin.kag.tag.wt`，原生等 `is_trans`） |
 | — | ~~KAG3 保留颜色名~~ | — | **不存在**（都是真实素材，见 §5.1） |
 
-### 3.1 点击推进线程（`[p]`/`[er]` 被当空操作）
+### 3.3 被推翻：`[p]`/`[er]` 曾被当成空操作（勿重走）
+
+**下面的推断是错的，保留以免后人重走。** `[p]`（改页点击等待）与
+`[er]`（擦除消息层文字）**都是 Tyrano 原生标签**（`tyrano/plugins/kag/`
+`kag.tag.js`）；本仓库的 no-op shim **也没有**注册它们。两个方向都实测过：
+探测到 `p:tag` / `er:tag` 来自**引擎自身**；按「shim 名单 ∩ 引擎实际注册
+标签」扫出的真遮蔽集合只有 `bg / bgmopt / close / fadeinbgm / fadeoutse /
+ruby / style / wa / wb / wq` 十个，`p` 与 `er` 都不在里面。
+
+所以「推进线程没实现」这条不成立 —— 真实原因是 §3.1 的浮动层截断。
+
+教训：`SHIM_TAG_NAMES` 上方那句注释
+（"KAG3-only tags that Tyrano does not implement"）是**断言而非事实**。
+判断某个 shim 是否遮蔽了引擎实现，必须拿**引擎实际注册的标签集合**去求
+交集，不能读注释、也不能只看单次探测结果。
+
+_以下为当时（错误）的记录：_
 
 已实测的事实（都是可复现的观测，不是推测）：
 
@@ -194,6 +210,41 @@ KAG3 由吉里吉里 2 SDK 的 `KAGParser.dll` 解析 `.ks`；常见变体：
   `is_wait=false`、`nextOrder()` 手调不动 —— 形态像异常从 `startTag`
   冒出（此版本 Tyrano 自带的 try/catch 被注释掉了）。**异常本身尚未抓到，
   此项未完成**；排查脚本在 `.tmp/trail_story.py`、`.tmp/catch_tag_error.py`。
+
+### 3.1 点击推进被浮动层截断（已修）
+
+**症状**：剧情能显示第一行，之后**怎么点都不走**——无标签执行、无报错、
+`nextOrder()` 手调也不动、`is_wait=false`。owner 手动试玩报的就是这个。
+
+**根因（引擎结构 + 实测 DOM）**：Tyrano 的 `[button]` 把按钮放进**浮动层**
+`.layer_free`，该层 `z-index:999999`、覆盖整个 canvas，高出点击事件层
+`.layer_event_click`（`z-index:9999`）；而 Tyrano 的“点击推进”恰好**绑在
+`.layer_event_click` 上**（`kag.key_mouse.js`）。两层是**兄弟**，事件不会横向
+传递，所以：**任何点击的目标都是浮动层 → 推进监听器永远收不到**。
+KAG3 游戏的 UI（系统菜单/存读档/回想...）几乎全是 `[button]`，所以这
+affect 每一幕，不只是菜单。
+
+实测 DOM 证据（停顿当时）：
+```
+.layer_event_click  z-index 9999    kids=0  html=""
+.layer_free         z-index 999999  kids=8  HISTORY_bot.png 等按钮
+点击点自下而上: layer_free → layer_event_click → message_inner ...
+```
+
+**修法**（`RUNTIME_SHIM_IIFE` 注入一条 CSS，避开初始化时序竞争）：
+```css
+.layer_free    { pointer-events: none !important }   /* 层本身不拦截 */
+.layer_free > *{ pointer-events: auto !important }   /* 里面的按钮仍然可点 */
+```
+修后点击目标变为 `.layer_event_click`，实测 **26/26 次点击各推进一行**。
+
+**排查教训（重要）**：**不能用 `current_order_index` 判断“有没有推进”**。
+本作的推进宏 `[T_NEXT]` 定义在 `define.ks`，每执行一行台词都会重新进入
+同一个宏体，于是 index 每次都回到**同一个值**（2655）——据此会误判成
+“完全卡死”。可靠观测量是：**执行过的标签计数**、**对话框实际文字**、
+**点击目标元素**。同一次排查中还有两个**无效判据**要记住：`is_wait`
+（`waitClick()` 根本不设它）与 `stat.stack`（宏栈是命名栈，用
+`getStack("macro")`）。
 
 ### 3.2 素材冗余（已修）
 

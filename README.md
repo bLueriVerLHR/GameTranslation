@@ -3,15 +3,20 @@
 面向 **JP→ZH 翻译 + 可玩构建** 的本地工具库；**DeepSeek V4 Flash**
 编写，基本没有人工编写的代码。
 
-## 游戏目的（2026-08 定案）
+## 游戏目的（2026-09 更新）
 
 | 目的 | 引擎 | 做法 |
 | --- | --- | --- |
 | **可玩构建（JoiPlay）** | HTML5 系（RPG Maker MZ/MV 网页版） | 剥离 NW.js、解密（仅 easy）、压缩音频、清理、验证、7z-zstd 打包 —— `pipeline.py` |
 | **可玩构建（JoiPlay）+ 翻译** | TyranoScript / TyranoBuilder（Electron 打包的 HTML5 视觉小说） | 解包 app.asar（npx @electron/asar）、剥 Electron 运行时、存档改 webstorage、mp3→ogg + 脚本引用同步重写、MTool 残留清理、验证 —— `tyrano/pipeline.py`；翻译走标准 chunk 流程写回 .ks |
-| **翻译 + 注入（不做 JoiPlay 转换）** | Unity / Wolf RPG / KiriKiri | 解包 → 提取 → 自译（统一 chunk/subagent 流程）→ 运行时 hook / 补丁注入 |
+| **移动端转换（当前主线）** | KiriKiri2 / KAG3 → TyranoScript | 保留脚本、图层、音画时序与交互语义，转换为网页工程，验证后在 Android JoiPlay 实机验收；见 `docs/kirikiri-tyrano.md` |
+| **翻译 + 注入** | Unity / Wolf RPG / KiriKiri | 解包 → 提取 → 自译（统一 chunk/subagent 流程）→ 运行时 hook / 补丁注入；KiriKiri 桌面补丁路线仍可单独使用 |
 
-翻译是当前主线：**清除 MTool 机翻，自己翻译，持续优化翻译能力**。
+当前优先改善 **KiriKiri → TyranoScript 的原作体验与手机可玩性**。
+实施顺序与验收标准见 [手机转换改进计划](docs/kirikiri-mobile-plan.md)。
+先验证画面层级、消息排版、动画与语音时序、选择分支和存读档；转换成功或
+浏览器能打开不能代替 Android 实机验收。无法等价实现的功能必须记录影响，
+经试玩评估取舍。翻译是独立工作阶段：**清除 MTool 机翻，自己翻译**。
 Unity = MelonLoader/BepInEx 运行时 hook；Wolf RPG = rewolf-trans 补丁
 回写；KiriKiri = patch.xp3 覆盖 scenario；TyranoScript = 标准 chunk
 流程写回 .ks（构建/翻译双路线，见 `docs/tyrano.md`）。翻译能力按具体
@@ -117,6 +122,7 @@ GameTranslation/
     ├── kirikiri.md      # KiriKiri 翻译指南（解包/提取/写回/patch.xp3/QC）
     ├── kirikiri-html.md # KiriKiri→HTML5 移植调研（JoiPlay 插件 / TyranoScript 转换 / WASM 对比）
     ├── kirikiri-tyrano.md # KiriKiri→TyranoScript 转换调研（路线 B 深化：支持程度分档 + 所需软件清单）
+    ├── kirikiri-mobile-plan.md # 手机转换改进计划：体验优先级、实施阶段与验收标准
     ├── tyrano.md        # TyranoScript/TyranoBuilder 指南（JoiPlay 构建 + 翻译）
     ├── experience.md    # 经验库索引（各主题经验入口，见下 experience-*）
     ├── experience-decrypt.md  # 经验：解密/解包/Repacker 识别

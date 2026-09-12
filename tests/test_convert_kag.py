@@ -946,8 +946,12 @@ def test_no_extra_message_backing():
     """Owner: this game draws its own message frame, so an added translucent
     backing is redundant."""
     js = ck.RUNTIME_SHIM_IIFE
+    # our own translucent backing is gone, but the GAME's backing must survive:
+    # forcing background-color:transparent on the message layers removed that too
+    # (owner: "删除多了，两层底衬都没了")
     assert "rgba(0,0,0,.5)" not in js
-    assert "background-color:transparent !important" in js
+    assert "background-color:transparent" not in js
+    assert "background-color" not in js.split("pointer-events:none")[0].split("z-index:8000")[-1]
 
 
 def test_configured_waits_are_dropped_in_skip_mode():

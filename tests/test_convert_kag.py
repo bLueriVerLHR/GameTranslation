@@ -731,8 +731,8 @@ def test_injected_style_statement_is_terminated():
     visible). node --check cannot see this -- it is not a syntax error.
     """
     js = ck.RUNTIME_SHIM_IIFE
-    assert "'.message_inner[data-kag3-fit]>p>span{font-size:inherit !important;'" in js
-    assert "line-height:inherit !important}'" in js
+    assert "'.message_inner p,.message_inner p span{'" in js
+    assert "font-size:22px !important" in js
     # the concatenated statement ends with a terminator before the append
     # (rule-agnostic: the last CSS rule before the statement must end `}';`)
     assert re.search(r"\}';\s*\(document\.head", js), js[-700:]
@@ -743,28 +743,37 @@ def test_message_text_is_clipped_to_its_window():
     assert ".message_inner{overflow:hidden}" in ck.RUNTIME_SHIM_IIFE
 
 
-def test_fit_only_overrides_a_message_it_marked():
-    """The engine writes each message's font-size/line-height as inline styles
-    on the <span> (kag.tag.js), so a fit applied to .message_inner needs those
-    turned into inheritance -- but only for a marked element, otherwise an
-    unmarked message would lose the engine's own styling."""
+def test_message_font_uses_the_kag3_metrics_not_a_shrinking_fit():
+    """Owner decision: never resize text to make it fit.
+
+    Shrinking produced uneven sizes between messages. The real cause was that
+    Tyrano's message text is larger than the original's, so fewer characters fit
+    per line; using the game's own KAG3 metrics (Config.tjs defaultFontSize 22 /
+    defaultLineSpacing 6) restores the original wrap points, so nothing needs
+    rescaling.
+    """
     js = ck.RUNTIME_SHIM_IIFE
-    assert ".message_inner[data-kag3-fit]>p," in js
-    assert "el.removeAttribute('data-kag3-fit')" in js
-    assert "el.setAttribute('data-kag3-fit', '1')" in js
+    assert "font-size:22px !important" in js
+    assert "line-height:28px !important" in js
+    # the measurement helper may report an overflow, but must not resize
+    assert "window.__kag3_fit_message" in js
+    assert "setTimeout(run, 150)" in js          # debounce: no per-frame reflow
+    for forbidden in ("data-kag3-fit", "data-kag3-k", "span.style.fontSize",
+                      "want * scale"):
+        assert forbidden not in js, forbidden
 
 
-def test_message_text_is_squeezed_back_into_its_window():
-    """Tyrano's default line box is taller than KAG3's, so a three-line KAG3
-    message can outgrow the window. The fit must measure without its own
-    overrides, recover the engine's per-message font size (stored scale in
-    data-kag3-k), then squeeze line height and font size until it fits."""
+def test_fit_check_reports_but_never_resizes():
+    """Owner decision: text must not be resized to make it fit.
+
+    The helper may measure and report an overflow, but the message font comes
+    from the game's own KAG3 metrics (see the metrics test), so a normal
+    message fits without any rescaling."""
     js = ck.RUNTIME_SHIM_IIFE
     assert "window.__kag3_fit_message" in js
-    assert "el.scrollHeight <= el.clientHeight + 1" in js
+    assert "el.scrollHeight > el.clientHeight + 1" in js   # report only
     assert "setTimeout(run, 150)" in js  # debounce: no per-frame reflow
-    assert "data-kag3-k" in js
-    assert "span.style.fontSize" in js  # the engine's own request is the base
+    assert "data-kag3-k" not in js
 
 
 def test_engine_tags_are_never_registered_as_no_ops(tmp_path):
@@ -916,13 +925,22 @@ def test_message_text_has_a_safe_area_for_engine_controls():
     assert "box-sizing:border-box" in js
 
 
-def test_message_window_gets_a_translucent_backing():
-    """KAG3 games usually draw a transparent message window over the CG art,
-    so dialogue sits directly on the picture and is hard to read. The backing
-    goes behind .message_outer (the window frame AND the name plate, which is
-    another message layer)."""
+def test_message_layers_outrank_the_character_layers():
+    """KAG3 stacks by layer number, Tyrano by DOM order, so a sprite layer ended
+    up above the message window (measured: sprite z=4000 vs .message_inner
+    z=1001) and painted over the dialogue."""
     js = ck.RUNTIME_SHIM_IIFE
-    assert ".message_outer{background-color:rgba(0,0,0,.5)" in js, js[:400]
+    assert 'div[class*="message"][class*="_fore"]' in js
+    assert 'div[class*="message"][class*="_back"]' in js
+    assert "{z-index:8000 !important}" in js
+
+
+def test_no_extra_message_backing():
+    """Owner: this game draws its own message frame, so an added translucent
+    backing is redundant."""
+    js = ck.RUNTIME_SHIM_IIFE
+    assert "rgba(0,0,0,.5)" not in js
+    assert "background-color:transparent !important" in js
 
 
 def test_configured_waits_are_dropped_in_skip_mode():

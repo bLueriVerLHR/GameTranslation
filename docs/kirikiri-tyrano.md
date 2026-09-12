@@ -442,6 +442,50 @@ KAG3 用消息框的 `marginl/marginr/margint/marginb`
 实测：40 字消息文本右边缘 **875** vs 控件起点 **942**（不再重叠），
 `scrollHeight == clientHeight`（无溢出裁切）。
 
+#### 8) 图层排序要靠层号（z-index），不能靠 DOM 顺序（已修）
+
+**症状**（试玩）：立绘盖在文字上，把对话挡掉了。
+
+**根因**：KAG3 的层叠由**层号**决定，Tyrano 由 **DOM 顺序**决定。精灵层因为原
+层号带着 z-index **3000/4000/5000**，而文字所在的 `message0_back` 是 `auto` ✗
+—— 于是立绘永远在文字之上。实测链条：
+`.message_inner` -> `.message0_back` -> `root_layer_game`。
+
+**修法**：所有消息页统一提到精灵层之上（同时作用于 `_fore` 与 `_back`，因为文字
+实际在 `_back`）：
+
+```css
+#tyrano_base div[class*="message"][class*="_fore"],
+#tyrano_base div[class*="message"][class*="_back"] { z-index: 8000 !important }
+```
+
+**实测**：自动化门禁（`tools/check_tyrano_build.py`）从 5/16 失败 -> **0/30 失败**。
+
+#### 9) 不要靠“缩字号”把文字塞进窗口（已按 owner 要求改掉）
+
+**症状**（试玩）：同一段话里字号忽大忽小，很难看。
+
+**根因**：Tyrano 的消息正文默认字号比原作大（原作用 KAG3 `Config.tjs` 的
+`defaultFontSize=22` / `defaultLineSpacing=6`，Tyrano 默认 ~28px/行高更大）——
+每行装的字更少、行数更多，于是我之前写了个“超出就缩字号”的补丁，
+补丁本身才是丑的根源。
+
+**修法**（owner 的方案：固定宽度换行、不缩字号）：
+
+- 消息正文统一用**原作的 KAG3 度量** `font-size:22px; line-height:28px`，
+  换行点自然落到与原文一致的位置 —— 不需要任何缩放；
+- “超框检测”（`__kag3_fit_message`）降级为**只报不调**（保留 `overflow:hidden`
+  作为最后一道硬保险）；同一消息不得出现多种字号（已进自动化门禁）。
+
+#### 10) 不要加多余的底衬（已按 owner 要求删掉）
+
+游戏自己的消息框（`name01_ti_*` 帧图）现在能正常显示了，之前加的
+半透明黑底衬是多余的，且会把游戏自带的底衬再压暗一层：
+
+```css
+.message_outer,.message_inner{background-color:transparent !important}
+```
+
 ### 3.4 可读性与快进（试玩反馈，已修）
 
 1. **消息窗底衬**：KAG3 游戏普遍把消息窗做成**透明美术**直接压在 CG 上，

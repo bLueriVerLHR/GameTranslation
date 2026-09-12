@@ -126,12 +126,15 @@ def _smoke_test(folder, port, host="127.0.0.1"):
 
 def cmd_serve(args):
     if args.test:
-        if not _smoke_test(args.out, args.port):
+        if not _smoke_test(args.out, args.port, args.host):
             raise SystemExit(1)
         log.info("smoke test OK")
         return
-    srv, _t = rpg_serve.start_server(args.out, port=args.port)
-    log.info("serving at http://127.0.0.1:%d (Ctrl+C to stop)", args.port)
+    srv, _t = rpg_serve.start_server(args.out, port=args.port, host=args.host)
+    log.info("serving at http://%s:%d (Ctrl+C to stop)", args.host, args.port)
+    if args.host == "0.0.0.0":
+        log.info("bound to all interfaces - reachable from other devices on "
+                 "the LAN at http://<this-machine-ip>:%d", args.port)
     try:
         while True:
             time.sleep(3600)
@@ -191,6 +194,10 @@ def main():
     p = sub.add_parser("serve", help="HTTP server + smoke test")
     p.add_argument("out", help="built game folder")
     p.add_argument("--port", type=int, default=8100)
+    p.add_argument("--host", default="127.0.0.1",
+                   help="bind address.  Use 0.0.0.0 so the owner can play from "
+                        "another device (phone) over the LAN - a loopback-only "
+                        "server is unreachable there")
     p.add_argument("--test", action="store_true", help="smoke test then exit")
     p.set_defaults(func=cmd_serve)
 

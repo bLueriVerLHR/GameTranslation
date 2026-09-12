@@ -96,9 +96,9 @@ def cmd_verify(args: argparse.Namespace) -> None:
 def cmd_serve(args: argparse.Namespace) -> None:
     wr = resolve_web_root(args.game)
     if args.test:
-        _results, ok = serve.smoke_test(wr, port=args.port)
+        _results, ok = serve.smoke_test(wr, port=args.port, host=args.host)
         sys.exit(0 if ok else 1)
-    serve.serve(wr, port=args.port)
+    serve.serve(wr, port=args.port, host=args.host)
 
 
 # ---------------------------------------------------------------- doctor
@@ -175,6 +175,10 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("serve", help="HTTP server + smoke test (do NOT run on phone)")
     p.add_argument("game", help="JoiPlay folder (web root)")
     p.add_argument("-p", "--port", type=int, default=8100)
+    p.add_argument("--host", default="127.0.0.1",
+                   help="bind address.  Use 0.0.0.0 so the owner can play from "
+                        "another device (phone) over the LAN - a loopback-only "
+                        "server is unreachable there")
     p.add_argument("--test", action="store_true",
                    help="run smoke test against key files, then exit")
     p.set_defaults(func=cmd_serve)

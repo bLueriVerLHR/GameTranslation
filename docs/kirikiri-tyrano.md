@@ -174,6 +174,45 @@ KAG3 由吉里吉里 2 SDK 的 `KAGParser.dll` 解析 `.ks`；常见变体：
 | — | ~~`[wt]` 未映射的未定义标签~~ | 273 | **不存在**（`tyrano.plugin.kag.tag.wt`，原生等 `is_trans`） |
 | — | ~~KAG3 保留颜色名~~ | — | **不存在**（都是真实素材，见 §5.1） |
 
+### 3.4 可读性与快进（试玩反馈，已修）
+
+1. **消息窗底衬**：KAG3 游戏普遍把消息窗做成**透明美术**直接压在 CG 上，
+   台词直接落在画面上，可读性差。`RUNTIME_SHIM_IIFE` 注入一条 CSS：
+   ```css
+   .message_outer{background-color:rgba(0,0,0,.5) !important}
+   ```
+   `.message_outer` 是**兄弟节点**（不是 `.message_inner` 的父节点，实测
+   `children()` 为空），台词窗口与名字板各是一个 message 层，所以一条规则
+   同时覆盖两者；实测不透明度与范围都正好（名字层报出的 box 是 760x498，
+   但实际只画出一条窄带，不会糊掉半屏）。
+
+2. **字体统一**：`--font <otf>` 把字体拷进 `tyrano/fonts/`、追加
+   `@font-face` 到 `tyrano/css/font.css`、并把字体族**前置**到
+   `data/system/Config.tjs` 的 `;userFace=`。
+   实测：本项目 105324 行场景里 **`face=` 属性 0 处**，所以 `userFace`
+   就是唯一入口；而模板首位是 `Quicksand`（纯拉丁字体），汉字/假名逐字
+   回退到系统字体 —— 这正是「字体不统一」的机制。前置后实测
+   `getComputedStyle` 为 `"Glow Sans SC", Quicksand, ...` 且
+   `document.fonts.check(...)` 为 **true**（已加载）。
+
+3. **快进（skip）**：
+   - 引擎语义：`config.skipSpeed` 是**每行一次**的超时（`kag.tag.js`：显示
+     全部字符后 `setTimeout(nextOrder, skipSpeed)`），不是每字符；模板值 30ms
+     把快进上限压在 ~33 行/秒。转换器改写为 `;skipSpeed = 10;`。
+   - **shim 自己的等待也必须认 skip**：Tyrano 在 skip 下直接丢弃可跳过的
+     等待（`kag.tag.js`：`if (is_skip && pm.skippable === "true") nextOrder()`），
+     而本仓库的 `[kagwaitskip]` 原先**不看 `is_skip`**，于是快进时每个
+     `[wait]/[wm]/[wt]` 都走满时长 —— 这是「快进很慢」的主因，已补同样的
+     早退。
+   - **已装备的点击等待不会再检查 `is_skip`**：`[l]`/`[p]` 只在**标签启动时**
+     判断一次，所以停在点击等待时按 skip 看起来毫无反应，必须再点一下
+     （实测：开 skip 后 6 秒推进 0 个标签）。`--fast-skip` 装一个 30ms 的
+     驱动器补上这一段：仅在「画面中心点一下本来就能推进」（顶层元素是
+     `layer_event_click`）时才推进，因此**选择肢/菜单不会被跳过**。
+     实测同一场景：0 → **6 秒推进 100 个标签**。
+   - 注意 **skip 模式下点击 = 停止快进**（`kag.key_mouse.js`：`if (is_skip)
+     setSkip(false); return true;`），不是推进 —— 与驱动器互补，不是 bug。
+
 ### 3.3 被推翻：`[p]`/`[er]` 曾被当成空操作（勿重走）
 
 **下面的推断是错的，保留以免后人重走。** `[p]`（改页点击等待）与

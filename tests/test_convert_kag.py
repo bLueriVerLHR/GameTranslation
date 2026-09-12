@@ -640,3 +640,38 @@ def test_multi_tag_line_clears_each_layer(fake_unpacked):
 def test_freeimage_is_not_double_prefixed(fake_unpacked):
     out = ck.convert_ks_line('[freeimage layer=3]', fake_unpacked, ())
     assert out.strip() == "[freeimage layer=3]", out
+
+
+# ---------------------------------------------------------------------------
+# Readability + fast-forward (play-test feedback).
+# ---------------------------------------------------------------------------
+
+
+def test_message_window_gets_a_translucent_backing():
+    """KAG3 games usually draw a transparent message window over the CG art,
+    so dialogue sits directly on the picture and is hard to read. The backing
+    goes behind .message_outer (the window frame AND the name plate, which is
+    another message layer)."""
+    js = ck.RUNTIME_SHIM_IIFE
+    assert ".message_outer{background-color:rgba(0,0,0,.5)" in js, js[:400]
+
+
+def test_configured_waits_are_dropped_in_skip_mode():
+    """Tyrano drops skippable waits while skipping
+    (kag.tag.js: `if (is_skip && pm.skippable === "true") nextOrder()`), and
+    [l]/[p] return early too. The shim's own click-skippable wait must do the
+    same or every wait during skip runs its full duration, which is what made
+    fast-forwarding feel slow."""
+    js = ck.RUNTIME_SHIM_IIFE
+    assert "if (kag.stat.is_skip) { return kag.ftag.nextOrder(); }" in js
+
+
+def test_skip_speed_is_configured_below_the_template_default():
+    """The template's 30 ms per line caps skipping at ~33 lines/s; the
+    converter lowers it. Asserted through the source because it is applied by
+    main()'s Config.tjs rewrite."""
+    import inspect
+
+    src = inspect.getsource(ck.main)
+    assert "skipSpeed" in src
+    assert ";skipSpeed = 10;" in src

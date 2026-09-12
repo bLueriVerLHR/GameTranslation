@@ -223,21 +223,41 @@ class TestExportGlobals:
 
 
 class TestFindAsset:
+    """`_find_asset` returns `../<canonical_dir>/<file>`.
+
+    Every asset is written exactly once (mirroring it into every directory a
+    tag might look in tripled the build, and ~75% of that duplication
+    survived compression).  The `../` prefix makes the path work from
+    whatever `data/<folder>/` the receiving tag prepends, because browsers
+    normalise dot segments in URLs - measured: `./data/image/../bgimage/x.png`
+    arrives at the server as `/data/bgimage/x.png`.
+    """
+
     def test_extless_to_png(self, fake_unpacked):
-        # tlg source -> png output name
-        assert ck._find_asset(str(fake_unpacked), "black") == "black.png"
+        # tlg source -> png output name, in its one canonical directory
+        assert ck._find_asset(str(fake_unpacked), "black") == \
+            "../fgimage/black.png"
 
     def test_bmp_to_png(self, fake_unpacked):
-        assert ck._find_asset(str(fake_unpacked), "telop1") == "telop1.png"
+        assert ck._find_asset(str(fake_unpacked), "telop1") == \
+            "../bgimage/telop1.png"
 
     def test_bmp_ext_ref_remapped(self, fake_unpacked):
-        assert ck._find_asset(str(fake_unpacked), "telop1.bmp") == "telop1.png"
+        assert ck._find_asset(str(fake_unpacked), "telop1.bmp") == \
+            "../bgimage/telop1.png"
 
     def test_unknown_kept(self, fake_unpacked):
         assert ck._find_asset(str(fake_unpacked), "nosuchfile") == "nosuchfile"
 
     def test_path_kept(self, fake_unpacked):
         assert ck._find_asset(str(fake_unpacked), "sub/x.png") == "sub/x.png"
+
+    def test_result_is_relative_to_any_folder(self, fake_unpacked):
+        # The whole point of the ../ form: an asset living in fgimage must be
+        # reachable for a tag that prepends bgimage/ (or image/, or sound/).
+        got = ck._find_asset(str(fake_unpacked), "black")
+        assert got.startswith("../"), got
+        assert "/" in got[3:], got
 
 
 class TestShim:
@@ -433,22 +453,24 @@ class TestAssetMap:
         (fake_unpacked / "fgimage" / "select" / "map01_01.ma").write_text("1: x;", encoding="utf-8")
         (fake_unpacked / "fgimage" / "select" / "map01_01.bmp").write_bytes(b"BMP")
         amap, full = ck._asset_map(str(fake_unpacked))
-        assert amap["map01_01"] == "select/map01_01.png"
-        assert full["map01_01.ma"] == "select/map01_01.ma"
+        assert amap["map01_01"] == "fgimage/select/map01_01.png"
+        assert full["map01_01.ma"] == "fgimage/select/map01_01.ma"
 
     def test_find_asset_exact_case_for_ma(self, fake_unpacked):
         # storage="title.ma" must resolve to the on-disk case (TITLE.MA)
         (fake_unpacked / "fgimage" / "TITLE.MA").write_text("0: autodisable=false;", encoding="utf-8")
         (fake_unpacked / "fgimage" / "title.png").write_bytes(b"PNG")
-        assert ck._find_asset(str(fake_unpacked), "title.ma") == "TITLE.MA"
-        assert ck._find_asset(str(fake_unpacked), "title") == "title.png"
+        assert ck._find_asset(str(fake_unpacked), "title.ma") == \
+            "../fgimage/TITLE.MA"
+        assert ck._find_asset(str(fake_unpacked), "title") == \
+            "../fgimage/title.png"
 
     def test_ma_lookup_prefers_exact_storage(self, fake_unpacked):
         # 'title' must NOT resolve to the .ma when an image exists
         (fake_unpacked / "fgimage" / "TITLE.MA").write_text("0: x;", encoding="utf-8")
         (fake_unpacked / "fgimage" / "title.png").write_bytes(b"PNG")
         amap, _ = ck._asset_map(str(fake_unpacked))
-        assert amap["title"] == "title.png"
+        assert amap["title"] == "fgimage/title.png"
 
     def test_mapaction_storage_rewritten(self, fake_unpacked):
         (fake_unpacked / "fgimage" / "TITLE.MA").write_text("0: x;", encoding="utf-8")

@@ -463,12 +463,20 @@ MAP_ENGINE_JS = """\
   var __kag3_assets_ma = function () { return window.__kag3_assets_ma || {}; };
   var __kag3_fetch_text = function (rel) {
     if (!rel) return null;
-    var folders = ['fgimage', 'bgimage', 'image', 'sound', 'bgm'];
-    for (var i = 0; i < folders.length; i++) {
-      var url = './data/' + folders[i] + '/' + rel;
+    // `rel` is a canonical path ("fgimage/x.ma"): each asset now lives in
+    // exactly one directory, so probing every folder is only a fallback for
+    // a bare name.
+    var urls = ['./data/' + rel];
+    if (rel.indexOf('/') < 0) {
+      var folders = ['fgimage', 'bgimage', 'image', 'sound', 'bgm'];
+      for (var i = 0; i < folders.length; i++) {
+        urls.push('./data/' + folders[i] + '/' + rel);
+      }
+    }
+    for (var u = 0; u < urls.length; u++) {
       try {
         var x = new XMLHttpRequest();
-        x.open('GET', url, false);
+        x.open('GET', urls[u], false);
         x.send();
         if (x.status >= 200 && x.status < 400) return x.responseText;
       } catch (e) {}
@@ -612,7 +620,10 @@ MAP_ENGINE_JS = """\
         __kag3_log('region image loaded: ' + rel + ' ' + c.width + 'x' + c.height);
       };
       img.onerror = function () { idx++; try_load(); };
-      img.src = './data/' + folders[idx++] + '/' + rel;
+      // canonical path first; the per-folder probes only matter for a bare
+      // name (each asset now exists in exactly one directory).
+      img.src = './data/' + (rel.indexOf('/') >= 0
+                             ? rel : folders[idx++] + '/' + rel);
     };
     try_load();
   };
@@ -880,17 +891,51 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "      // yuki_title, macro params like %bmp) resolve against the",
     "      // converted asset tree via the emitted __kag3_assets map (exact",
     "      // on-disk case, subdirectory paths). Tyrano never appends an",
-    "      // extension, so wrap the storage-bearing tags.",
+    "      // extension, so resolve before the tag runs.",
+    "      //",
+    "      // Every asset now exists in exactly ONE place, so the resolved",
+    "      // value is `../<canonical_dir>/<file>`: the browser normalises the",
+    "      // dot segment (measured: ./data/image/../bgimage/x.png arrives as",
+    "      // /data/bgimage/x.png), so any tag finds it whichever",
+    "      // data/<folder>/ it prepends - including engine code that",
+    "      // concatenates the folder by hand.",
+    "      var __kag3_asset_path = function (s) {",
+    "        if (!s) return s;",
+    "        var t = String(s);",
+    "        if (/[.]/.test(t) || t.indexOf('http') === 0 ||",
+    "            t.charAt(0) === '/' || t.indexOf('../') === 0) return s;",
+    "        var r = __kag3_assets()[t.toLowerCase()];",
+    "        return r ? '../' + r : s;",
+    "      };",
     "      var _resolve_storage = function (pm) {",
-    "        var s = pm && pm.storage ? String(pm.storage) : '';",
-    "        if (!s || /[.]/.test(s) || s.indexOf('http') === 0 || s.charAt(0) === '/') return pm;",
-    "        var r = __kag3_assets()[s.toLowerCase()];",
-    "        if (r) {",
+    "        if (!pm) return pm;",
+    "        var s = pm.storage ? String(pm.storage) : '';",
+    "        var r = __kag3_asset_path(s);",
+    "        if (r !== s) {",
     "          pm.storage = r;",
     "          __kag3_log('storage ' + s + ' -> ' + r);",
     "        }",
     "        return pm;",
     "      };",
+    "      // One hook on the dispatcher covers EVERY tag, including ones this",
+    "      // build does not know about and macro-generated calls; a per-tag",
+    "      // list would silently miss the next storage-bearing tag.",
+    "      if (!kag.ftag.__kag3_dispatcher_hooked) {",
+    "        kag.ftag.__kag3_dispatcher_hooked = true;",
+    "        var _start_tag = kag.ftag.startTag;",
+    "        kag.ftag.startTag = function (name, pm) {",
+    "          try {",
+    "            if (pm && typeof pm === 'object') {",
+    "              pm = _resolve_storage(pm) || pm;",
+    "              if (pm.graphic) {",
+    "                var g = __kag3_asset_path(pm.graphic);",
+    "                if (g !== pm.graphic) pm.graphic = g;",
+    "              }",
+    "            }",
+    "          } catch (e) {}",
+    "          return _start_tag.apply(this, arguments);",
+    "        };",
+    "      }",
     "      var _wrap_storage = function (tag) {",
     "        var t = kag.ftag.master_tag[tag];",
     "        if (!t || !t.start) return;",
@@ -1244,8 +1289,18 @@ def _dangling_call(m, unpacked):
 def _asset_map(unpacked):
     """Build {lower_basename: out_relpath} for the whole asset tree.
 
-    out_relpath accounts for format conversion (tlg/bmp -> png), directory
-    moves (rule -> fgimage) and subdirectories (fgimage/select/x -> select/x).
+    out_relpath is the asset's ONE canonical location, including its directory
+    (`bgimage/telop1.png`).  It accounts for format conversion (tlg/bmp ->
+    png), directory moves (rule -> fgimage) and subdirectories
+    (fgimage/select/x -> fgimage/select/x).
+
+    The directory is part of the value because each asset is written exactly
+    once: the runtime resolves names to `../<dir>/<file>`, which works from
+    any tag's folder because browsers normalise dot segments in URLs
+    (measured: `./data/fgimage/../bgimage/x.png` arrives as
+    `/data/bgimage/x.png`).  Writing a copy into every directory a tag might
+    look in tripled the build and ~75% of that survived compression.
+
     Image extensions win over same-named non-images (map01_01.bmp + the
     map01_01.ma action file share the basename: the image must win).
     """
@@ -1279,7 +1334,7 @@ def _asset_map(unpacked):
             # generated TyranoScript/HTML references, so they must not follow
             # the host OS separator (a Windows build would emit "select\\x.png").
             name = base + ".png" if ext in ("tlg", "bmp") else fn
-            out = "/".join(parts + (name,))
+            out = "/".join((mapping[src_sub],) + tuple(parts) + (name,))
             full.setdefault(base + "." + ext, out)
             amap.setdefault(base, out)
 
@@ -1324,7 +1379,13 @@ def _find_asset(unpacked, name):
     Handles extensionless names (black -> BLACK.PNG / black.png after
     conversion), names whose source extension changed during conversion
     (telop1.bmp -> telop1.png) and exact names with extension (title.ma ->
-    TITLE.MA, preserving on-disk case). Returns the output relpath to use.
+    TITLE.MA, preserving on-disk case).
+
+    Returns `../<dir>/<file>`: a path relative to whatever `data/<folder>/`
+    the receiving tag will prepend, so it hits the asset's single canonical
+    location no matter which tag asks.  The browser normalises the dot
+    segment (measured), so even engine code that concatenates the folder by
+    hand lands on the right URL.
     """
     if not name or "/" in name or "\\" in name:
         return name
@@ -1334,9 +1395,10 @@ def _find_asset(unpacked, name):
     amap, full = _ASSET_CACHE[key]
     base = name.lower()
     if base in full:
-        return full[base]
+        return "../" + full[base]
     stem = base.rsplit(".", 1)[0] if "." in base else base
-    return amap.get(stem, name)
+    hit = amap.get(stem)
+    return "../" + hit if hit else name
 
 
 def _convert_exp(exp):
@@ -1948,15 +2010,13 @@ def _convert_assets(unpacked, out_data, stats):
         src_dir = os.path.join(unpacked, src_sub)
         if not os.path.isdir(src_dir):
             continue
-        # Tyrano [image] resolves fgimage for non-base layers and bgimage
-        # for layer=base. KAG3 always uses one path (bgimage/fgimage/image),
-        # so mirror image dirs (including subdirectories) into both bgimage
-        # and fgimage to be resolution-safe.
-        mirror = src_sub in ("bgimage", "fgimage", "rule", "image")
-        # Tyrano [button graphic=X] loads from data/image/ only; KAG3 button
-        # art lives in bgimage/fgimage, so additionally mirror image files
-        # into image/ (button graphics, UI art).
-        mirror_to_image = src_sub in ("bgimage", "fgimage", "rule")
+        # One copy per asset: every asset goes to its canonical directory and
+        # nowhere else.  The runtime resolves names to `../<dir>/<file>`, and
+        # the browser normalises the dot segment, so a tag that would have
+        # looked in a different directory still finds it.  The old mirroring
+        # (bgimage/fgimage/image copies of everything) tripled the build for
+        # no benefit - measured: ~75% of the duplicated bytes survive
+        # compression, so the redundancy was real delivery size.
 
         def _convert_one(src_path, rel, outname, fn):
             dst_base = os.path.join(out_data, dst_sub, rel)
@@ -1975,24 +2035,6 @@ def _convert_assets(unpacked, out_data, stats):
             else:
                 shutil.copy2(src_path, dst_path)
                 stats["copied"] += 1
-            if mirror:
-                for mirror_dir in ("bgimage", "fgimage"):
-                    if os.path.abspath(dst_path) == os.path.abspath(
-                            os.path.join(out_data, mirror_dir, rel if outname == fn
-                                         else os.path.join(os.path.dirname(rel), outname))):
-                        continue
-                    m_path = os.path.join(out_data, mirror_dir,
-                                          rel if outname == fn
-                                          else os.path.join(os.path.dirname(rel), outname))
-                    os.makedirs(os.path.dirname(m_path), exist_ok=True)
-                    shutil.copy2(dst_path, m_path)
-            if mirror_to_image and dst_sub != "image" and ext in ("png", "jpg", "jpeg", "gif", "bmp", "tlg", "webp"):
-                i_path = os.path.join(out_data, "image",
-                                      rel if outname == fn
-                                      else os.path.join(os.path.dirname(rel), outname))
-                if os.path.abspath(i_path) != os.path.abspath(dst_path):
-                    os.makedirs(os.path.dirname(i_path), exist_ok=True)
-                    shutil.copy2(dst_path, i_path)
 
         def _walk(cur, sub):
             for fn in sorted(os.listdir(cur)):

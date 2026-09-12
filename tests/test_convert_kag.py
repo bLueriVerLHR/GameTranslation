@@ -585,3 +585,58 @@ def test_up_to_date_keeps_non_image_targets_cheap(tmp_path):
     now = os.path.getmtime(src)
     os.utime(dst, (now + 100, now + 100))
     assert ck._up_to_date(str(src), str(dst)) is True
+
+
+# ---------------------------------------------------------------------------
+# Layer replace semantics (KAG3 one-image-per-layer vs Tyrano append).
+# ---------------------------------------------------------------------------
+
+
+def test_image_clears_its_layer_first(fake_unpacked):
+    """KAG3 [image] replaces the layer content; Tyrano's [image] only appends.
+
+    The game clears a character slot by drawing a transparent placeholder over
+    it, which silently does nothing under append semantics: the sprite stays
+    visible under the transparent image and every character a scene ever
+    loaded remains on screen for the rest of the game.
+    """
+    out = ck.convert_ks_line('[image layer=3 storage="y_t003e"]', fake_unpacked, ())
+    assert out.startswith("[freeimage layer=3]"), out
+    assert "[image layer=3" in out
+
+
+def test_image_layer_clear_keeps_page_and_dynamic_layer(fake_unpacked):
+    """The clear must hit the same page, and dynamic layer numbers must survive
+    (the sprite macros compute `layer=&tf.layer1`, and Tyrano evaluates a
+    leading & in any parameter)."""
+    out = ck.convert_ks_line('[image layer="&tf.layer2" page=back storage="x"]',
+                             fake_unpacked, ())
+    assert out.startswith('[freeimage layer="&tf.layer2" page=back]'), out
+
+
+def test_graph_is_covered_too(fake_unpacked):
+    out = ck.convert_ks_line('[graph layer=5 storage="x"]', fake_unpacked, ())
+    assert out.startswith("[freeimage layer=5]"), out
+
+
+def test_base_layer_is_not_cleared(fake_unpacked):
+    """The engine's [freeimage] refuses the base layer, so injecting a clear
+    there would only add a dead tag."""
+    out = ck.convert_ks_line('[image layer=base storage="x"]', fake_unpacked, ())
+    assert "freeimage" not in out, out
+
+
+def test_image_without_layer_is_left_alone(fake_unpacked):
+    out = ck.convert_ks_line('[image storage="x"]', fake_unpacked, ())
+    assert out.strip() == '[image storage="x"]', out
+
+
+def test_multi_tag_line_clears_each_layer(fake_unpacked):
+    out = ck.convert_ks_line('[image layer=3 storage="a"][image layer=4 storage="b"]',
+                             fake_unpacked, ())
+    assert "[freeimage layer=3]" in out and "[freeimage layer=4]" in out, out
+
+
+def test_freeimage_is_not_double_prefixed(fake_unpacked):
+    out = ck.convert_ks_line('[freeimage layer=3]', fake_unpacked, ())
+    assert out.strip() == "[freeimage layer=3]", out

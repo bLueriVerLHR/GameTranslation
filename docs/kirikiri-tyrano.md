@@ -170,7 +170,86 @@ KAG3 由吉里吉里 2 SDK 的 `KAGParser.dll` 解析 `.ks`；常见变体：
 | 2 | **`[wt]` 未映射** | 273 处 | 既不在 `SHIM_TAG_NAMES`、也不是 Tyrano 原生标签 → 未定义标签。KAG3 的 `[wt]`=等转场结束；应映射为等待或空操作（后面一般有 `[wait]` 兑底）。 |
 | 3 | **KAG3 保留颜色名** | 少量 | `[image storage="wh"]` 被当成文件名 → 404。实测 `black` 能在构建里解析到一张真图，但 `wh` 不行 → 应生成纯色图。 |
 | 4 | **素材被复制三份** | — | `_asset_map` 把同一图写进 `bgimage/`+`fgimage/`+`image/`（实测每图 3 份）。源素材 298 MB 时会膨胀到 ~900 MB，需按引用解析后只放一份（或建索引 + 单副本）。 |
-| 5 | **`.wmv`/`.mpg` 浏览器不能播** | 80 个 / 955 MB | Tyrano 的 mpeg 系（`mpeg_load` 等 13702 处）在 shim 里是空操作 → 演出缺失。需转码或接受降级。 |
+| 5 | **`.wmv`/`.mpg` 浏览器不能播** | 80 个 / 955 MB | 已解决（见 §5）：先跑 `tools/transcode_video.py` 转 WebM，再用 `convert_kag.py --video-dir <dir>` 构建。 |
+
+## 5. 影片：转码 + KAG3 视频标签映射（已跑通）
+
+### 5.1 为什么必须重编码
+
+游戏影片是 **wmv3（WMV9）**，浏览器不能解。实测：1024×768、yuv420p
+（无 alpha）、29.97fps、~7.5 Mbps。
+
+### 5.2 选 VP9 而不是 AV1
+
+目标是要在 Android 的 WebView / JoiPlay 里放，**VP9 解码在 Android 上远
+比 AV1 普及**。本机实测（crf 32、cpu-used 4、row-mt）：
+
+| 编码器 | 体积 | 速度 |
+| --- | --- | --- |
+| **libvpx-vp9** | 2.58 → **0.59 MB（22.9%）** | 3.6x 实时 |
+| av1_nvenc（GPU） | 0.55 MB | 7.5x 实时 |
+
+全量 80 个文件（约 18 分钟视频）：**955 MB → 198 MB（20.8%）、156 秒**。
+所以选 VP9 代价很小。
+
+```bash
+# 1) 转码（可重跑：已存在的输出跳过；每个输出都用 ffprobe 自检）
+python3 tools/transcode_video.py <game>.xp3 <cache_dir>
+# 2) 构建时指定缓存目录
+python3 kirikiri/convert_kag.py <unpacked> <engine> <out> --video-dir <cache_dir>
+```
+
+### 5.3 两个必须知道的坑
+
+1. **游戏影片不在图片目录里**：KAG3 把 `.wmv` 放在 `others/`，而素材复制
+   是按目录映射的 → **影片根本不会被装进构建**。`_convert_videos()`
+   改成按扩展名全树扫描。
+2. **没有 WebM 对应物时不能默默丢弃**：应原样拷贝并 WARN（宁可交一个
+   浏览器放不了的文件，也不要静默丢掉一个场景的演出）。
+
+### 5.4 KAG3 视频标签 → Tyrano `[layermode_movie]`
+
+KAG3 把播放拆成一串共享状态的标签；Tyrano 没有等价序列，但
+**`[layermode_movie]` 正好做了最难的部分**（把 `<video>` 以混合模式合成进
+图层栈）。所以 shim 里做了个状态机：
+
+```
+[video top/left/width/height/loop/mode]   记录几何与循环
+[videolayer channel/page/layer]           记录目标图层
+[preparevideo]                            空操作
+[openvideo storage=X]                     记文件（经 __kag3_videos 映射到 .webm）
+[wv]                                      播放前=等就绪；播放后=等结束
+[playvideo]                               发出一次 layermode_movie（不等）
+[stopvideo] / [clearvideolayer]           停并移除元素
+```
+
+要点：
+
+- `layermode_movie` **自己**会在 URL 前拼 `./data/video/`，所以传**裸文件名**。
+- `[playvideo]` 不等待（KAG3 语义如此），要等用 `[wv]`。
+- **`[wv]` 绝不能永久阻塞**：没有影片、已结束、或循环影片时必须能前进；
+  循环影片额外允许点击跳过。一个永不完成的等待看起来与构建损坏一模一样。
+- 这些标签**不能再注册成 no-op**：后来的注册会盖掉真实实现，功能静默失效。
+  `_shim_js()` 会把 `VIDEO_TAGS` 从 no-op 列表里排除。
+
+### 5.5 已验证
+
+驱动 `[video]→[videolayer]→[openvideo]→[playvideo]` 后：
+
+```
+GET /data/video/a_ev001a.webm  ->  200
+video: readyState=4, paused=false, 1024x768, currentTime 5.89 -> 10.03
+```
+
+即真正取到、解码成功、实时播放。
+
+### 5.6 尚未做（已知不足，勿当成已完成）
+
+**几何/适配保真**：KAG3 的 `[video width=800 height=600]` 是把影片放进一个
+800×600 的框（1024×768 的片子被缩放进去），而 `layermode_movie` 的
+`fit` 默认行为不同 —— 当前影片会显示得比预期小。需要把 KAG3 的框映射
+到 `layermode_movie` 的 `fit/width/height` 语义（可能需要 `fit=false`）。
+另外 `[mpeg_disp]`（54 处）仍为原样（未确认它在做什么）。
 
 ### 已在实测中被推翻的两个初始判断（勿重蹈）
 

@@ -463,6 +463,31 @@ class TestMapEngine:
         assert "addEventListener('click'" in ck.MAP_ENGINE_JS
         assert "stopPropagation" in ck.MAP_ENGINE_JS
 
+    def test_mobile_panel_uses_real_engine_actions(self):
+        js = ck.RUNTIME_SHIM_IIFE
+        assert "id = 'kag3-mobile-panel'" in js
+        assert "kag.menu.displaySave()" in js
+        assert "kag.menu.displayLoad()" in js
+        assert "kag.menu.displayLog()" in js
+        assert "kag.setAuto(!kag.stat.is_auto)" in js
+        assert "kag.setSkip(!kag.stat.is_skip)" in js
+        assert "kag.layer.hideMessageLayers()" in js
+        assert "kag.layer.showMessageLayers()" in js
+        assert "min-height:44px" in js
+        assert "actions.style.display === 'none' ? 'flex' : 'none'" in js
+        assert "el.id === 'kag3-mobile-panel'" in ck.MAP_ENGINE_JS
+
+    def test_kag_ui_compatibility_methods_are_not_stubs(self):
+        js = ck.RUNTIME_SHIM_IIFE
+        assert "kag.showHistoryByKey = function" in js
+        assert "this.menu.displayLog()" in js
+        assert "kag.enterAutoMode = function" in js
+        assert "this.setAuto(true)" in js
+        assert "kag.cancelAutoMode = function" in js
+        assert "this.setAuto(false)" in js
+        assert "kag.goToStartWithAsk = function" in js
+        assert "this.backTitle()" in js
+
     def test_ma_parsing_skips_comments_and_empty(self):
         actions = ck_map_parse("; comment\n0: autodisable=false;\n1: storage=\"x.ks\"; target=\"*y\";\n\n")
         assert set(actions) == {0, 1}

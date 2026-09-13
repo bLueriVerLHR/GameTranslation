@@ -2105,6 +2105,54 @@ def _asset_map_from_output(out_data):
 
 _ASSET_CACHE = {}
 
+# Extensions that mean "this asset-map value is a picture".  Used when two
+# trees disagree about a stem (see _merge_asset_maps).
+IMAGE_EXTS = ("png", "jpg", "jpeg", "gif", "bmp", "tlg", "webp")
+
+
+def _is_image_asset(value):
+    """True when an asset-map value points at a picture (by extension)."""
+    return bool(value) and value.rsplit(".", 1)[-1].lower() in IMAGE_EXTS
+
+
+def _merge_asset_maps(base, extra):
+    """Merge `extra` into `base`, letting an image beat a same-stem non-image.
+
+    KAG3 ships a clickable-map action file (`X.MA`) next to the screen art
+    (`X.png`) under one stem, and the art is what `[image storage=X]` means.
+    A rebuild that reads a REDUCED source tree sees only the `.MA`, so a plain
+    `setdefault` merge pins the stem to the map file even though the build
+    still holds the picture.  The runtime then hands an `<img>` a text file,
+    the browser cannot decode it and the screen stays BLACK while its click
+    regions keep working (measured on a title menu: the menu was invisible but
+    still clickable, so an invisible exit region could be hit by accident).
+
+    `extra` wins only where the source tree has no picture under that stem (or
+    nothing at all); between two pictures the source tree still decides.
+
+    Returns `base` for convenience.
+    """
+    for key, value in extra.items():
+        current = base.get(key)
+        if current is None or (_is_image_asset(value) and not _is_image_asset(current)):
+            base[key] = value
+    return base
+
+
+def _runtime_asset_maps(unpacked, out_data, scenario_only=False):
+    """The (stem map, extension map) pair the runtime storage resolver uses.
+
+    `scenario_only` rebuilds keep the assets of the previous build, so the
+    output tree - not the (possibly reduced) source tree - is the ground truth
+    for which files exist; it is merged in with image preference.
+    """
+    amap, full_map = _asset_map(unpacked)
+    if scenario_only:
+        retained_amap, retained_full = _asset_map_from_output(out_data)
+        _merge_asset_maps(amap, retained_amap)
+        _merge_asset_maps(full_map, retained_full)
+    return amap, full_map
+
 
 def _layer_map(unpacked):
     """Parse sf.lay_xxx = N assignments from laynumber_init.ks (layer ids)."""
@@ -3196,13 +3244,7 @@ def main():
         os.makedirs(plugin_dir, exist_ok=True)
     # asset name maps for the runtime storage resolver (extensionless KAG3
     # storages) and the clickable-map engine (.ma files, _p region images).
-    amap, full_map = _asset_map(unpacked)
-    if args.scenario_only:
-        retained_amap, retained_full = _asset_map_from_output(out_data)
-        for key, value in retained_amap.items():
-            amap.setdefault(key, value)
-        for key, value in retained_full.items():
-            full_map.setdefault(key, value)
+    amap, full_map = _runtime_asset_maps(unpacked, out_data, args.scenario_only)
     _ASSET_CACHE[unpacked] = (amap, full_map)
     ma_map = {k.rsplit(".", 1)[0]: v for k, v in full_map.items() if k.endswith(".ma")}
     runtime_assets = dict(amap)

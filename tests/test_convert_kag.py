@@ -565,6 +565,87 @@ class TestAssetMap:
         assert amap["map"] == "fgimage/map.png"
         assert full["map.ma"] == "fgimage/map.ma"
 
+    def test_is_image_asset(self):
+        assert ck._is_image_asset("fgimage/title.png")
+        assert ck._is_image_asset("fgimage/art.BMP")
+        assert ck._is_image_asset("bgimage/title.jpg")
+        assert not ck._is_image_asset("fgimage/TITLE.MA")
+        assert not ck._is_image_asset("sound/se.wav")
+        assert not ck._is_image_asset("")
+        assert not ck._is_image_asset(None)
+
+    def test_merge_lets_image_beat_map_file(self):
+        base = {"title": "fgimage/TITLE.MA", "se": "sound/se.wav"}
+        extra = {"title": "fgimage/TITLE.MA", "title.png": "fgimage/title.png"}
+        merged = ck._merge_asset_maps(base, extra)
+        # the .MA never displaces the art it shares a stem with
+        assert merged["title.png"] == "fgimage/title.png"
+        assert merged["se"] == "sound/se.wav"
+        assert merged is base
+
+    def test_merge_never_downgrades_an_image(self):
+        # source has the picture, the retained build only has the map file
+        base = {"title": "fgimage/title.png"}
+        extra = {"title": "fgimage/TITLE.MA"}
+        assert ck._merge_asset_maps(base, extra)["title"] == "fgimage/title.png"
+
+    def test_merge_keeps_the_source_choice_between_two_images(self):
+        # Both are pictures: which art a stem means is the source tree's call
+        # (previous behaviour), so the merge must not reroute it.
+        base = {"title": "image/button/title.png"}
+        extra = {"title": "fgimage/title.png"}
+        assert ck._merge_asset_maps(base, extra)["title"] == "image/button/title.png"
+
+    def test_merge_keeps_a_map_only_stem(self):
+        # no picture anywhere: the .MA must stay resolvable for [mapaction]
+        base = {"submenu": "fgimage/submenu.ma"}
+        extra = {}
+        assert ck._merge_asset_maps(base, extra)["submenu"] == "fgimage/submenu.ma"
+
+    def test_reduced_source_keeps_the_title_art(self, tmp_path):
+        """Regression: a scenario-only rebuild must not lose the menu art.
+
+        Measured failure: the rebuilt title screen was BLACK while its click
+        regions still worked - `[image storage=title2]` resolved to the
+        clickable-map action file (`TITLE2.MA`) because the reduced source tree
+        had no picture under that stem and `setdefault` let the .MA win.
+        """
+        unpacked = tmp_path / "reduced"
+        (unpacked / "fgimage").mkdir(parents=True)
+        (unpacked / "scenario").mkdir()
+        # reduced tree: the clickable-map files survive, the art was not copied
+        (unpacked / "fgimage" / "TITLE2.MA").write_text("0: x;", encoding="utf-8")
+        (unpacked / "fgimage" / "title2_P.png").write_bytes(b"PNG")
+
+        out_data = tmp_path / "data"
+        (out_data / "fgimage").mkdir(parents=True)
+        # the previous build still holds the art and the region mask
+        (out_data / "fgimage" / "TITLE2.MA").write_text("0: x;", encoding="utf-8")
+        (out_data / "fgimage" / "title2.png").write_bytes(b"PNG")
+        (out_data / "fgimage" / "title2_P.png").write_bytes(b"PNG")
+
+        amap, full = ck._runtime_asset_maps(str(unpacked), str(out_data), True)
+
+        assert amap["title2"] == "fgimage/title2.png"
+        # the region mask keeps its own stem, so clicks still hit-test
+        assert amap["title2_p"] == "fgimage/title2_P.png"
+        # extension keys stay usable for exact storages
+        assert full["title2.ma"] == "fgimage/TITLE2.MA"
+        assert full["title2.png"] == "fgimage/title2.png"
+
+    def test_fresh_build_map_is_untouched_by_the_output_tree(self, tmp_path):
+        unpacked = tmp_path / "src"
+        (unpacked / "fgimage").mkdir(parents=True)
+        (unpacked / "fgimage" / "title.png").write_bytes(b"PNG")
+        out_data = tmp_path / "data"
+        (out_data / "fgimage").mkdir(parents=True)
+        (out_data / "fgimage" / "stale.png").write_bytes(b"PNG")
+
+        amap, _ = ck._runtime_asset_maps(str(unpacked), str(out_data), False)
+
+        assert amap["title"] == "fgimage/title.png"
+        assert "stale" not in amap
+
 
 class TestRegionImage:
     def test_region_detected(self):

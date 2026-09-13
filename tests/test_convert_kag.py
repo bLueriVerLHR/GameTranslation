@@ -471,13 +471,22 @@ class TestMapEngine:
         assert "kag.menu.displayLog()" in js
         assert "kag.setAuto(!kag.stat.is_auto)" in js
         assert "kag.setSkip(!kag.stat.is_skip)" in js
-        assert "kag.layer.hideMessageLayers()" in js
+        assert "kag.ftag.startTag('hidemessage', {})" in js
         assert "kag.layer.showMessageLayers()" in js
         assert "min-height:44px" in js
         assert "actions.style.display === 'none' ? 'flex' : 'none'" in js
         assert "Game controls" in js
         assert "button_menu.png" in js
         assert "el.id === 'kag3-mobile-panel'" in ck.MAP_ENGINE_JS
+
+    def test_mobile_panel_uses_native_hide_lifecycle_and_serialises_menus(self):
+        js = ck.RUNTIME_SHIM_IIFE
+        assert "kag.ftag.startTag('hidemessage', {})" in js
+        assert "kag.layer.showEventLayer('kag3-mobile-hide')" in js
+        assert "kag.setSkip(false)" in js
+        assert "if (menuPending || menuIsVisible()) return" in js
+        assert "menuLayer.stop(true, true).hide().empty()" in js
+        assert "panel.style.visibility = menuIsVisible() ? 'hidden' : 'visible'" in js
 
     def test_kag_ui_compatibility_methods_are_not_stubs(self):
         js = ck.RUNTIME_SHIM_IIFE
@@ -1118,6 +1127,8 @@ def test_message_backing_uses_classified_mobile_surfaces():
     assert "kag3-name-frame" in js
     assert "background-image:none !important" in js
     assert "background:rgba(5,8,14,.78)" in js
+    assert "left:0 !important;width:100% !important" in js
+    assert "border-radius:0 !important" in js
     assert "kag3-dialog-text" in js
     assert "kag3-name-text" in js
     assert "canvasH * 0.12" in js
@@ -1248,10 +1259,20 @@ def test_link_ch_runs_form_one_touch_friendly_choice_panel():
     assert '$current.addClass("kag3-choice-item")' in js
     assert '$i.addClass("kag3-choice")' in js
     assert '$i.closest(".layer").addClass("kag3-choice-layer")' in js
+    assert '"kag3-choice-prompt" : "kag3-choice-gap"' in js
     assert ".message_inner.kag3-choice{" in js
     assert ".kag3-choice-layer .message_outer{display:none !important}" in js
     assert ".kag3-choice-item span{" in js
     assert "color:#fff !important" in js
+    assert ".kag3-choice-item>img{" in js
+    assert "display:none !important" in js
+    assert '$i.removeClass("kag3-choice")' in js
+    assert '$i.find(".kag3-choice-item,.kag3-choice-prompt,.kag3-choice-gap").remove()' in js
+    assert "window.__kag3_choice_cleanup" in js
+    assert "var $owner = $(item).closest('.message_inner')" in js
+    assert "var $old = $owner.find('.kag3-choice-item,.kag3-choice-prompt,.kag3-choice-gap')" in js
+    assert "$old.remove()" in js
+    assert "if (!$owner.find('.kag3-choice-item').length)" in js
 
 
 def test_choice_jump_hotkey_recognises_macro_variants_but_not_cleanup_tags():

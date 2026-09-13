@@ -427,6 +427,16 @@ NOOP_PLUS_REAL_JS = r"""
         $i.addClass("kag3ch-msg");
         var $current = this.kag.getMessageCurrentSpan();
         if (!$current.length) $current = this.kag.setMessageCurrentSpan();
+        // A [ch] inside Tyrano's [link] span is a selectable item. Mark the
+        // complete message layer once the first item appears so CSS can give
+        // the prompt and every item one coherent, touch-friendly panel.
+        var isChoice = $current.hasClass("event-setting-element") ||
+          $current.closest(".event-setting-element").length > 0;
+        if (isChoice) {
+          $current.addClass("kag3-choice-item");
+          $i.addClass("kag3-choice");
+          $i.closest(".layer").addClass("kag3-choice-layer");
+        }
         var $prev = $current;
         var $s = $("<span></span>");
         if ($prev.length) {
@@ -491,12 +501,34 @@ NOOP_PLUS_REAL_JS = r"""
         if (!args.page) args.page = this.kag.stat.current_page || "fore";
         var finish = function () {
           var result = _ps.call(owner, args);
+          var layer = owner.kag.layer.getLayer(args.layer, args.page);
+          var outer = layer.find(".message_outer");
+          var inner = layer.find(".message_inner");
+          outer.removeClass("kag3-dialog-frame kag3-name-frame kag3-aux-frame");
+          inner.removeClass("kag3-dialog-text kag3-name-text kag3-aux-text");
+          var w = num(args.width, outer.width());
+          var h = num(args.height, outer.height());
+          var canvasW = num(owner.kag.config.scWidth, 1024);
+          var canvasH = num(owner.kag.config.scHeight, 768);
+          if (h >= canvasH * 0.12 && w >= canvasW * 0.55) {
+            outer.addClass("kag3-dialog-frame");
+            inner.addClass("kag3-dialog-text");
+          } else if (h <= canvasH * 0.12 && w >= canvasW * 0.18 &&
+                     w <= canvasW * 0.55) {
+            outer.addClass("kag3-name-frame");
+            inner.addClass("kag3-name-text");
+          } else if (h <= canvasH * 0.12 && w < canvasW * 0.18) {
+            // These compact layers host the source game's desktop system row.
+            // Its [button] tags are dropped on mobile, so retaining the empty
+            // frame rectangles only obscures the dialogue.
+            outer.addClass("kag3-aux-frame");
+            inner.addClass("kag3-aux-text");
+          }
           // Tyrano clears background-color whenever a frame image is used.
           // KAG3 layers the frame over its configured translucent backing.
           if (has(args.frame) && args.frame !== "none") {
             var color = has(args.color) ? args.color : owner.kag.config.frameColor;
             if (has(color)) {
-              var outer = owner.kag.layer.getLayer(args.layer, args.page).find(".message_outer");
               outer.css("background-color", $.convertColor(String(color)));
             }
           }
@@ -1479,8 +1511,8 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "            // order instead, so a sprite layer could end up with a larger",
     "            // z-index than the message window and paint over the dialogue",
     "            // (measured: sprite layer z=4000 over .message_inner z=1001).",
-    "            // NOTE: no backing colour here -- this game draws its own",
-    "            // message frame art, an extra translucent layer is redundant.",
+    "            // Message geometry stays source-driven; the classified frame",
+    "            // classes below replace desktop frame art with a mobile surface.",
     "            // The dialogue text lives in messageN_BACK, not _fore (measured",
     "            // chain: .message_inner -> .message0_back -> root_layer_game),",
     "            // while the sprite layers carry z-index 3000/4000/5000 from their",
@@ -1500,10 +1532,26 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "            '#tyrano_base div[class*=\"message\"][class*=\"_fore\"] *,' +",
     "            '#tyrano_base div[class*=\"message\"][class*=\"_back\"] *' +",
     "            '{pointer-events:auto !important}' +",
-    "            // NO backing of our own: the game's own backing is rendered again now",
-    "            // that the `background-color:transparent` override is gone, and adding",
-    "            // ours as well produced two stacked layers (owner: \"双层底衬\").",
-    "            // The frame colour/opacity comes from [position color= opacity=].",
+    "            // Tyrano's stock round menu overlaps the bottom-right of the game.",
+    "            // The compact panel below replaces it with one consistent control.",
+    "            'img[src$=\"/button_menu.png\"],img[src$=\"button_menu.png\"]' +",
+    "            '{display:none !important}' +",
+    "            '.message_outer.kag3-dialog-frame{' +",
+    "            'background-image:none !important;background:rgba(5,8,14,.78) !important;' +",
+    "            'border-top:1px solid rgba(255,255,255,.38);' +",
+    "            'box-shadow:0 -14px 34px rgba(0,0,0,.48),inset 0 1px 0 rgba(255,255,255,.08)}' +",
+    "            '.message_inner.kag3-dialog-text{' +",
+    "            'padding:18px 40px 16px !important;line-height:1.5 !important;' +",
+    "            'text-shadow:0 2px 4px rgba(0,0,0,.95)}' +",
+    "            '.message_outer.kag3-name-frame{' +",
+    "            'background-image:none !important;background:rgba(5,8,14,.9) !important;' +",
+    "            'border:1px solid rgba(255,255,255,.38);border-bottom:0;' +",
+    "            'border-radius:8px 8px 0 0;box-shadow:0 -6px 18px rgba(0,0,0,.34)}' +",
+    "            '.message_inner.kag3-name-text{' +",
+    "            'padding:0 14px !important;text-align:left !important;' +",
+    "            'text-shadow:0 2px 3px rgba(0,0,0,.95)}' +",
+    "            '.message_outer.kag3-aux-frame,.message_inner.kag3-aux-text{' +",
+    "            'display:none !important}' +",
     "            // Text must never paint outside its window: Tyrano's default",
     "            // line box is taller than KAG3's, so a long KAG3 message",
     "            // can grow past the window and cover the bottom-right system",
@@ -1516,6 +1564,30 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "            // tail vanished -- owner: \"选项文字消失了\"). Normal dialogue keeps",
     "            // the hard clip.",
     "            '.message_inner.kag3ch-msg{overflow:visible !important}' +",
+    "            // Choice content gets an independent panel instead of inheriting",
+    "            // a short dialogue frame that cannot contain all visible rows.",
+    "            '.kag3-choice-layer .message_outer{display:none !important}' +",
+    "            '.message_inner.kag3-choice{' +",
+    "            'left:18% !important;top:16% !important;width:64% !important;' +",
+    "            'height:auto !important;min-height:0 !important;padding:22px 26px !important;' +",
+    "            'overflow:visible !important;background:rgba(5,8,14,.88);' +",
+    "            'border:1px solid rgba(255,255,255,.5);border-radius:12px;' +",
+    "            'box-shadow:0 16px 44px rgba(0,0,0,.58);text-align:left !important}' +",
+    "            '.message_inner.kag3-choice p{position:static !important;margin:0 !important;' +",
+    "            'padding:0 !important;line-height:1.35 !important}' +",
+    "            '.message_inner.kag3-choice p>span:not(.event-setting-element){' +",
+    "            'display:block;margin:0 0 14px;text-align:center;color:#fff}' +",
+    "            '.message_inner.kag3-choice .kag3-choice-item{' +",
+    "            'display:block;margin:9px 0;padding:11px 15px;box-sizing:border-box;' +",
+    "            'border:1px solid rgba(255,255,255,.34);border-radius:8px;' +",
+    "            'background:rgba(255,255,255,.09);text-decoration:none;' +",
+    "            'color:#fff !important;text-shadow:0 2px 4px rgba(0,0,0,.95);cursor:pointer}' +",
+    "            '.message_inner.kag3-choice .kag3-choice-item span{' +",
+    "            'color:#fff !important}' +",
+    "            '.message_inner.kag3-choice .kag3-choice-item:hover,' +",
+    "            '.message_inner.kag3-choice .kag3-choice-item:focus{' +",
+    "            'background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.75);' +",
+    "            'outline:none}' +",
     "            // Keep source font sizes and native window margins, including nameplates.",
     "            '.message_inner p.kag3ch{margin:0 !important;padding:0 !important}';",
     "          (document.head || document.documentElement).appendChild(s);",
@@ -1828,6 +1900,13 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "      _kag3_stub('restoreBookMark', 0);",
     "      _kag3_stub('saveBookMark', 0);",
     "      if (!kag.goToStartWithAsk) { kag.goToStartWithAsk = function () { this.backTitle(); return 1; }; }",
+    "      // A desktop [close] terminates the browser window.  On JoiPlay it",
+    "      // must stay inside the game, so use Tyrano's return-to-title flow.",
+    "      var _close = kag.ftag.master_tag && kag.ftag.master_tag.close;",
+    "      if (_close && _close.start && !_close.__kag3_mobile) {",
+    "        _close.__kag3_mobile = true;",
+    "        _close.start = function () { kag.backTitle(); };",
+    "      }",
     "      _kag3_stub('addPlugin', 0);",
     "      if (!kag.enterAutoMode) { kag.enterAutoMode = function () { this.setAuto(true); this.autoMode = 1; return 1; }; }",
     "      if (!kag.cancelAutoMode) { kag.cancelAutoMode = function () { this.setAuto(false); this.autoMode = 0; return 1; }; }",
@@ -1836,19 +1915,24 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "      if (!document.getElementById('kag3-mobile-panel')) {",
     "        var panel = document.createElement('div');",
     "        panel.id = 'kag3-mobile-panel';",
-    "        panel.innerHTML = '<button data-kag3-action=toggle aria-label=Menu>MENU</button>' +",
+    "        panel.innerHTML = '<button class=kag3-mobile-toggle data-kag3-action=toggle aria-label=\"Game controls\">&#9776;</button>' +",
     "          '<div class=kag3-mobile-actions>' +",
     "          '<button data-kag3-action=save>SAVE</button><button data-kag3-action=load>LOAD</button>' +",
     "          '<button data-kag3-action=log>LOG</button><button data-kag3-action=auto>AUTO</button>' +",
     "          '<button data-kag3-action=skip>SKIP</button><button data-kag3-action=hide>HIDE</button></div>';",
-    "        panel.style.cssText = 'position:fixed;right:8px;top:8px;z-index:2147483000;' +",
-    "          'display:flex;gap:6px;align-items:flex-start;font:16px sans-serif;pointer-events:auto';",
+    "        panel.style.cssText = 'position:fixed;right:10px;top:10px;z-index:2147483000;' +",
+    "          'display:flex;gap:8px;align-items:flex-start;font:600 14px sans-serif;pointer-events:auto';",
     "        var actions = panel.querySelector('.kag3-mobile-actions');",
-    "        actions.style.cssText = 'display:none;gap:6px;flex-wrap:wrap;max-width:360px';",
+    "        actions.style.cssText = 'display:none;gap:6px;flex-wrap:wrap;justify-content:flex-end;' +",
+    "          'max-width:min(420px,82vw);padding:6px;border-radius:10px;background:rgba(4,7,12,.64);' +",
+    "          'box-shadow:0 8px 24px rgba(0,0,0,.35);backdrop-filter:blur(5px)';",
     "        Array.prototype.forEach.call(panel.querySelectorAll('button'), function (b) {",
-    "          b.style.cssText = 'min-width:52px;min-height:44px;padding:6px;color:white;' +",
-    "            'background:rgba(0,0,0,.72);border:1px solid rgba(255,255,255,.7);border-radius:6px';",
+    "          b.style.cssText = 'min-width:52px;min-height:44px;padding:6px 9px;color:white;' +",
+    "            'background:rgba(12,17,26,.9);border:1px solid rgba(255,255,255,.55);' +",
+    "            'border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.25)';",
     "        });",
+    "        panel.querySelector('.kag3-mobile-toggle').style.cssText +=",
+    "          ';min-width:46px;width:46px;font-size:24px;line-height:1';",
     "        var sync = function () {",
     "          var a = panel.querySelector('[data-kag3-action=auto]');",
     "          var s = panel.querySelector('[data-kag3-action=skip]');",
@@ -1920,7 +2004,8 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "          if (e.key === 'Enter') {",
     "            var arr = kag.ftag.array_tag || [];",
     "            for (var i = kag.ftag.current_order_index + 1; i < arr.length; i++) {",
-    "              if (arr[i] && arr[i].name === 'select') {",
+    "              if (arr[i] && /^select(?:_|$)/.test(String(arr[i].name || '')) &&",
+    "                  !/(?:clear|off)$/.test(String(arr[i].name || ''))) {",
     "                kag.ftag.nextOrderWithIndex(i, kag.stat.current_scenario);",
     "                e.preventDefault();",
     "                __kag3_log('hotkey: jump to next choice at index ' + i);",

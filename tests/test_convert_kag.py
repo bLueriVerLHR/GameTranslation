@@ -475,6 +475,8 @@ class TestMapEngine:
         assert "kag.layer.showMessageLayers()" in js
         assert "min-height:44px" in js
         assert "actions.style.display === 'none' ? 'flex' : 'none'" in js
+        assert "Game controls" in js
+        assert "button_menu.png" in js
         assert "el.id === 'kag3-mobile-panel'" in ck.MAP_ENGINE_JS
 
     def test_kag_ui_compatibility_methods_are_not_stubs(self):
@@ -487,6 +489,7 @@ class TestMapEngine:
         assert "this.setAuto(false)" in js
         assert "kag.goToStartWithAsk = function" in js
         assert "this.backTitle()" in js
+        assert "_close.start = function () { kag.backTitle(); };" in js
 
     def test_ma_parsing_skips_comments_and_empty(self):
         actions = ck_map_parse("; comment\n0: autodisable=false;\n1: storage=\"x.ks\"; target=\"*y\";\n\n")
@@ -1104,18 +1107,23 @@ def test_message_layers_outrank_the_character_layers():
     assert "{z-index:8000 !important}" in js
 
 
-def test_message_backing_uses_the_games_own_parameters():
-    """KAG3 system/Config.tjs sets frameColor = 0x000000 with frameOpacity = 128
-    (= 50%). The frame ART is not rendered by this conversion, so without this the
-    dialogue sat directly on the CG (owner: "底衬我没看到恢复"). Our own earlier
-    override was reverted in both directions: no extra colour of our invention and
-    no wholesale `transparent` that also kills the game's backing."""
-    import re as _re
-    js = ck.RUNTIME_SHIM_IIFE
-    # the game's own backing is rendered again (the transparent override is gone),
-    # so ours must NOT be added on top of it (owner: "双层底衬")
-    assert not _re.search(r"\.message_outer\{[^}]*background", js)
-    assert not _re.search(r"\.message_inner\{[^}]*background", js)
+def test_message_backing_uses_classified_mobile_surfaces():
+    """Large dialogue frames and small name frames get distinct readable surfaces.
+
+    The classifier preserves scenario geometry, while CSS removes desktop frame art.
+    Unclassified message layers remain untouched.
+    """
+    js = ck.RUNTIME_SHIM_IIFE + ck.NOOP_PLUS_REAL_JS
+    assert "kag3-dialog-frame" in js
+    assert "kag3-name-frame" in js
+    assert "background-image:none !important" in js
+    assert "background:rgba(5,8,14,.78)" in js
+    assert "kag3-dialog-text" in js
+    assert "kag3-name-text" in js
+    assert "canvasH * 0.12" in js
+    assert "w >= canvasW * 0.18" in js
+    assert "w < canvasW * 0.18" in js
+    assert ".message_outer.kag3-aux-frame,.message_inner.kag3-aux-text" in js
 
 
 def test_r_and_style_affect_appended_ch_runs():
@@ -1227,6 +1235,30 @@ def test_ch_composed_messages_are_exempt_from_the_hard_clip():
     assert ".message_inner.kag3ch-msg{overflow:visible !important}" in js
     assert ".message_inner{overflow:hidden}" in js   # dialogue keeps the clip
     assert "margin:0 !important;padding:0 !important" in js
+
+
+def test_link_ch_runs_form_one_touch_friendly_choice_panel():
+    """Only [ch] runs owned by a link become choice items.
+
+    Plain [ch] is also used by name plates, so classifying every run as a choice
+    would move speaker names into the centre of the screen.
+    """
+    js = ck.RUNTIME_SHIM_IIFE + ck.NOOP_PLUS_REAL_JS
+    assert '$current.hasClass("event-setting-element")' in js
+    assert '$current.addClass("kag3-choice-item")' in js
+    assert '$i.addClass("kag3-choice")' in js
+    assert '$i.closest(".layer").addClass("kag3-choice-layer")' in js
+    assert ".message_inner.kag3-choice{" in js
+    assert ".kag3-choice-layer .message_outer{display:none !important}" in js
+    assert ".kag3-choice-item span{" in js
+    assert "color:#fff !important" in js
+
+
+def test_choice_jump_hotkey_recognises_macro_variants_but_not_cleanup_tags():
+    """Debug jumping covers select_* macros without landing on clear/off helpers."""
+    js = ck.RUNTIME_SHIM_IIFE
+    assert "/^select(?:_|$)/" in js
+    assert "/(?:clear|off)$/" in js
 
 
 def test_ch_skips_empty_runs():

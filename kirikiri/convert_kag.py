@@ -979,7 +979,14 @@ MAP_ENGINE_JS = """\
       for (var i = 0; i < __kag3_ctx_fields.length; i++) {
         ctx[__kag3_ctx_fields[i]] = undefined;
       }
-      eval('with (ctx) { ' + String(body).replace(/\\bkag\\./g, 'TG.') + ' }');
+      var source = String(body).replace(/\\bkag\\./g, 'TG.');
+      // TJS switch comparisons coerce numeric and string values. JavaScript
+      // uses strict equality, so a KAG action such as switch(sf.page) with
+      // case "0" misses when the scenario stored numeric 0. Province action
+      // expressions are simple identifiers/properties; stringify the switch
+      // subject to preserve the source behavior used by gallery page maps.
+      source = source.replace(/\\bswitch\\s*\\(([^()]*)\\)/g, 'switch(String($1))');
+      eval('with (ctx) { ' + source + ' }');
     } catch (e) {}
   };
   var __kag3_parse_ma = function (text) {
@@ -1570,6 +1577,13 @@ RUNTIME_SHIM_IIFE = "\n".join([
     "          var s = document.createElement('style');",
     "          s.setAttribute('data-kag3', 'free-layer-clickthrough');",
     "          s.textContent =",
+    "            // Numeric foreground containers are full-canvas elements.",
+    "            // Tyrano leaves even hidden and empty layers hit-testable, so",
+    "            // they can sit above .layer_event_click and make [s]/[p] waits",
+    "            // look frozen. The layer is decorative; images and other real",
+    "            // children remain interactive for document-level KAG3 maps.",
+    "            '.layer_fore{pointer-events:none !important}' +",
+    "            '.layer_fore>*{pointer-events:auto !important}' +",
     "            '.layer_free{pointer-events:none !important}' +",
     "            '.layer_free>*{pointer-events:auto !important}' +",
     "            // Message layers must stack ABOVE the character layers, exactly",
@@ -2678,7 +2692,16 @@ def _replace_layer_image(part):
     # `;` at the start of a line as a comment). That surfaced as comments
     # being printed into the message window.
     tail = part[len(part.rstrip("\r\n")):]
-    return "[freeimage layer=%s%s]%s%s" % (lm.group(1), page, part.strip(), tail)
+    prefix = "[freeimage layer=%s%s]" % (lm.group(1), page)
+    # Tyrano's [image] tag has no opacity parameter, while KAG3 applies it to
+    # the image on the layer. Since this pass already enforces KAG3's
+    # one-image-per-layer model, setting the layer opacity is equivalent. This
+    # is especially important for invisible clickable-map hit surfaces: their
+    # solid placeholder bitmap otherwise covers the gallery content.
+    om = re.search(r'\bopacity\s*=\s*("(?:[^"]*)"|\'(?:[^\']*)\'|[^\s\]]+)', attrs)
+    if om:
+        prefix += "[layopt layer=%s%s opacity=%s]" % (lm.group(1), page, om.group(1))
+    return "%s%s%s" % (prefix, part.strip(), tail)
 
 
 def _tag_spans(text):
@@ -3296,6 +3319,63 @@ def _collect_macros(unpacked):
     return macros
 
 
+def _load_state_overrides(path):
+    """Load optional runtime variable defaults from an external JSON file.
+
+    Game-specific variable names belong in the external file, not in the
+    converter.  Only Tyrano's three scenario-variable namespaces are accepted.
+    """
+    if not path:
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, UnicodeError, json.JSONDecodeError) as e:
+        raise ValueError("cannot read state overrides %s: %s" % (path, e)) from e
+    if not isinstance(data, dict):
+        raise ValueError("state overrides root must be an object: %s" % path)
+    allowed = {"f", "sf", "tf"}
+    unknown = sorted(set(data) - allowed)
+    if unknown:
+        raise ValueError("unknown state override namespace(s) in %s: %s" %
+                         (path, ", ".join(unknown)))
+    for namespace, values in data.items():
+        if not isinstance(values, dict):
+            raise ValueError("state override namespace %s must be an object: %s" %
+                             (namespace, path))
+        bad = sorted(k for k in values if k in {"__proto__", "constructor", "prototype"})
+        if bad:
+            raise ValueError("unsafe state override key in %s.%s: %s" %
+                             (path, namespace, ", ".join(bad)))
+    return data
+
+
+def _state_overrides_js(overrides):
+    """Build a small runtime that keeps configured scenario defaults applied."""
+    if not overrides:
+        return ""
+    payload = json.dumps(overrides, ensure_ascii=False, separators=(",", ":"))
+    return """(function () {
+  window.__kag3_state_overrides = %s;
+  window.__kag3_apply_state_overrides = function () {
+    var kag = window.TYRANO && window.TYRANO.kag;
+    if (!kag || !kag.variable || !kag.stat) return false;
+    var targets = { f: kag.stat.f, sf: kag.variable.sf, tf: kag.variable.tf };
+    var source = window.__kag3_state_overrides;
+    Object.keys(source).forEach(function (namespace) {
+      var target = targets[namespace];
+      if (!target) return;
+      Object.keys(source[namespace]).forEach(function (key) {
+        target[key] = JSON.parse(JSON.stringify(source[namespace][key]));
+      });
+    });
+    return true;
+  };
+  window.setInterval(window.__kag3_apply_state_overrides, 100);
+})();
+""" % payload
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("unpacked", help="extracted KAG3 game dir (xp3tool extract)")
@@ -3319,11 +3399,19 @@ def main():
     ap.add_argument("--fast-skip", action="store_true",
                     help="drive the flow while skip mode is on, so skipping "
                          "fast-forwards without a click per line (debugging)")
+    ap.add_argument("--state-overrides", default=None, metavar="JSON",
+                    help="JSON file containing persistent f/sf/tf variable defaults; "
+                         "use this for game-specific gallery unlock flags")
     ap.add_argument("--portrait", action="store_true",
                     help="768x1024 portrait layout: art scaled to the top, "
                          "message text in the bottom black area")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
+
+    try:
+        state_overrides = _load_state_overrides(args.state_overrides)
+    except ValueError as e:
+        ap.error(str(e))
 
     # Tags dropped for this run (see _DROPPED_TAGS). Must be set before any
     # scenario is converted, not next to the shim build.
@@ -3472,6 +3560,7 @@ def main():
         asset_js,
         asset_ma_js,
         asset_video_js,
+        _state_overrides_js(state_overrides),
         "if (typeof window.seen_list === 'undefined') { window.seen_list = []; }",
         "if (typeof window.seen_ani_list === 'undefined') { window.seen_ani_list = []; }",
         "if (typeof window.anlist === 'undefined') { window.anlist = []; }",

@@ -24,8 +24,11 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
+sys.path.insert(0, _HERE)                   # sibling tools
 import plain_io  # noqa: E402
+from rpgmaker import logsetup  # noqa: E402
 # Single source for the game-owner tone policy (NEUTRAL_TONE + <work>/tone.md):
 # the full-flow and completion shard generators must never drift apart, and a
 # game's tone must never be hardcoded in a tool (docs/translation.md §3).
@@ -98,9 +101,7 @@ def main():
                          "a neutral fallback is used when absent)")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s")
+    logsetup.setup(verbose=args.verbose)
 
     work = os.path.abspath(args.work_dir)
     chunks_dir = os.path.join(work, "chunks")
@@ -151,16 +152,11 @@ def main():
     if cur:
         chunks.append(cur)
 
-    # merge pass: greedy left-to-right, merge an adjacent chunk when the
-    # combined size still fits the budget. Kills wasteful one-key chunks
-    # (huge plugin-note leftovers) without ever exceeding the proven cap.
-    merged = []
-    for c in chunks:
-        if merged and sum(map(len, merged[-1])) + sum(map(len, c)) <= args.max_chars:
-            merged[-1] = merged[-1] + c
-        else:
-            merged.append(c)
-    chunks = merged
+    # NOTE: the packing above is already maximal - a non-final chunk cannot
+    # take the next key without exceeding --max-chars - so the "merge small
+    # adjacent chunks" pass that used to follow could never fire (verified by
+    # tests/test_gen_completion_shards.py::test_no_chunk_may_be_extended).  It
+    # was removed rather than left as dead code.
 
     # per-chunk carry-over (last lines of previous chunk, in story order)
     previous_tail = []
@@ -172,6 +168,10 @@ def main():
         previous_tail = tail[-CARRY_OVER:] if tail else previous_tail
 
         # which maps does this chunk cover?
+        # `where` is the human-readable location written by build_translation.py:
+        # "<map name> / EV%03d <event name>" for map events, plain file names
+        # ("Actors.json") for DB keys, "" for keys with no location.  The label
+        # before the first "/" is therefore the map/file the chunk starts in.
         maps = []
         for k in keys:
             loc = ctx.get(k, {}).get("where", "")

@@ -23,9 +23,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ctrl_codes  # noqa: E402
 import japanese_utils  # noqa: E402
 
-# Coarse block-range + half-width variant (legacy, kept for reference);
-# the actual value check uses the canonical KANA below.
-KANA = japanese_utils.KANA_BLOCKS_HW
+# The canonical KANA (search pattern) is the value check; KANA_BLOCKS_HW was
+# the older block-range variant and is no longer used.
 VALUE_KANA = japanese_utils.KANA
 VALID_ESC = re.compile(r"\\([^\"\\/bfnrtu])", re.S)
 UNCERTAIN = re.compile(r"【[^】]*\?[^】]*】")
@@ -57,6 +56,19 @@ def repair_file(path):
     return "\n".join(out), fixed
 
 
+def order_divergence(src, out):
+    """Positions where `src` and `out` share a slot but not a key.
+
+    Missing/extra keys are reported separately; this catches the case the old
+    check could never see - all keys present but reordered - which matters
+    because the ja/zh chunk contract is line-by-line.  Returns (src_key,
+    out_key) pairs.
+    """
+    shared_src = [k for k in src if k in out]
+    shared_out = [k for k in out if k in src]
+    return [(a, b) for a, b in zip(shared_src, shared_out) if a != b]
+
+
 def validate(src, out):
     issues = []
     miss = [k for k in src if k not in out]
@@ -64,12 +76,13 @@ def validate(src, out):
     empty = [k for k in out if not out[k]]
     newline_diff = []
     kana_left = []
-    order_diff = []
     ctrl_diff = []
     dbl_backslash = []
     uncertain = []
     for k, v in out.items():
-        if k in src and isinstance(v, str):
+        # Object keys are strings in practice; the isinstance guard keeps a
+        # hand-built dict (tests, future callers) from raising here.
+        if k in src and isinstance(k, str) and isinstance(v, str):
             if v.count("\n") != k.count("\n"):
                 newline_diff.append(k)
             if VALUE_KANA.search(ctrl_codes.strip_ctrl(v)):
@@ -82,9 +95,7 @@ def validate(src, out):
                 dbl_backslash.append(k)
             if UNCERTAIN.search(v):
                 uncertain.append(k)
-    if list(src.keys()) != list(out.keys()):
-        order_diff = [k for k in src if k not in out] or \
-            [k for k in out if k not in src]
+    order_diff = order_divergence(src, out)
     if miss:
         issues.append("missing keys: %s" % miss[:6])
     if extra:
@@ -96,7 +107,8 @@ def validate(src, out):
     if kana_left:
         issues.append("kana still in values: %d keys" % len(kana_left))
     if order_diff:
-        issues.append("KEY ORDER MISMATCH: %s" % order_diff[:3])
+        issues.append("KEY ORDER MISMATCH: %d positions, first %r -> %r"
+                      % (len(order_diff), order_diff[0][0], order_diff[0][1]))
     if ctrl_diff:
         issues.append("control-code tokens differ: %d keys" % len(ctrl_diff))
     if dbl_backslash:
@@ -190,9 +202,11 @@ def main():
                     break
         if out is None:
             continue
-        issues = []
-        out = patch_altered_keys(src, out, issues)
-        issues = validate(src, out)
+        patched = []
+        out = patch_altered_keys(src, out, patched)
+        # The rename report used to be thrown away here (a plain rebinding of
+        # `issues`), so a repaired chunk looked clean in the report.
+        issues = patched + validate(src, out)
         if issues:
             report.append("%s: %d keys, ISSUES: %s"
                           % (path, len(out), "; ".join(issues)))

@@ -32,6 +32,13 @@ import json
 import logging
 import os
 import re
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
+sys.path.insert(0, _HERE)                   # sibling tools
+from rpgmaker import logsetup  # noqa: E402
+import ctrl_codes  # noqa: E402
 
 log = logging.getLogger("harvest")
 
@@ -92,9 +99,7 @@ def main():
     # Configure logging here, never at import time: a module-level call
     # rewrites the root logger for whatever imported this file (tests too)
     # and turns a later configuration into a silent no-op.
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)-7s %(name)s: %(message)s")
+    logsetup.setup(verbose=args.verbose)
 
     work = os.path.abspath(args.work_dir)
     t = json.load(open(os.path.join(work, "template.json"), encoding="utf-8-sig"))
@@ -104,7 +109,23 @@ def main():
 
     snorm = {}
     for k, v in d.items():
-        snorm.setdefault(strip_codes(k), v)
+        s = strip_codes(k)
+        # A key that is nothing but control codes strips to "": registering it
+        # under the empty key let ANY code-only key borrow its value.  Such an
+        # entry is not usable as a strip-match source, so it is skipped.
+        if s:
+            snorm.setdefault(s, v)
+
+    def with_codes(pre, sv, suf):
+        """Wrap a translation in the key's leading/trailing control codes.
+
+        Values that already carry codes (MTool/AI dicts often keep them) are
+        returned as they are - adding the key's codes again duplicated them,
+        and the extra pair then showed up as a control-code diff in QC.
+        """
+        if ctrl_codes.CTRL_TOKEN.search(sv):
+            return sv
+        return pre + sv + suf
 
     def lookup(s):
         v = d.get(s)
@@ -139,7 +160,7 @@ def main():
             sv = snorm.get(strip_codes(k))
             if isinstance(sv, str) and sv and "\n" not in k:
                 pre, suf = leading_codes(k), trailing_codes(k)
-                val, how = pre + sv + suf, "strip"
+                val, how = with_codes(pre, sv, suf), "strip"
             elif isinstance(sv, str) and sv:
                 val, how = sv, "strip"
             elif "\n" in k:
@@ -163,14 +184,20 @@ def main():
             inner = k[1:-1]
             iv = snorm.get(strip_codes(inner))
             if isinstance(iv, str) and iv:
-                val, how = '"' + iv + '"', "quoted"
+                # Style switches inside the quotes belong to the value: the
+                # lookup dropped them (it matches on stripped text), so they
+                # are put back instead of shipping a code-less string.
+                pre, suf = leading_codes(inner), trailing_codes(inner)
+                val, how = '"' + with_codes(pre, iv, suf) + '"', "quoted"
         if val is None and kd == "note":
             i = k.find("<SG説明")
             if i >= 0:
                 nv = snorm.get(strip_codes(k[i:]))
                 if isinstance(nv, str) and nv:
-                    pre = leading_codes(k[:i])
-                    val, how = pre + k[:i] + nv, "note"
+                    # k[:i] is literal text that belongs in the value, and it
+                    # already carries whatever leading codes the note has:
+                    # prepending leading_codes(k[:i]) duplicated them.
+                    val, how = k[:i] + nv, "note"
         if val is None:
             missing[k] = ""
             stats["miss"] += 1

@@ -234,7 +234,7 @@ venv 解释器按平台取：POSIX `.venv/bin/python`，Windows
   `py7zr`（7z+zstd）、`av`/PyAV（探测与解码检查）、`typer`（CLI）、
   `pytest` + `pytest-xdist` + `pytest-cov`。详见 `pyproject.toml`。
 - **并行跑测试是默认**（`addopts = "-n auto"`，本套 1163 个用例 
-  27.8s → 11.2s）；`-p no:xdist` 可关。
+  27.8s → 11.2s）；`-n 0` 可改为串行。
 - **无外部工具也能跑**：`tests/fake_tools/` 提供假 ffmpeg/7z
   （经 `FFMPEG`/`SEVENZ` 环境变量注入，与真工具同协议），真实媒体用
   `tests/fixtures/sine_loop.ogg`（5.8 KB 真 Ogg Vorbis，带 LOOP 标签），

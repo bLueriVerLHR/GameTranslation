@@ -7,14 +7,15 @@ far more widely available on Android than AV1.  Measured on this machine,
 VP9 (crf 32, cpu-used 4) runs at ~3.6x realtime and shrinks the source to
 ~23%, so the whole 955 MB / ~18 min set costs ~5 minutes.
 
-Every output is verified with ffprobe (a file that fails to encode must not
-silently disappear from the build), and existing outputs are skipped so the
-job can be re-run.
+Every output is verified by decoding/probing it again (PyAV), so a file that
+fails to encode must not silently disappear from the build, and existing
+outputs are skipped so the job can be re-run.
 
 Usage:
     transcode_video.py <xp3> <out_dir> [--crf 32] [--cpu-used 4] [--jobs 3]
 """
 import argparse
+import logging
 import collections
 import concurrent.futures
 import os
@@ -25,7 +26,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kirikiri.xp3tool import extract_segment, open_xp3  # noqa: E402
-from rpgmaker import config, proctools  # noqa: E402
+from rpgmaker import config, logsetup, media, proctools  # noqa: E402
+
+log = logging.getLogger("transcode_video")
 
 VIDEO_EXT = (".wmv", ".mpg", ".mpeg", ".avi")
 
@@ -35,18 +38,25 @@ ENCODE_TIMEOUT = None
 
 
 def probe(path):
-    ffprobe = config.find_ffprobe()
-    if not ffprobe:
+    """Video stream info via PyAV (`rpgmaker/media.py`) - no ffprobe.
+
+    Returns the same keys the ffprobe command used to report
+    (codec_name/width/height/duration) so callers are unchanged, or None when
+    the file has no readable video stream.
+
+    The ENCODE below still runs the ffmpeg binary: the VP9/Opus parameters
+    below are the validated mobile-WebView recipe, and re-expressing them
+    through PyAV's encoder API would change the output - the same reason the
+    Vorbis audio step keeps the CLI (see rpgmaker/media.py).
+    """
+    info = media.probe_video(path)
+    if "error" in info:
+        log.debug("%s: probe failed: %s", path, info["error"])
         return None
-    r = proctools.run(
-        [ffprobe, "-v", "error", "-show_entries",
-         "stream=codec_name,width,height:format=duration",
-         "-of", "default=noprint_wrappers=1", path],
-        timeout=PROBE_TIMEOUT, label="ffprobe", check=False)
-    if r.returncode != 0:
-        return None
-    return dict(ln.split("=", 1) for ln in r.stdout.strip().splitlines()
-                if "=" in ln)
+    return {"codec_name": info["codec"], "width": str(info["width"]),
+            "height": str(info["height"]),
+            "duration": None if info["duration"] is None
+            else "%.6f" % info["duration"]}
 
 
 def main():
@@ -58,17 +68,14 @@ def main():
     ap.add_argument("--jobs", type=int, default=3)
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
+    logsetup.setup()
 
     ffmpeg = config.find_ffmpeg()
-    ffprobe = config.find_ffprobe()
-    missing = [name for name, path in (("ffmpeg", ffmpeg), ("ffprobe", ffprobe))
-               if not path]
-    if missing:
+    if not ffmpeg:
         # Single resolver (config.TOOLS), so `pipeline.py doctor` sees the same
-        # answer this check does.
-        print("error: %s not found - install ffmpeg/ffprobe or set the "
-              "FFMPEG / FFPROBE env vars" % ", ".join(missing),
-              file=sys.stderr)
+        # answer this check does.  Probing/verification is PyAV (no ffprobe).
+        print("error: ffmpeg not found - install ffmpeg or set the FFMPEG "
+              "env var", file=sys.stderr)
         return 2
 
     entries = [e for e in open_xp3(args.xp3)

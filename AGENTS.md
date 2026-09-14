@@ -549,9 +549,10 @@ RPG Maker 流水线。下述为桌面翻译路线；手机转换另见
 
   新代码**不得**再自己拼 ffprobe/7z 的 argv、解它们的 stdout、或写第二
   份 `shutil.which`。两个例外（已在代码注释里写明原因）：
-  **Vorbis 编码**仍调 ffmpeg CLI（PyAV 的 wheel 不含 libvorbis，q2/q3
-  质量策略不能默默变），**Windows 侧桥接**仍调 Windows `7z.exe`
-  （跨系统 CRITICAL 规则）。
+  **Vorbis 编码**与**VP9/Opus 视频转码**仍调 ffmpeg CLI（PyAV 的 wheel 不含
+  libvorbis，且这两处参数是实测验证过的移动端配方，重构不得静默改质量），
+  **Windows 侧桥接**仍调 Windows `7z.exe`（跨系统 CRITICAL 规则）。探测/
+  解码检查已全部改为 PyAV。
 - **本机环境信息**（交付目录、工具路径覆盖、venv 等）写进本地私有配置
   `docs/table/env_config.json`（gitignored，不入库）——**这是可选覆盖层，
   不是必需条件**：文件缺失时由探测 + 内置默认值接管。交付目录解析顺序

@@ -23,12 +23,13 @@ ffmpeg's ``-metadata:s:a:0`` (this very pipeline's own encoder argument) puts
 it - was invisible, and the re-encode then dropped the loop points.  PyAV
 reports container and stream tags together.
 
-What still needs the ffmpeg binary: **Ogg Vorbis encoding**.  PyAV's binary
-wheels ship FFmpeg's native ``vorbis`` encoder (flagged experimental, a
-different quality model) but **not** ``libvorbis``, and the audio policy
-(q2/q3 libvorbis, validated on device) must not change silently - so
-``audio.py``/``tyrano/audio.py`` keep the CLI for that one step, with the
-argv built in exactly one place there.
+What still needs the ffmpeg binary: **encoding**.  PyAV's binary wheels ship
+FFmpeg's native ``vorbis`` encoder (flagged experimental, a different quality
+model) but **not** ``libvorbis``, and the audio policy (q2/q3 libvorbis,
+validated on device) must not change silently - so ``audio.py`` /
+``tyrano/audio.py`` keep the CLI for that one step, and
+``tools/transcode_video.py`` keeps it for the validated VP9/Opus recipe.  Both
+build their argv in exactly one place.
 """
 import logging
 import os
@@ -124,6 +125,31 @@ def probe(path):
         return {"error": "%s: %s" % (type(exc).__name__, exc)}
     log.debug("probe %s: %s", path, info)
     return info
+
+
+def probe_video(path):
+    """Probe the first video stream: {codec, width, height, duration, size}.
+
+    Used by the KAG video transcoder for its own before/after check, so the
+    comparison no longer shells out to ffprobe.
+    """
+    av = _av()
+    try:
+        size = os.path.getsize(path)
+    except OSError as exc:
+        return {"error": "cannot stat %s: %s" % (path, exc)}
+    try:
+        with av.open(path) as container:
+            stream = next((s for s in container.streams
+                           if s.type == "video"), None)
+            if stream is None:
+                return {"error": "no video stream in %s" % path}
+            cc = stream.codec_context
+            return {"codec": cc.name, "width": cc.width, "height": cc.height,
+                    "duration": _duration_seconds(container, stream, path),
+                    "size": size}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": "%s: %s" % (type(exc).__name__, exc)}
 
 
 def decode_ok(path):

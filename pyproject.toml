@@ -68,7 +68,7 @@ packages = [
 testpaths = ["tests"]
 # Measured with pytest-xdist on this suite: 27.8 s serial -> 11.2 s with
 # `-n auto` (1163 tests).  The suite is parallel-safe (every test builds its
-# own tmp game and binds its own free port), and `-p no:xdist` disables it.
+# own tmp game and binds its own free port); `-n 0` runs it serially.
 addopts = "-n auto"
 
 [tool.coverage.run]

@@ -29,6 +29,48 @@ CODE = re.compile(r"\\[A-Za-z]+(?:\[[^\]]*\])?")
 UNCERTAIN = re.compile(r"【[^】]*\?[^】]*】")
 ctrl_signature = ctrl_codes.ctrl_signature
 
+# Report sections, in the order main() prints them: (label, finding key).
+REPORTS = (
+    ("empty values", "empty"),
+    ("kana residual", "kana"),
+    ("line-count mismatches", "lines"),
+    ("double-backslash values", "dbl"),
+    ("uncertainty markers", "mark"),
+    ("identity values (len>2)", "ident"),
+    ("control-code token diffs", "code"),
+)
+
+
+def collect(p, exemptions=()):
+    """Findings of the merged dictionary, keyed by report name.
+
+    `p` is the merged {ja: zh} mapping; non-string values are skipped (a
+    malformed entry is not a translation problem to report here).
+    `exemptions` are compiled regexes matched against VALUES to silence the
+    kana-residual check (onomatopoeia, author-name lines).
+    """
+    found = {key: [] for _label, key in REPORTS}
+    for k, v in p.items():
+        if not isinstance(v, str):
+            continue
+        if not v.strip():
+            found["empty"].append(k)
+        if KANA.search(v):
+            if not any(ex.search(v) for ex in exemptions):
+                found["kana"].append((k, v))
+        if v.count("\n") != k.count("\n"):
+            found["lines"].append((k, v))
+        if "\\\\" in v:
+            found["dbl"].append((k, v))
+        if UNCERTAIN.search(v):
+            found["mark"].append((k, v))
+        if v == k and len(k) > 2:
+            found["ident"].append((k, v))
+        if sorted(CODE.findall(k)) != sorted(CODE.findall(v)) and \
+                sorted(ctrl_signature(k)) != sorted(ctrl_signature(v)):
+            found["code"].append((k, v))
+    return found
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -47,26 +89,7 @@ def main():
             if line and not line.startswith("#"):
                 exemptions.append(re.compile(line))
 
-    empty, kana, lines, dbl, mark, ident, code = [], [], [], [], [], [], []
-    for k, v in p.items():
-        if not isinstance(v, str):
-            continue
-        if not v.strip():
-            empty.append(k)
-        if KANA.search(v):
-            if not any(ex.search(v) for ex in exemptions):
-                kana.append((k, v))
-        if v.count("\n") != k.count("\n"):
-            lines.append((k, v))
-        if "\\\\" in v:
-            dbl.append((k, v))
-        if UNCERTAIN.search(v):
-            mark.append((k, v))
-        if v == k and len(k) > 2:
-            ident.append((k, v))
-        if sorted(CODE.findall(k)) != sorted(CODE.findall(v)) and \
-                sorted(ctrl_signature(k)) != sorted(ctrl_signature(v)):
-            code.append((k, v))
+    found = collect(p, exemptions)
 
     def report(name, items, show=10):
         print("%s: %d" % (name, len(items)))
@@ -76,13 +99,8 @@ def main():
             else:
                 print("   ", repr(item)[:80])
 
-    report("empty values", empty)
-    report("kana residual", kana)
-    report("line-count mismatches", lines)
-    report("double-backslash values", dbl)
-    report("uncertainty markers", mark)
-    report("identity values (len>2)", ident)
-    report("control-code token diffs", code)
+    for label, key in REPORTS:
+        report(label, found[key])
 
 
 if __name__ == "__main__":

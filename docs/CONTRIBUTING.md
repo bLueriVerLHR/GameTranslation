@@ -63,8 +63,14 @@ commit message 同样自查。注：不要用「裸 `rg` 扫规则文本自身�
   ```
 - 集成测试在合成游戏上跑完整流水线（build → decrypt → clean → verify →
   serve → compress → deliver），全流程无外部依赖（`tests/fake_tools/`
-  提供假 ffmpeg/ffprobe/7z）。
+  提供假 ffmpeg/7z）。
 - 修改 `.py` 后先过 `python -m py_compile`（工具可运行）。
+- **命令行统一用 `rpgmaker/cliutil.py`（Typer），不用 argparse**：
+  单命令 `app = cliutil.command_app(cmd, help=__doc__)`，子命令
+  `cliutil.app()` + `@app.command()`；每个工具保留 `def main(argv=None) -> int`
+  （`cliutil.run` 在 argv 为 None 时读 `sys.argv`），**命令里不调 `sys.exit()`**
+  （失败用 `return cliutil.fail("…")` 或 `raise typer.Exit(code=N)`）；日志选项
+  统一用 `cliutil.Verbose` / `Quiet` / `LogFile`。模板见该模块文档串。
 - **lint 用 ruff（规则钉在 `pyproject.toml`）**：
   ```bash
   <venv-python> -m ruff check .

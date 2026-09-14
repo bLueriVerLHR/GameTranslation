@@ -17,10 +17,10 @@ Kinds are tuned for the bottleneck of the step:
   decrypt   I/O-bound byte XOR (decrypt)       -> cpu, hdd capped
   clean     I/O-bound corpus scan (clean)      -> cpu, hdd capped
   png       I/O-bound header reads (verify)    -> cpu, hdd capped
-  probe     subprocess spawn + I/O (ffprobe)   -> cpu*2, hdd capped
-  encode    CPU-heavy subprocess (ffmpeg)      -> cpu, memory-aware, capped
-  decode    CPU-heavy subprocess (verify)      -> cpu, memory-aware, capped
-  compress  multi-thread archive (7z -mmt)     -> cpu, memory-aware, capped
+  probe     in-process PyAV demux (probe)      -> cpu*2, hdd capped
+  encode    CPU-heavy ffmpeg subprocess (encode) -> cpu, memory-aware, capped
+  decode    in-process PyAV decode (verify)    -> cpu, memory-aware, capped
+  compress  py7zr threads (compress)           -> cpu, memory-aware, capped
 
 Explicit `--workers N` always wins.  Env overrides:
 

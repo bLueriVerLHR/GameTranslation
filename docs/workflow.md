@@ -10,10 +10,13 @@
 
 ## 1. 环境要求
 
-- **Python 3.10+** 与运行时包 `typer` / `py7zr` / `av`（图像步骤另需
-  `Pillow`；`pip install -e ".[images,dev]"` 一次装齐）。
-- ffmpeg（含 libvorbis）用于音频重编码；**探测/解码检查已改为 PyAV，
-  不需要 ffprobe**。
+- **Python 3.10+** 与运行时包 `typer` / `py7zr` / `av` / `asar` /
+  `tree-sitter` / `tree-sitter-javascript`（图像步骤另需 `Pillow`，字体合并需
+  `fonttools`；`pip install -e ".[images,dev]"` 一次装齐）。
+- ffmpeg（含 libvorbis）仅用于**音频编码**；探测/解码检查已改为 PyAV，
+  视频转码（VP9+Opus）也是 PyAV 在进程内完成——**不再需要 ffprobe，视频也
+  不再需要 ffmpeg CLI**。
+- **不再需要 Node.js**：asar 解包用 `asar` 包，JS 语法检查用 tree-sitter。
 - 7-Zip 仅在 Windows 侧桥接时需要；同侧打包/解包用 `py7zr`（见
   `rpgmaker/archive.py`）。
 - **ripgrep（`rg`）是可选的**：工具库代码里**不调用** `rg`（内容搜索已改成
@@ -189,9 +192,8 @@ MZ（`*.png_`、`*.ogg_`）与 MV（`*.rpgmvp`、`*.rpgmvo`、`*.rpgmvm` —
 
 ### audio — 收益最大
 
-`audio` 先用 ffprobe 探测每个文件，再只重编码有帮助的。探测（8 worker）
-与编码（4 worker）在线程池上运行、由 asyncio 汇总，ffprobe/ffmpeg 持续
-并行：
+`audio` 先用 PyAV 在进程内探测每个文件，再只重编码有帮助的。探测与编码
+各在线程池上并行（`ThreadPoolExecutor`，输入顺序保持）：
 
 | 条件 | 动作 |
 |---|---|
@@ -201,8 +203,9 @@ MZ（`*.png_`、`*.ogg_`）与 MV（`*.rpgmvp`、`*.rpgmvo`、`*.rpgmvm` —
 
 - 总是 `-map 0:a:0` — 许多 MZ BGM 内嵌封面 **mjpeg 视频流**，否则会被
   带进输出。
-- 循环标签（`LOOPSTART`/`LOOPLENGTH` Vorbis 注释）用 ffprobe 读、重编码
-  时重新注入。游戏无循环标签时保持整文件循环默认。
+- 循环标签（`LOOPSTART`/`LOOPLENGTH` Vorbis 注释）由 PyAV 读（容器级与
+  流级标签都读，旧 ffprobe 查询只读前者因而丢过循环点）、重编码时重新注入。
+  游戏无循环标签时保持整文件循环默认。
 - 只在更小时覆盖；绝不转 Opus（用 `stbvorbis`/`vorbisdecoder.js` 的 MZ
   只能解 **Vorbis**）。
 - 先用 `--sample N` 在少量文件上试策略，`--probe-only --report file.csv`

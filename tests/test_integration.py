@@ -117,7 +117,6 @@ class TestCli:
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         env = dict(os.environ)
         env["FFMPEG"] = fake_tools["ffmpeg"]
-        env["FFPROBE"] = fake_tools["ffprobe"]
         env["SEVENZ"] = fake_tools["7z"]
         r = subprocess.run(
             [sys.executable, os.path.join(repo, "pipeline.py"), "build",
@@ -134,7 +133,6 @@ class TestCli:
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         env = dict(os.environ)
         env["FFMPEG"] = fake_tools["ffmpeg"]
-        env["FFPROBE"] = fake_tools["ffprobe"]
         env["SEVENZ"] = fake_tools["7z"]
         build.build_joiplay(web, out, workers=2)
         r = subprocess.run(

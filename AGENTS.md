@@ -179,15 +179,16 @@ docs/table/
   `INFO` 写阶段与结果（文件数、键数、命中数），`WARN` 写可恢复异常
   （重试后成功、推测性跳过），`ERROR` 写失败。默认只显示 INFO 及以上，
   `--verbose`/`-v` 开 DEBUG。
-- **配置只在一个地方**：`rpgmaker/logsetup.py` 的 `setup(verbose=...)`
-  （时间戳+等级+logger 名，并顺带把控制台流改成 UTF-8 `replace`，否则
-  Windows 上重定向输出遇到 CJK 会 UnicodeEncodeError 而中断）。**只能从
-  `main()` 调用，绝不能在 import 期配置**——import 期调用会改写整个进程
-  （含 pytest 会话）的 root logger，并让后续配置静默失效。例外：**6 个可从
-  自身目录直接运行的模块**（`kirikiri/xp3tool.py`、`kirikiri/xp3pack.py`、
-  `tyrano/build.py`、`tyrano/clean.py`、`tyrano/autoplay.py`、
-  `wolfrpg/dxarchive.py`；另 `unity/rmunite/extract_game.py`）保留本地
-  两行配置，因为那时仓库根不在 `sys.path` 上。
+- **配置只在一个地方**：`rpgmaker/logsetup.py` 的 `setup(verbose=...,
+  quiet=..., log_file=...)`（时间戳+等级+logger 名，并顺带把控制台流改成
+  UTF-8 `replace`，否则 Windows 上重定向输出遇到 CJK 会 UnicodeEncodeError
+  而中断）。常用选项：`-v/--verbose` 开 DEBUG、`-q/--quiet` 只留 WARN/ERROR、
+  `--log-file PATH` 同写一份文件、环境变量 `GT_LOG_LEVEL=debug` 临时改级别。
+  **只能从 `main()` 调用，绝不能在 import 期配置**——import 期调用会改写
+  整个进程（含 pytest 会话）的 root logger，并让后续配置静默失效。
+  计时一个阶段用 `with logsetup.phase("名称", log):`（自动打 start/done +
+  耗时）。任何模块都能用（可直接从自身目录运行的 7 个模块也统一了：它们
+  用 `sys.path.append(repo_root)` 后 import 本模块，不再各自写 basicConfig）。
 - **调试与日志**
 - **日志必须带定位信息**：文件路径（相对路径即可）、行号/偏移（用
   `文件名:行号` 或 `文件名:0x偏移` 格式）、可重试的具体原因，不写
@@ -250,9 +251,9 @@ PowerShell `AppActivate` + SendKeys、浏览器 CDP/命令行参数），操作�
    剥离桌面运行时（NW.js）、解密（仅 easy）、压缩音频、清理、验证、
    7z-zstd 打包。做让游戏能在 Android 的 JoiPlay 里跑起来所需的最小工作。
 2. **TyranoScript / TyranoBuilder 游戏（Electron 打包的 HTML5 视觉小说）
-   → 可玩的 JoiPlay 构建 + 翻译**：解包 app.asar（用 `npx @electron/asar`，
-   不重复造轮子）、剥 Electron 运行时、存档改 webstorage、mp3→ogg +
-   scenario 引用同步重写、MTool 残留清理、验证（`tyrano/pipeline.py`，
+   → 可玩的 JoiPlay 构建 + 翻译**：解包 app.asar（用 `asar` 包，不重复
+   造轮子，也不再需要 Node.js）、剥 Electron 运行时、存档改 webstorage、
+   mp3→ogg + scenario 引用同步重写、MTool 残留清理、验证（`tyrano/pipeline.py`，
    完整指南 `docs/tyrano.md`）；翻译走统一 chunk 流程写回 .ks。
 3. **Unity / Wolf RPG 游戏 → 翻译 + 注入**（**不做 JoiPlay 转换**）：
    解包 → 提取 → 翻译（**清除 MTool 机翻，自己翻译**）→ 运行时 hook /
@@ -552,17 +553,34 @@ RPG Maker 流水线。下述为桌面翻译路线；手机转换另见
   |---|---|---|
   | 7z 打包/校验/解包（同侧） | `rpgmaker/archive.py` | `py7zr`（zstd；实测比 `7z.exe -mmt` 快 1.7x、体积相同、互读通过） |
   | 媒体探测/解码检查 | `rpgmaker/media.py` | `av`（PyAV）——**不再需要 ffprobe** |
-  | CLI | `rpgmaker/cli.py`（两个入口的包装 `pipeline.py` / `tyrano/pipeline.py`） | `typer` |
+  | 视频转码（VP9+Opus WebM） | `rpgmaker/media.py::transcode_to_webm` | `av`（libvpx-vp9 + libopus，**不再需要 ffmpeg CLI**；实测帧数/时间戳/音频采样数与 CLI 完全一致、PSNR 差 ±0.3 dB，视频码流大约 6%） |
+  | Electron app.asar 解包 | `tyrano/asar.py` | `asar`（纯 Python；**不再需要 Node.js/npx**；用官方 node 工具打的包（含 unpacked 条目）双向提取字节一致） |
+  | JS 语法检查 | `rpgmaker/jssyntax.py` | `tree-sitter` + `tree-sitter-javascript`（**不再需要 `node --check`**；58 个真实 JS 文件 × 4 种变体共 225 例判定与 node 完全一致） |
+  | 命令行 | 每个工具用 `rpgmaker/cliutil.py` 的 Typer 约定（禁止 argparse）；入口包装 `pipeline.py` / `tyrano/pipeline.py` 用 `rpgmaker/cli.py` | `typer` |
   | 外部进程执行 | `rpgmaker/proctools.py` | 标准库 `subprocess`（超时 + UTF-8 + 统一失败信息） |
   | 日志配置 | `rpgmaker/logsetup.py`（唯一入口，只能从 `main()` 调用） | 标准库 `logging` |
-  | 测试 | `tests/` | `pytest` + `pytest-xdist`（默认 `-n auto`）+ `pytest-cov` |
+  | 测试 | `tests/` | `pytest` + `pytest-xdist`（默认 `-n auto`）+ `pytest-cov` + `ruff` |
 
-  新代码**不得**再自己拼 ffprobe/7z 的 argv、解它们的 stdout、或写第二
-  份 `shutil.which`。两个例外（已在代码注释里写明原因）：
-  **Vorbis 编码**与**VP9/Opus 视频转码**仍调 ffmpeg CLI（PyAV 的 wheel 不含
-  libvorbis，且这两处参数是实测验证过的移动端配方，重构不得静默改质量），
-  **Windows 侧桥接**仍调 Windows `7z.exe`（跨系统 CRITICAL 规则）。探测/
-  解码检查已全部改为 PyAV。
+  新代码**不得**再自己拼 ffprobe/7z/node 的 argv、解它们的 stdout、或写
+  第二份 `shutil.which`。剩下的例外（已在代码注释里写明原因）：
+  **Vorbis 音频编码**仍调 ffmpeg CLI（PyAV 的 wheel 不含 libvorbis，而 q2/q3
+  是实测验证过的移动端配方，重构不得静默改质量）；**Windows 侧桥接**仍调
+  Windows `7z.exe` 与 PowerShell（跨系统 CRITICAL 规则）；**窗口截图**用
+  PowerShell PrintWindow（Win32 API，跨系统必须由 Windows 侧执行）。探测/
+  解码/视频转码/asar/JS 语法检查已全部改为进程内。
+
+- **命令行约定（mandatory，2026-09 定案）**：每个工具都是
+  `rpgmaker/cliutil.py` 的 Typer 命令，**不再用 argparse**（曾 53 个文件、
+  223 个 `add_argument`）：
+  - 单命令工具：`app = cliutil.command_app(cmd, help=__doc__)`；子命令用
+    `cliutil.app(help=__doc__)` + `@app.command()`（模板见该模块文档串）。
+  - 每个工具保留 `def main(argv=None) -> int`（`cliutil.run` 在 argv 为
+    None 时读 `sys.argv`），**命令里绝不调 `sys.exit()`**：失败用
+    `return cliutil.fail("…")` 或 `raise typer.Exit(code=N)`。
+  - 日志选项统一用 `cliutil.Verbose` / `Quiet` / `LogFile` 三个注解类型
+    （即每个工具都有 `-v` / `-q` / `--log-file`）。
+  - 已知与 argparse 的差异（有意保留）：不再接受长选项缩写
+    （`--outp`），用法错误的提示语换成框架自己的文案（退出码仍是 2）。
 - **本机环境信息**（交付目录、工具路径覆盖、venv 等）写进本地私有配置
   `docs/table/env_config.json`（gitignored，不入库）——**这是可选覆盖层，
   不是必需条件**：文件缺失时由探测 + 内置默认值接管。交付目录解析顺序

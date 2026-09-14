@@ -311,11 +311,15 @@ class TestToolResolution:
         monkeypatch.setenv("POWERSHELL_EXE", str(exe))
         assert config.find_powershell() == config._posix(str(exe))
 
-    def test_find_npx_shared_with_tyrano(self, monkeypatch, tmp_path):
-        exe = tmp_path / "npx.cmd"
+    def test_find_node_shared_with_the_test_harness(self, monkeypatch,
+                                                    tmp_path):
+        """Node is only used by the KAG audio runtime tests now (syntax
+        checking and asar reading are in-process), but the resolver entry
+        stays so those tests probe it the same way as every other tool."""
+        exe = tmp_path / "node.exe"
         exe.write_bytes(b"x")
-        monkeypatch.setenv("NPX", str(exe))
-        assert config.find_npx() == config._posix(str(exe))
+        monkeypatch.setenv("NODE", str(exe))
+        assert config.find_node() == config._posix(str(exe))
 
     @staticmethod
     def _cfg(monkeypatch, tmp_path, tools_section):

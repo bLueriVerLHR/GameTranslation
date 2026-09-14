@@ -1,59 +1,55 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Electron asar archive tool wrapper - extract TyranoScript/TyranoBuilder
-games shipped as Electron apps.
+"""Electron asar archive tool - extract TyranoScript/TyranoBuilder games
+shipped as Electron apps.
 
-The asar format is unpacked by the maintained @electron/asar CLI via npx
-(the same "use an existing tool" policy as rewolf-trans for Wolf RPG).
-This module only finds the tool and runs it; it does not re-implement
-the archive format.
+Archive access goes through the maintained ``asar`` package (PyPI ``asar``,
+MIT, pure Python).  It replaced the ``npx @electron/asar`` subprocess: the
+official tool needs Node.js **and** may download the package on a cold npx
+cache, which is a hard dependency for a build that otherwise needs none.
+Equivalence was measured, not assumed - an archive packed by the *official*
+Node tool (including an ``--unpack`` entry) extracts byte-identically through
+the package, and the file list matches too (the Node CLI even prints
+backslash-separated paths on Windows; the package returns plain ones).
 
 Usage:
     python3 -m tyrano.asar extract <app.asar> <out_dir>
     python3 -m tyrano.asar list <app.asar>
 """
 
-import argparse
 import logging
 import os
 import sys
+from pathlib import Path
+from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import config, logsetup, proctools  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
+
 log = logging.getLogger("tyrano.asar")
 
-ASAR_PACKAGE = "@electron/asar"
-# `npx --yes` may download the package on a cold cache, so this is generous -
-# but finite: an offline or wedged npm must not hang the Tyrano build.
-ASAR_TIMEOUT = 900
 
+def _open(asar_path, mode="r"):
+    """Open an asar archive with the packaged implementation.
 
-def find_npx():
-    """Locate the npx launcher (Node.js package runner).
-
-    Delegates to the shared application resolver so Node is probed the same
-    way as every other tool (env NPX -> env_config -> probe -> PATH) instead
-    of this module carrying its own PATH lookup.
+    Imported lazily and reported with an actionable message: the toolkit must
+    stay importable (and its tests runnable) without the optional dependency.
     """
-    npx = config.find_npx()
-    if not npx:
-        raise FileNotFoundError(
-            "npx not found - install Node.js (nodejs.org) and re-run; the "
-            "Tyrano build needs it to unpack app.asar (set NPX to override)")
-    return npx
-
-
-def _run(args, check=True):
-    npx = find_npx()
-    cmd = [npx, "--yes", ASAR_PACKAGE] + args
-    return proctools.run(cmd, timeout=ASAR_TIMEOUT, label="npx @electron/asar",
-                         check=check)
+    try:
+        from asar import AsarArchive
+    except ImportError as exc:                 # pragma: no cover - install hint
+        raise ImportError(
+            "the 'asar' package is missing - install the toolkit dependencies "
+            "(pip install -e .) to unpack app.asar archives") from exc
+    return AsarArchive(Path(asar_path), mode)
 
 
 def list_files(asar_path):
     """Return the list of file paths inside an asar archive."""
-    proc = _run(["list", asar_path])
-    return [ln for ln in proc.stdout.splitlines() if ln.strip()]
+    if not os.path.isfile(asar_path):
+        raise FileNotFoundError("asar archive not found: %s" % asar_path)
+    with _open(asar_path) as archive:
+        return [str(p).replace("\\", "/") for p in archive.list()]
 
 
 def extract(asar_path, out_dir):
@@ -61,30 +57,45 @@ def extract(asar_path, out_dir):
     if not os.path.isfile(asar_path):
         raise FileNotFoundError("asar archive not found: %s" % asar_path)
     os.makedirs(out_dir, exist_ok=True)
-    _run(["extract", asar_path, out_dir])
+    with _open(asar_path) as archive:
+        archive.extract(Path(out_dir))
     log.info("extracted %s -> %s", asar_path, out_dir)
     return out_dir
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("-v", "--verbose", action="store_true")
-    sub = ap.add_subparsers(dest="command", required=True)
-    p_list = sub.add_parser("list", help="list files inside an asar")
-    p_list.add_argument("asar_path")
-    p_extract = sub.add_parser("extract", help="extract an asar archive")
-    p_extract.add_argument("asar_path")
-    p_extract.add_argument("out_dir")
-    args = ap.parse_args()
+def cmd_list(asar_path: Annotated[str, cliutil.Argument(
+            help="path to the app.asar archive")],
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """list files inside an asar"""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    for p in list_files(asar_path):
+        print(p)
+    return 0
 
-    logsetup.setup(verbose=args.verbose)
-    if args.command == "list":
-        for p in list_files(args.asar_path):
-            print(p)
-    else:
-        extract(args.asar_path, args.out_dir)
+
+def cmd_extract(asar_path: Annotated[str, cliutil.Argument(
+            help="path to the app.asar archive")],
+        out_dir: Annotated[str, cliutil.Argument(
+            help="directory to extract into")],
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """extract an asar archive"""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    extract(asar_path, out_dir)
+    return 0
+
+
+app = cliutil.app(help=__doc__)
+app.command(name="list", help="list files inside an asar")(cmd_list)
+app.command(name="extract", help="extract an asar archive")(cmd_extract)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="asar.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -314,19 +314,6 @@ TOOLS = (
              "config tools.<platform>.ffmpeg",
     ),
     Tool(
-        key="ffprobe", env="FFPROBE", exe=("ffprobe",),
-        probe=(
-            "ffmpeg*/bin/ffprobe.exe",
-            "Microsoft/WinGet/Packages/*/*/bin/ffprobe.exe",
-            "Microsoft/WinGet/Links/ffprobe.exe",
-            "scoop/apps/ffmpeg/current/bin/ffprobe.exe",
-            "scoop/shims/ffprobe.exe",
-            "ffprobe",
-        ),
-        purpose="audio probing (audio.py)",
-        hint="ships with ffmpeg; install ffmpeg or set FFPROBE",
-    ),
-    Tool(
         key="7z", env="SEVENZ", exe=("7z", "7zz", "7za", "7z.exe"),
         probe=(
             "7-Zip*/7z.exe", "Programs/7-Zip*/7z.exe",
@@ -350,13 +337,6 @@ TOOLS = (
                "Programs/Git/cmd/git.exe"),
         purpose="repo versioning / hygiene (dev workflow only)",
         hint="only needed for the development workflow, not for conversion",
-    ),
-    Tool(
-        key="npx", env="NPX", exe=("npx", "npx.cmd", "npx.exe"),
-        probe=("nodejs/npx.cmd", "*/nvm/installs/*/npx.cmd", "nvm/*/npx.cmd",
-               "npx"),
-        purpose="TyranoScript builds unpack app.asar via npx @electron/asar",
-        hint="install Node.js (nodejs.org); only needed for tyrano games",
     ),
     Tool(
         key="powershell", env="POWERSHELL_EXE",
@@ -550,10 +530,6 @@ def find_ffmpeg():
     return resolve_tool("ffmpeg")
 
 
-def find_ffprobe():
-    return resolve_tool("ffprobe")
-
-
 def find_7z():
     return resolve_tool("7z")
 
@@ -567,15 +543,14 @@ def find_git():
 
 
 def find_node():
+    """JavaScript runtime - used by the KAG audio runtime tests only.
+
+    Syntax checking is in-process (``rpgmaker.jssyntax``) and app.asar is read
+    by the ``asar`` package, so no tool needs Node.js any more; the remaining
+    user is tests/test_kag_audio_runtime.py, which really does have to execute
+    the generated JavaScript to observe its runtime behaviour.
+    """
     return resolve_tool("node")
-
-
-def find_npx():
-    """Locate the npx launcher (Node.js package runner).
-
-    Single source of truth for both the RPG Maker tooling and
-    `tyrano/asar.py` (the asar unpacker used to be its own duplicate)."""
-    return resolve_tool("npx")
 
 
 def find_powershell():

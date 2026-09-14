@@ -166,7 +166,6 @@ class TestVerifyAll:
         """Decoding is in-process (PyAV): no ffmpeg binary is needed."""
         _root, web = game_dir
         monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
-        monkeypatch.setattr(config, "find_ffprobe", lambda: None)
         verify.verify_all(web, decode=True, workers=1)   # must not raise
 
 

@@ -144,6 +144,64 @@ FOSSIL/fix-load-failed 的 `process` 路径是 NW.js-only 死分支，不动。
 - 两个 bug 都让 `deliver` 直接崩 — 集成测试 `test_integration.py` 在
   修复前是红着的（Python 3.14 下同样复现），修完 375 测试全绿。
 
+## 10. 再去掉三个外部程序（2026-09）
+
+原则不变（一个能力一个入口 + 用现成包），这轮把剩下能进程内做的都做了；
+每一条都先量后改，不靠印象。
+
+### 10.1 视频转码 → PyAV（VP9 + Opus）
+
+`tools/transcode_video.py` 原调 ffmpeg CLI（`-c:v libvpx-vp9 -crf N -b:v 0
+-row-mt 1 -cpu-used N -deadline good -c:a libopus -b:a 96k -ac 2`）。PyAV 的
+wheel **有** libvpx-vp9 与 libopus，所以整段可以进程内。在真实样本上与 CLI
+输出对比（同一组参数）：
+
+| 样本 | 帧数/末时间戳 | 音频采样数 | 亮度 PSNR vs 原片 |
+|---|---|---|---|
+| 100 MB / 106 s | 3188 / 106.340 s（两者相同） | 完全相同 | CLI 40.6 / PyAV 40.9 dB |
+| 7.8 MB / 7.9 s | 224 / 7.441 s（相同） | 完全相同 | CLI 42.0 / PyAV 41.9 dB |
+| 10.5 MB / 10 s | 300 / 9.977 s（相同） | 完全相同 | CLI 42.7 / PyAV 42.4 dB |
+
+帧数/时间戳/音频采样数完全一致，PSNR 差 ±0.3 dB。**已知取舍：同一参数下
+视频码流大约 6%**（7.9 s 样本上 1651 kB vs 1560 kB；试过的 libvpx 选项组合
+都落在那里，只有 `cpu-used 0` 更小但要慢约 3 倍）。要体积就降 `--crf` 或
+`cpu_used`。
+
+踩坑（都记在 `rpgmaker/media.py` 的文档串里）：
+
+- **重采样后的音频帧仍带着源时间基**（毫秒），直接丢给 Opus 编码器会
+  `EINVAL`，或报 `Frame.pts (4464) != expected (0)`；把 `frame.pts` 置 None
+  让编码器自己编号（CLI 内建 fifo 做的事）。
+- 视频帧的 pts **不用**手动换算：直接传就能与 CLI 输出逐帧对齐（实测）。
+- 合成空白帧测不出 CRF 是否生效（大小几乎一样）——要带细节/噪声的源。
+
+### 10.2 app.asar → `asar` 包（去掉 Node.js + npx）
+
+`npx @electron/asar` 需要 Node.js，还可能在冷 cache 时下载包。PyPI 的
+`asar`（纯 Python，MIT）实测：**用官方 node 工具打的包（含 `--unpack`
+条目）提取结果字节一致**，文件表也一致（node CLI 在 Windows 上会输出反斜杠
+路径，包返回正斜杠，已归一）。回归固件 `tests/fixtures/tiny_app.asar` 就是
+用官方 node 工具打的（933 B），以保证测试读的是**外部产生的真包**。
+
+### 10.3 JS 语法检查 → tree-sitter（去掉 `node --check`）
+
+`tools/check_iscript_js.py` 原来每块写临时 .js 再 `node --check`。改用
+`tree-sitter` + `tree-sitter-javascript`（进程内，**不执行**代码）：
+
+- 等价性实测：58 个真实 JS（TyranoScript 运行库，含混淆压缩的）× 4 种
+  变体（原样/截断/删括号/插入 `setter(x){…}`）= **225 例判定与 node 完全
+  一致**（含故意弄坏的）。判定口径：树中出现任何 ERROR 或缺 token 即视为
+  不通过（tree-sitter 是容错解析器，不能只根据顶层错误）。
+- 报错文案变了：由 `SyntaxError: …` 变为 `line N:M: unexpected '…'` /
+  `missing '…'`（附坏片段），实测对已知回归文件的定位仍然到位。
+
+### 10.4 顺手清掉的死依赖
+
+`ffprobe` 已无任何生产代码调用，于是删掉 `config.find_ffprobe`、`TOOLS`
+里的 ffprobe 条目、`tests/fake_tools/ffprobe.py` 与相关的 monkeypatch，
+`doctor` 从 13 项变 11 项。**判据：没有任何生产调用者的 finder/工具条目就是
+死代码**，不要因为「以后可能用」留着。
+
 ## 9. 工具链改用现成包（2026-09 重构）
 
 原则：同一个能力只留一个封装层，且优先用维护中的包（AGENTS.md

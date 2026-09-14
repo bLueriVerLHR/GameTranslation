@@ -11,13 +11,11 @@ at all** - the scenario simply stops advancing, which looks exactly like a
 hang: the last HTTP request is the file that contains the bad block, CPU is
 idle and a black screen is all you see.
 
-`node --check` turns that into a filename and a line number in seconds.
-Measured on a real build: the broken file reported
-
-    SyntaxError: Unexpected identifier 'setter'
-
-and after the conversion fix the whole build reported 0 errors over 84
-blocks.  Run this after `convert_kag.py`, before serve/play-testing.
+Parsing is in-process (`rpgmaker.jssyntax`, tree-sitter), so it needs no
+Node.js and no temp file per block.  Measured against the `node --check` call
+it replaced: 225/225 verdicts agreed over 58 real JS files (TyranoScript
+runtime libraries, minified ones included) each tested as-is plus three
+corruption modes.  Run this after `convert_kag.py`, before serve/play-testing.
 
 Known limit: this only catches what does not PARSE.  Conversion damage that
 stays syntactically valid (e.g. a leaked `setter(x){...}` that a preceding
@@ -29,30 +27,24 @@ Usage
     python3 tools/check_iscript_js.py <scenario_dir> [--limit N] [--json]
 
 Exit codes: 0 = all blocks parse; 1 = at least one syntax error;
-2 = node is unavailable (cannot check - do not report success).
+2 = the JS parser is unavailable (cannot check - do not report success).
 
 Non-ASCII scenario encodings (UTF-16LE/BE, Shift-JIS, UTF-8) are detected the
 same way the rest of the toolkit detects them.
 """
 
-import argparse
 import glob
 import json
 import logging
 import os
 import sys
-import tempfile
+from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kirikiri.ks_extract import load_ks  # noqa: E402
-from rpgmaker import proctools  # noqa: E402
-from rpgmaker.config import find_node  # noqa: E402
-
-from rpgmaker import logsetup  # noqa: E402
+from rpgmaker import cliutil, jssyntax  # noqa: E402
 
 log = logging.getLogger("check_iscript_js")
-
-NODE_TIMEOUT = 120
 
 OPEN_TAG = "[iscript"
 CLOSE_TAG = "[endscript]"
@@ -76,28 +68,14 @@ def iter_iscript_blocks(text):
 
 
 def check_block(body):
-    """Return None when the block parses, else the SyntaxError line."""
-    tmp = None
-    try:
-        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
-                                         encoding="utf-8") as fh:
-            fh.write(body)
-            tmp = fh.name
-        node = find_node()
-        if not node:
-            raise FileNotFoundError("node")
-        proc = proctools.run([node, "--check", tmp], timeout=NODE_TIMEOUT,
-                             label="node --check", check=False)
-        if proc.returncode == 0:
-            return None
-        lines = (proc.stderr or "").strip().splitlines()
-        return next((ln.strip() for ln in lines if "SyntaxError" in ln),
-                    lines[-1].strip() if lines else "unknown syntax error")
-    except FileNotFoundError:
-        raise
-    finally:
-        if tmp and os.path.exists(tmp):
-            os.unlink(tmp)
+    """Return None when the block parses, else a one-line description."""
+    errors = jssyntax.parse_errors(body)
+    if not errors:
+        return None
+    first = errors[0]
+    if len(errors) == 1:
+        return first["error"]
+    return "%s (and %d more)" % (first["error"], len(errors) - 1)
 
 
 def scan_tree(root, limit=0):
@@ -127,32 +105,28 @@ def scan_tree(root, limit=0):
     return checked, problems
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("scenario_dir", help="converted build's scenario dir")
-    ap.add_argument("--limit", type=int, default=0,
-                    help="stop after N errors (0 = report all)")
-    ap.add_argument("--json", action="store_true",
-                    help="emit a machine-readable summary")
-    ap.add_argument("-v", "--verbose", action="store_true")
-    args = ap.parse_args(argv)
-
-    logsetup.setup(verbose=args.verbose)
-    if not os.path.isdir(args.scenario_dir):
-        print("error: not a directory: %s" % args.scenario_dir,
-              file=sys.stderr)
-        return 1
+def cmd(scenario_dir: Annotated[str, cliutil.Argument(
+            help="converted build's scenario dir")],
+        limit: Annotated[int, cliutil.Option(
+            "--limit", help="stop after N errors (0 = report all)")] = 0,
+        json_out: Annotated[bool, cliutil.Option(
+            "--json", help="emit a machine-readable summary")] = False,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Syntax-check the JavaScript inside converted [iscript] blocks."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    if not os.path.isdir(scenario_dir):
+        return cliutil.fail("not a directory: %s" % scenario_dir)
 
     try:
-        checked, problems = scan_tree(args.scenario_dir, args.limit)
-    except FileNotFoundError:
-        log.error("`node` not found - install Node.js to syntax-check "
-                  "iscript blocks (result would be meaningless otherwise)")
+        checked, problems = scan_tree(scenario_dir, limit)
+    except ImportError as exc:
+        log.error("the JavaScript parser is unavailable - install the toolkit "
+                  "dependencies (tree-sitter, tree-sitter-javascript): %s", exc)
         return 2
 
-    if args.json:
+    if json_out:
         print(json.dumps({"blocks": checked, "errors": problems}, indent=2))
     else:
         log.info("checked %d iscript block(s): %d with syntax errors",
@@ -160,5 +134,16 @@ def main(argv=None):
     return 1 if problems else 0
 
 
+# --help prints the tool's full documentation: a single-command Typer app
+# shows the COMMAND docstring, so the module docstring is attached to it
+# (the argparse version printed the same text as its description).
+cmd.__doc__ = __doc__
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="check_iscript_js.py")
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

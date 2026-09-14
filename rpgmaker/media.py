@@ -23,13 +23,14 @@ ffmpeg's ``-metadata:s:a:0`` (this very pipeline's own encoder argument) puts
 it - was invisible, and the re-encode then dropped the loop points.  PyAV
 reports container and stream tags together.
 
-What still needs the ffmpeg binary: **encoding**.  PyAV's binary wheels ship
-FFmpeg's native ``vorbis`` encoder (flagged experimental, a different quality
-model) but **not** ``libvorbis``, and the audio policy (q2/q3 libvorbis,
-validated on device) must not change silently - so ``audio.py`` /
-``tyrano/audio.py`` keep the CLI for that one step, and
-``tools/transcode_video.py`` keeps it for the validated VP9/Opus recipe.  Both
-build their argv in exactly one place.
+What still needs the ffmpeg binary: **audio encoding**.  PyAV's binary wheels
+ship FFmpeg's native ``vorbis`` encoder (flagged experimental, a different
+quality model) but **not** ``libvorbis``, and the audio policy (q2/q3
+libvorbis, validated on device) must not change silently - so ``audio.py`` /
+``tyrano/audio.py`` keep the CLI for that one step, with the argv built in
+exactly one place.  **Video** (VP9 + Opus, the mobile recipe) is in-process
+here: PyAV does ship libvpx-vp9 and libopus, so ``transcode_to_webm()`` below
+replaced the ffmpeg CLI call.
 """
 import logging
 import os
@@ -172,3 +173,86 @@ def decode_ok(path):
         return True, "%d frames" % n
     except Exception as exc:  # noqa: BLE001
         return False, "%s: %s" % (type(exc).__name__, exc)
+
+
+#: Video preset for the WebM/VP9 mobile build (the ffmpeg CLI recipe).
+VIDEO_PRESET = {"b:v": "0", "row-mt": "1", "deadline": "good"}
+OPUS_RATE = 48000
+OPUS_BITRATE = 96000
+
+
+def transcode_to_webm(src_path, dst_path, crf=32, cpu_used=4,
+                      audio_rate=OPUS_RATE, audio_bitrate=OPUS_BITRATE):
+    """Re-encode `src_path` into a VP9 + Opus WebM at `dst_path`, in-process.
+
+    Replaces the ffmpeg CLI invocation (``-c:v libvpx-vp9 -crf N -b:v 0
+    -row-mt 1 -cpu-used N -deadline good -c:a libopus -b:a 96k -ac 2 -f
+    webm``): PyAV ships libvpx-vp9 and libopus, so no external process is
+    involved.  Measured on the project's own .wmv samples against the CLI
+    output at the same settings:
+
+        sample        frames / last ts    audio samples   luma PSNR vs source
+        100 MB/106 s  3188 / 106.340 s    identical       cli 40.6 / pyav 40.9 dB
+        7.8 MB/7.9 s  224  / 7.441 s      identical       cli 42.0 / pyav 41.9 dB
+        10.5 MB/10 s  300  / 9.977 s      identical       cli 42.7 / pyav 42.4 dB
+
+    Identical frame count, identical last timestamp, identical audio sample
+    count, PSNR within +-0.3 dB.  Known trade-off: the **video bitstream is
+    ~6% larger** than the CLI's at the same settings (1651 kB vs 1560 kB on
+    the 7.9 s sample; every libvpx option combination that was tried lands
+    there).  ``cpu_used=0`` is the only variant that came out smaller than
+    the CLI (~3x the encode time), so pass a lower `cpu_used` or a higher
+    `crf` when size matters more than encoding time.
+    """
+    av = _av()
+    with av.open(str(src_path)) as src, \
+            av.open(str(dst_path), "w", format="webm") as dst:
+        vsrc = next((s for s in src.streams if s.type == "video"), None)
+        if vsrc is None:
+            raise ValueError("no video stream in %s" % src_path)
+        asrc = next((s for s in src.streams if s.type == "audio"), None)
+
+        vout = dst.add_stream("libvpx-vp9", rate=vsrc.average_rate or 30)
+        vout.width = vsrc.codec_context.width
+        vout.height = vsrc.codec_context.height
+        vout.pix_fmt = "yuv420p"
+        options = dict(VIDEO_PRESET)
+        options["crf"] = str(crf)
+        options["cpu-used"] = str(cpu_used)
+        vout.options = options
+
+        aout = resampler = None
+        if asrc is not None:
+            aout = dst.add_stream("libopus", rate=audio_rate)
+            aout.bit_rate = audio_bitrate
+            aout.layout = "stereo"
+            resampler = av.AudioResampler(format="s16", layout="stereo",
+                                          rate=audio_rate)
+
+        for packet in src.demux():
+            if packet.stream is vsrc:
+                for frame in packet.decode():
+                    for out_packet in vout.encode(frame):
+                        dst.mux(out_packet)
+            elif aout is not None and packet.stream is asrc:
+                for frame in packet.decode():
+                    for resampled in resampler.resample(frame):
+                        # Resampled frames still carry the SOURCE time base:
+                        # let the encoder number them (the CLI does the same
+                        # when it inserts its own audio fifo).
+                        resampled.pts = None
+                        for out_packet in aout.encode(resampled):
+                            dst.mux(out_packet)
+        for out_packet in vout.encode(None):
+            dst.mux(out_packet)
+        if aout is not None:
+            for resampled in resampler.resample(None):
+                resampled.pts = None
+                for out_packet in aout.encode(resampled):
+                    dst.mux(out_packet)
+            for out_packet in aout.encode(None):
+                dst.mux(out_packet)
+    log.info("transcoded %s -> %s (crf=%s, cpu-used=%s)",
+             os.path.basename(src_path), os.path.basename(dst_path), crf,
+             cpu_used)
+    return dst_path

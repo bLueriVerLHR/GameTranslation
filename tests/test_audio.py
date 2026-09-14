@@ -119,9 +119,8 @@ class TestToolMissing:
     """Probing/decoding are in-process (PyAV), so ffprobe is no longer a
     dependency; the ffmpeg binary is only needed to ENCODE Vorbis."""
 
-    def test_probe_all_works_without_ffprobe(self, game_dir, monkeypatch):
+    def test_probe_all_needs_no_external_tool(self, game_dir, monkeypatch):
         _root, web = game_dir
-        monkeypatch.setattr(config, "find_ffprobe", lambda: None)
         monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
         infos = audio.probe_all(web, workers=1, sample=1)
         assert len(infos) == 1

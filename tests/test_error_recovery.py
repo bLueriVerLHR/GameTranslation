@@ -64,7 +64,6 @@ class TestToolMissingMessage:
         """Probing is in-process (PyAV) now: a missing ffprobe/ffmpeg must not
         stop it."""
         _root, web = game_dir
-        monkeypatch.setattr(config, "find_ffprobe", lambda: None)
         monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
         assert len(audio.probe_all(web, workers=1, sample=1)) == 1
 
@@ -96,7 +95,6 @@ class TestToolMissingMessage:
         """Decode verification is in-process (PyAV): no binary required."""
         _root, web = game_dir
         monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
-        monkeypatch.setattr(config, "find_ffprobe", lambda: None)
         assert isinstance(verify.verify_decode(web, workers=1), list)
 
     def test_tyrano_convert_all_hint(self, tmp_path, monkeypatch):

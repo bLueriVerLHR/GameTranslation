@@ -8,7 +8,7 @@
 | 目的 | 引擎 | 做法 |
 | --- | --- | --- |
 | **可玩构建（JoiPlay）** | HTML5 系（RPG Maker MZ/MV 网页版） | 剥离 NW.js、解密（仅 easy）、压缩音频、清理、验证、7z-zstd 打包 —— `pipeline.py` |
-| **可玩构建（JoiPlay）+ 翻译** | TyranoScript / TyranoBuilder（Electron 打包的 HTML5 视觉小说） | 解包 app.asar（npx @electron/asar）、剥 Electron 运行时、存档改 webstorage、mp3→ogg + 脚本引用同步重写、MTool 残留清理、验证 —— `tyrano/pipeline.py`；翻译走标准 chunk 流程写回 .ks |
+| **可玩构建（JoiPlay）+ 翻译** | TyranoScript / TyranoBuilder（Electron 打包的 HTML5 视觉小说） | 解包 app.asar（`asar` 包，无需 Node.js）、剥 Electron 运行时、存档改 webstorage、mp3→ogg + 脚本引用同步重写、MTool 残留清理、验证 —— `tyrano/pipeline.py`；翻译走标准 chunk 流程写回 .ks |
 | **移动端转换（当前主线）** | KiriKiri2 / KAG3 → TyranoScript | 保留脚本、图层、音画时序与交互语义，转换为网页工程，验证后在 Android JoiPlay 实机验收；见 `docs/kirikiri-tyrano.md` |
 | **翻译 + 注入** | Unity / Wolf RPG / KiriKiri | 解包 → 提取 → 自译（统一 chunk/subagent 流程）→ 运行时 hook / 补丁注入；KiriKiri 桌面补丁路线仍可单独使用 |
 
@@ -37,7 +37,7 @@ GameTranslation/
 ├── wolfrpg/             # Wolf RPG（ウディタ）工具包
 │   └── dxarchive.py     #   DXArchive v8 解包器（LZ/Huffman/KeyConv，从 UberWolf 移植）
 ├── tyrano/              # TyranoScript / TyranoBuilder 工具包
-│   ├── asar.py          #   Electron app.asar 解包（npx @electron/asar，不重复造轮子）
+│   ├── asar.py          #   Electron app.asar 解包（用 asar 包，不重复造轮子）
 │   ├── build.py         #   JoiPlay 构建：解包 asar、剥 Electron 运行时、存档改 webstorage
 │   ├── audio.py         #   mp3→ogg 重编码 + scenario .ks 音频引用同步重写
 │   ├── autoplay.py      #   [bgmovie] 自动播放策略补丁（.play() 拒绝时用户交互后重播）
@@ -56,8 +56,12 @@ GameTranslation/
 │   ├── cli.py           #   两个入口的 Typer 命令（serve/compress/deliver 只定义一次）
 │   ├── archive.py       #   7z 唯一入口：py7zr（zstd）create/verify/extract；
 │   │                    #   Windows 侧仍走 7z.exe 桥（跨系统规则）
-│   ├── media.py         #   媒体唯一入口：PyAV 探测/解码（不需 ffprobe）
-│   ├── config.py        #   工具发现（ffmpeg/7z/npx/git...）+ 阈值 + 路径/平台转换
+│   ├── media.py         #   媒体唯一入口：PyAV 探测/解码 + VP9/Opus 转码
+│   │                    #   （不需要 ffprobe，视频也不需要 ffmpeg CLI）
+│   ├── jssyntax.py      #   JS 语法检查唯一入口（tree-sitter，进程内）
+│   ├── cliutil.py       #   每个工具的 Typer 约定：-v/-q/--log-file、
+│   │                    #   main(argv)->exit code（不再用 argparse）
+│   ├── config.py        #   工具发现（ffmpeg/7z/git...）+ 阈值 + 路径/平台转换
 │   ├── runtime.py       #   环境感知调优：CPU/内存/磁盘类型探测 + 自动并行度
 │   ├── detect.py        #   引擎 / 网页根目录检测（MZ 根部署 vs MV www/）
 │   ├── build.py         #   拷贝网页文件，剥离 NW.js 运行时（asyncio + 并行拷贝）
@@ -83,7 +87,8 @@ GameTranslation/
 │   ├── build_tyrano_translation.py # TyranoScript：.ks 提取 → 标准工作包（整行键）
 │   ├── apply_tyrano_translation.py # TyranoScript：translated.json → 写回 .ks
 │   ├── qc_ks_kana.py          # KiriKiri：假名残留 QC（补丁树/字典值）
-│   ├── check_iscript_js.py    # KiriKiri：扫 [iscript] 块跑 node --check
+│   ├── check_iscript_js.py    # KiriKiri：扫 [iscript] 块做 JS 语法检查
+│   │                          #   （tree-sitter，进程内；不需 node）
 │   │                          #   （TJS→JS 转换错误不报错，只让脚本停摆）
 │   ├── transcode_video.py     # 影片 .wmv/.mpg → WebM(VP9+Opus)，编码后用 PyAV
 │   │                          #   解码自检（convert_kag.py --video-dir 消费其输出）
@@ -117,8 +122,9 @@ GameTranslation/
 │   └── ...（旧版：translate_rpgmaker、extract_text、plain_to_translated、
 │           qc_translation_chunks、CSV 流程工具 — 旧块格式）
 ├── tests/                # 单元 + 集成测试（pytest，fake 工具，全流程无外部依赖）
-│   ├── conftest.py       #   合成游戏/假 ffmpeg/ffprobe/7z 注入
-│   ├── fake_tools/       #   测试用假工具脚本（FFMPEG/FFPROBE/SEVENZ 环境变量注入）
+│   ├── conftest.py       #   合成游戏/假 ffmpeg/7z 注入 + 真媒体固件生成
+│   ├── fixtures/         #   真容器固件（Ogg Vorbis 带 LOOP 标签、asar 包）
+│   ├── fake_tools/       #   测试用假工具脚本（FFMPEG/SEVENZ 环境变量注入）
 │   ├── test_*.py         #   各模块单元测试 + pipeline 端到端集成测试
 │   └── test_integration.py  # build→decrypt→clean→verify→serve→compress→deliver
 └── docs/
@@ -247,15 +253,21 @@ venv 解释器按平台取：POSIX `.venv/bin/python`，Windows
 
 ## 环境要求
 
-- **Python 3.10+** 与四个运行时包：`typer`、`py7zr`、`av`（外加可选的
-  `Pillow`/`numpy`，图像相关步骤用）。项目自带本地虚拟环境 `.venv/`
+- **Python 3.10+** 与六个运行时包：`typer`、`py7zr`、`av`、`asar`、
+  `tree-sitter`、`tree-sitter-javascript`（外加可选的 `Pillow`/`numpy`，
+  图像步骤；`fonttools`，字体合并）。项目自带本地虚拟环境 `.venv/`
   （gitignored）：`pip install -e ".[images,dev]"` 一次装齐（dev 额外装
-  `pytest`/`pytest-xdist`/`pytest-cov`/`ruff`）。
-- **ffmpeg**（含 libvorbis）— 仅 **audio** 步骤的编码用。探测/解码检查已
-  改为 PyAV 在进程内完成，**不再需要 ffprobe**（PyAV 的 wheel 不含
-  libvorbis，所以 Vorbis 编码仍用 ffmpeg CLI，质量策略与实测一致）。
-- Node.js + npx（**仅 TyranoScript 构建**：解包 `app.asar` 用
-  `npx @electron/asar`，见 `docs/tyrano.md`）
+  `pytest`/`pytest-xdist`/`pytest-cov`/`ruff`；字体合并再加 `.[fonts]`）。
+- **ffmpeg**（含 libvorbis）— 仅 **audio** 步骤的音频编码用。探测/解码检查已
+  改为 PyAV 在进程内完成（**不再需要 ffprobe**），视频转码也已改为 PyAV
+  （libvpx-vp9 + libopus，**不再需要 ffmpeg 跑转码**）；PyAV 的 wheel 不含
+  libvorbis，所以 Vorbis 编码仍用 ffmpeg CLI，质量策略与实测一致。
+- **不再需要 Node.js**：app.asar 由 `asar` 包读取（原 `npx @electron/asar`），
+  JS 语法检查由 tree-sitter 完成（原 `node --check`）。`node` 只剩一个用途：
+  `tests/test_kag_audio_runtime.py` 要在真 JS 运行时里观察音频脚本的行为（没
+  装则跳过）。
+- Node.js（**仅测试**：`tests/test_kag_audio_runtime.py` 要在真 JS 运行时里
+  观察音频脚本行为；未装则跳过。工具链本身不再调 node/npx）
 - **7-Zip 只在 Windows 侧桥接时需要**：同侧打包/解包由 py7zr 在进程内
   完成（`rpgmaker/archive.py`，实测比 `7z.exe -mmt` 快且体积相同）；
   `deliver` 在 WSL 下写 Windows 侧目录时仍调 Windows `7z.exe`。

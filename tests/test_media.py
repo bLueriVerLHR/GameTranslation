@@ -19,7 +19,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from conftest import REAL_OGG, real_ogg  # noqa: E402
+from conftest import REAL_OGG, make_wmv, real_ogg  # noqa: E402
 
 from rpgmaker import media  # noqa: E402
 
@@ -144,3 +144,66 @@ def test_has_codec_reports_this_build():
     # PyAV always ships the decoders the toolkit needs; encoders vary by build
     assert media.has_codec("vorbis") is True
     assert media.has_codec("definitely-not-a-codec") is False
+
+
+class TestTranscodeToWebm:
+    """The VP9 + Opus step that used to shell out to ffmpeg."""
+
+    def test_round_trip_produces_webm_vp9_opus(self, tmp_path):
+        src = make_wmv(tmp_path / "in.wmv", seconds=1.0)
+        dst = str(tmp_path / "out.webm")
+        media.transcode_to_webm(src, dst)
+        video = media.probe_video(dst)
+        assert video["codec"] == "vp9"
+        assert (video["width"], video["height"]) == (64, 48)
+        audio = media.probe(dst)
+        assert audio["codec"] == "opus"
+        assert audio["sample_rate"] == media.OPUS_RATE
+        assert audio["channels"] == 2          # mono source -> stereo output
+        assert media.decode_ok(dst)[0] is True
+
+    def test_duration_survives_the_round_trip(self, tmp_path):
+        src = make_wmv(tmp_path / "in.wmv", seconds=2.0, rate=5)
+        dst = str(tmp_path / "out.webm")
+        media.transcode_to_webm(src, dst)
+        assert abs(media.probe_video(dst)["duration"] - 2.0) < 0.3
+
+    def test_frame_count_is_preserved(self, tmp_path):
+        src = make_wmv(tmp_path / "in.wmv", seconds=1.0, rate=10)
+        dst = str(tmp_path / "out.webm")
+        media.transcode_to_webm(src, dst)
+        frames = 0
+        import av
+
+        with av.open(dst) as c:
+            vstream = next(s for s in c.streams if s.type == "video")
+            for _frame in c.decode(vstream):
+                frames += 1
+        assert frames == 10
+
+    def test_video_only_source_needs_no_audio_stream(self, tmp_path):
+        src = make_wmv(tmp_path / "silent.wmv", seconds=0.5, audio=False)
+        dst = str(tmp_path / "out.webm")
+        media.transcode_to_webm(src, dst)
+        assert media.probe_video(dst)["codec"] == "vp9"
+        assert "error" in media.probe(dst)     # no audio stream at all
+        assert media.decode_ok(dst)[0] is True
+
+    def test_crf_option_reaches_the_encoder(self, tmp_path):
+        """Detail-heavy frames: a very low quality target must be smaller."""
+        src = make_wmv(tmp_path / "in.wmv", seconds=1.0, rate=10, noise=True)
+        small = tmp_path / "small.webm"
+        large = tmp_path / "large.webm"
+        media.transcode_to_webm(src, str(small), crf=60)
+        media.transcode_to_webm(src, str(large), crf=0)
+        assert os.path.getsize(small) < os.path.getsize(large)
+
+    def test_missing_input_raises(self, tmp_path):
+        with pytest.raises(Exception):
+            media.transcode_to_webm(str(tmp_path / "nope.wmv"),
+                                    str(tmp_path / "out.webm"))
+
+    def test_audio_only_input_is_rejected(self, tmp_path):
+        src = real_ogg(str(tmp_path / "a.ogg"))
+        with pytest.raises(ValueError):
+            media.transcode_to_webm(src, str(tmp_path / "out.webm"))

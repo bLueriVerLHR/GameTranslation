@@ -4,7 +4,7 @@
 fake-tool environment wiring.
 
 The fake tools live in tests/fake_tools/ and are injected via the FFMPEG /
-FFPROBE / SEVENZ env vars (config.find_* honors env vars first), so the
+SEVENZ env vars (config.find_* honors env vars first), so the
 whole pipeline runs hermetic - no system ffmpeg/7z needed.
 
 Media probing/decoding is in-process (PyAV), so those tests use a real
@@ -40,6 +40,59 @@ def real_ogg(dest):
     stub.  Generated once (see the fixture's provenance in the test docs).
     """
     shutil.copyfile(REAL_OGG, dest)
+    return dest
+
+
+def make_wmv(dest, seconds=1.0, rate=10, width=64, height=48, audio=True,
+             noise=False):
+    """Write a real .wmv (wmv2 video + wmav2 audio) with PyAV; returns `dest`.
+
+    The video tests need a genuine decode/encode round trip, and PyAV can
+    *encode* wmv2/wmav2 as well, so no binary fixture has to be committed.
+    Dimensions must stay even for yuv420p.  Pass ``audio=False`` for a
+    video-only file, and ``noise=True`` for frames with real detail (a flat
+    frame compresses to the same size at any quality level, so tests about
+    encoder settings need it).
+    """
+    import av
+    import random
+
+    dest = str(dest)
+    frames = max(1, int(round(seconds * rate)))
+    rng = random.Random(1234)
+    with av.open(dest, "w", format="asf") as c:
+        vstream = c.add_stream("wmv2", rate=rate)
+        vstream.width, vstream.height = width, height
+        vstream.pix_fmt = "yuv420p"
+        astream = None
+        if audio:
+            astream = c.add_stream("wmav2", rate=22050)
+            astream.layout = "mono"
+            astream.bit_rate = 32000
+        for i in range(frames):
+            frame = av.VideoFrame(width, height, "yuv420p")
+            for plane in frame.planes:
+                plane.update(bytes(rng.getrandbits(8) for _ in
+                                   range(plane.buffer_size)) if noise
+                             else bytes(plane.buffer_size))
+            frame.pts = i
+            for packet in vstream.encode(frame):
+                c.mux(packet)
+        for packet in vstream.encode(None):
+            c.mux(packet)
+        if astream is not None:
+            samples = 2205                              # 0.1 s at 22.05 kHz
+            for i in range(max(1, int(round(seconds * 10)))):
+                frame = av.AudioFrame(format="s16", layout="mono",
+                                      samples=samples)
+                frame.sample_rate = 22050
+                for plane in frame.planes:
+                    plane.update(bytes(plane.buffer_size))
+                frame.pts = i * samples
+                for packet in astream.encode(frame):
+                    c.mux(packet)
+            for packet in astream.encode(None):
+                c.mux(packet)
     return dest
 
 
@@ -175,7 +228,7 @@ def game_dir(tmp_path):
 
 @pytest.fixture
 def fake_tools(monkeypatch, tmp_path_factory):
-    """Point FFMPEG/FFPROBE/SEVENZ at the fake tool launchers.
+    """Point FFMPEG/SEVENZ at the fake tool launchers.
 
     Returns a mapping tool-name -> launcher path (``fake_tools["ffmpeg"]``),
     which is also what the subprocess-based CLI tests must export into their
@@ -183,8 +236,7 @@ def fake_tools(monkeypatch, tmp_path_factory):
     """
     workdir = str(tmp_path_factory.mktemp("fake-tools"))
     mapping = {}
-    for name, script in (("FFMPEG", "ffmpeg.py"), ("FFPROBE", "ffprobe.py"),
-                         ("SEVENZ", "7z.py")):
+    for name, script in (("FFMPEG", "ffmpeg.py"), ("SEVENZ", "7z.py")):
         launcher = fake_launcher(script, workdir)
         monkeypatch.setenv(name, launcher)
         mapping[os.path.splitext(script)[0]] = launcher

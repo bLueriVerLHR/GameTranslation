@@ -41,7 +41,9 @@ python3 tyrano/pipeline.py deliver <work>/build          # 写回存储侧
 
 各步骤要点：
 
-- **build**：解包 `resources/app.asar`（用 `npx @electron/asar`，不
+- **build**：解包 `resources/app.asar`（用 `asar` 包，纯 Python；
+  不用重复造轮子也不需 Node.js；用官方 node 工具打的包（含 unpacked 条目）
+  双向提取已验证字节一致），不
   重复造轮子）→ 剥 Electron 运行时（main.js/package.json/node_modules/
   pak/dll/ico）→ `Config.tjs` 里 `configSave=file` 改 `webstorage`
   （浏览器/WebView 存档必须走 localStorage，file 后端依赖 Node fs）。

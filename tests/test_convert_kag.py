@@ -470,7 +470,8 @@ class TestMapEngine:
         assert "kag.menu.displayLoad()" in js
         assert "kag.menu.displayLog()" in js
         assert "kag.setAuto(!kag.stat.is_auto)" in js
-        assert "kag.setSkip(!kag.stat.is_skip)" in js
+        assert "kag.ftag.startTag('skipstart', {})" in js
+        assert "else if (kag.stat.is_adding_text) kag.setSkip(true)" in js
         assert "kag.ftag.startTag('hidemessage', {})" in js
         assert "kag.layer.showMessageLayers()" in js
         assert "min-height:44px" in js
@@ -1273,6 +1274,26 @@ def test_link_ch_runs_form_one_touch_friendly_choice_panel():
     assert "var $old = $owner.find('.kag3-choice-item,.kag3-choice-prompt,.kag3-choice-gap')" in js
     assert "$old.remove()" in js
     assert "if (!$owner.find('.kag3-choice-item').length)" in js
+    assert "$owner.attr('data-kag3-choice-exiting', '1')" in js
+    assert "window.__kag3_prepare_message(this.kag)" in js
+    assert "window.__kag3_prepare_message(kag)" in js
+    assert "ownerKag.setNewParagraph($inner)" in js
+
+
+def test_gallery_runtime_expands_layers_and_searches_full_scenario():
+    """Large KAG3 galleries need numeric layers and long condition searches."""
+    js = ck.RUNTIME_SHIM_IIFE
+    assert "kag.layer.addLayer(String(i))" in js
+    assert "this.array_tag.length - this.current_order_index" in js
+    assert "if (this.nextOrderWithTag(targetTags)) return true" in js
+    assert "window.Debug = window.Debug || { message: function () {} }" in js
+
+
+def test_animation_plugin_asset_falls_back_to_representative_frame():
+    """Missing animation descriptors use their converted still frame."""
+    js = ck.RUNTIME_SHIM_IIFE
+    assert "key.charAt(0) === 'a'" in js
+    assert "__kag3_assets()[key.slice(1)]" in js
 
 
 def test_choice_jump_hotkey_recognises_macro_variants_but_not_cleanup_tags():

@@ -29,6 +29,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kirikiri.ks_extract import (KANA, display_text, iter_display_lines,  # noqa: E402
                                 load_ks, translatable)
 
+from rpgmaker import logsetup  # noqa: E402
+
 log = logging.getLogger("qc_ks_kana")
 
 
@@ -80,8 +82,7 @@ def main():
     ap.add_argument("target", nargs="?", help="scenario/patch directory")
     args = ap.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
+    logsetup.setup(verbose=args.verbose)
     if args.values:
         total, residual = scan_values(args.values)
         log.info("values: %d entries, %d with kana", total, residual)

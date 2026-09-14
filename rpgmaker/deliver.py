@@ -20,13 +20,25 @@ Remove-Item) - a WSL-native tool must never process Windows-side files
 import logging
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 from . import compress as compress_mod
-from . import config
+from . import config, proctools
 
 log = logging.getLogger("rpgmaker.deliver")
+
+EXTRACT_TIMEOUT = 3600
+
+
+def ps_quote(value):
+    """Single-quote `value` for a PowerShell command line.
+
+    Inside single quotes PowerShell expands nothing (no $vars, no spaces),
+    which is exactly what a path needs - but a literal ' must be doubled or
+    it terminates the string early. A game folder named "Bob's Game" used to
+    break `deliver` mid-run with an unbalanced-quote parse error.
+    """
+    return "'" + str(value).replace("'", "''") + "'"
 
 
 def deliver(folder, archive=None, games=None, archives=None, level=15):
@@ -97,9 +109,9 @@ def _remove_windows_side(target):
     must not touch /mnt/* files). Single-quoted paths: double quotes would
     expand $vars inside the command; the trailing $? check makes a failed
     removal exit non-zero even under -ErrorAction SilentlyContinue."""
-    _run_powershell("Remove-Item -Recurse -Force -LiteralPath '%s' "
+    _run_powershell("Remove-Item -Recurse -Force -LiteralPath %s "
                     "-ErrorAction SilentlyContinue; if (-not $?) { exit 1 }"
-                    % config.to_windows_path(target))
+                    % ps_quote(config.to_windows_path(target)))
     log.info("removed stale folder %s (Windows side)", target)
 
 
@@ -134,9 +146,7 @@ def _extract_wsl_side(archive, dest, name):
             "unset SEVENZ to use the WSL 7zz for WSL-side files.")
     cmd = [sevenz, "x", "-y", str(archive), "-o%s" % dest, name]
     log.info("running: %s", " ".join(cmd))
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError("7z extract failed:\n%s" % r.stderr[-2000:])
+    proctools.run(cmd, timeout=EXTRACT_TIMEOUT, label="7z extract")
     return _check_extracted(dest, name)
 
 
@@ -149,9 +159,9 @@ def _extract_windows_side(archive, dest, name):
             "Windows side (probed: Program Files/7-Zip*), or set SEVENZ_WIN "
             "to its full path; alternatively run the extraction on the "
             "Windows side manually.")
-    command = "& '{0}' x -y '-o{1}' '{2}' '{3}'; if (-not $?) {{ exit 1 }}".format(
-        win7z, config.to_windows_path(dest),
-        config.to_windows_path(archive), name)
+    command = "& {0} x -y {1} {2} {3}; if (-not $?) {{ exit 1 }}".format(
+        ps_quote(win7z), "-o" + ps_quote(config.to_windows_path(dest)),
+        ps_quote(config.to_windows_path(archive)), ps_quote(name))
     log.info("running (Windows side): %s", command)
     _run_powershell(command)
     return _check_extracted(dest, name)

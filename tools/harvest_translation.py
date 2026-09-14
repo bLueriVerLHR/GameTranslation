@@ -33,7 +33,6 @@ import logging
 import os
 import re
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(message)s")
 log = logging.getLogger("harvest")
 
 # Multi-letter control codes too: \FX[F]\FFFFF[1000Kenji_0004] must strip
@@ -87,7 +86,15 @@ def main():
     ap.add_argument("dict_path", help="MTool/AI runtime translation JSON")
     ap.add_argument("--out", default="translated.json",
                     help="output harvested translation JSON")
+    ap.add_argument("-v", "--verbose", action="store_true",
+                    help="DEBUG diagnostics")
     args = ap.parse_args()
+    # Configure logging here, never at import time: a module-level call
+    # rewrites the root logger for whatever imported this file (tests too)
+    # and turns a later configuration into a silent no-op.
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(levelname)-7s %(name)s: %(message)s")
 
     work = os.path.abspath(args.work_dir)
     t = json.load(open(os.path.join(work, "template.json"), encoding="utf-8-sig"))

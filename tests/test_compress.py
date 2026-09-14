@@ -95,7 +95,7 @@ class TestCommandArgs:
                                                stdout="Everything is Ok",
                                                stderr="")
 
-        monkeypatch.setattr("rpgmaker.compress.subprocess.run", fake_run)
+        monkeypatch.setattr("rpgmaker.proctools.subprocess.run", fake_run)
         compress.compress(folder, archive, **kw)
         return calls[0], existed_at_run[0]
 
@@ -181,3 +181,30 @@ class TestErrorPaths:
         with pytest.raises(RuntimeError) as ei:
             compress.compress(folder, str(tmp_path / "game.7z"))
         assert "boom" in str(ei.value)
+
+
+class TestCorruptArchiveFailsTheRun:
+    """A 7z integrity failure must not leave a green exit code behind.
+
+    compress.test_archive() returning False used to be logged at INFO and then
+    ignored by both pipeline entry points, so a corrupt archive shipped as a
+    success."""
+
+    def test_pipeline_compress_exits_1(self, tmp_path, monkeypatch):
+        import pipeline
+        from conftest import make_game
+        web = make_game(str(tmp_path / "g"))
+        monkeypatch.setattr(compress, "compress", lambda *a, **kw: "x.7z")
+        monkeypatch.setattr(compress, "test_archive", lambda a: False)
+        with pytest.raises(SystemExit) as ei:
+            pipeline.main(["compress", web, "-o", str(tmp_path / "game.7z")])
+        assert ei.value.code == 1
+
+    def test_pipeline_compress_ok_stays_0(self, tmp_path, monkeypatch):
+        import pipeline
+        from conftest import make_game
+        web = make_game(str(tmp_path / "g"))
+        monkeypatch.setattr(compress, "compress", lambda *a, **kw: "x.7z")
+        monkeypatch.setattr(compress, "test_archive", lambda a: True)
+        assert pipeline.main(["compress", web, "-o",
+                              str(tmp_path / "game.7z")]) is None

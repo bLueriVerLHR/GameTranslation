@@ -40,15 +40,19 @@ import glob
 import json
 import logging
 import os
-import subprocess
 import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kirikiri.ks_extract import load_ks  # noqa: E402
+from rpgmaker import proctools  # noqa: E402
 from rpgmaker.config import find_node  # noqa: E402
 
+from rpgmaker import logsetup  # noqa: E402
+
 log = logging.getLogger("check_iscript_js")
+
+NODE_TIMEOUT = 120
 
 OPEN_TAG = "[iscript"
 CLOSE_TAG = "[endscript]"
@@ -82,8 +86,8 @@ def check_block(body):
         node = find_node()
         if not node:
             raise FileNotFoundError("node")
-        proc = subprocess.run([node, "--check", tmp],
-                              capture_output=True, text=True)
+        proc = proctools.run([node, "--check", tmp], timeout=NODE_TIMEOUT,
+                             label="node --check", check=False)
         if proc.returncode == 0:
             return None
         lines = (proc.stderr or "").strip().splitlines()
@@ -135,8 +139,7 @@ def main(argv=None):
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
+    logsetup.setup(verbose=args.verbose)
     if not os.path.isdir(args.scenario_dir):
         print("error: not a directory: %s" % args.scenario_dir,
               file=sys.stderr)

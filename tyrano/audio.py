@@ -22,6 +22,8 @@ from rpgmaker import config as rpg_config  # noqa: E402
 from rpgmaker import runtime as rpg_runtime  # noqa: E402
 from .tyrano_extract import load_ks  # noqa: E402
 
+from rpgmaker import logsetup  # noqa: E402
+
 log = logging.getLogger("tyrano.audio")
 
 AUDIO_ATTRS = re.compile(r'\b((?:storage|clickse|enterse|decidese|cancelse)=)(")([^"]*\.mp3)(")')
@@ -174,8 +176,7 @@ def main():
                     help="parallel ffmpeg processes (default: auto-tuned)")
     args = ap.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
+    logsetup.setup(verbose=args.verbose)
     print(convert(args.web_root, workers=args.workers, keep=args.keep,
                   sample=args.sample))
 

@@ -242,7 +242,7 @@ class TestPermissionDenied:
 
         def denied(cmd, **kw):
             raise PermissionError("7z not executable")
-        monkeypatch.setattr("rpgmaker.compress.subprocess.run", denied)
+        monkeypatch.setattr("rpgmaker.proctools.subprocess.run", denied)
         with pytest.raises(PermissionError):
             compress.compress(folder, str(tmp_path / "g.7z"))
 

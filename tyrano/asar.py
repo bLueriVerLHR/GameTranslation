@@ -16,15 +16,16 @@ Usage:
 import argparse
 import logging
 import os
-import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import config  # noqa: E402
-
+from rpgmaker import config, logsetup, proctools  # noqa: E402
 log = logging.getLogger("tyrano.asar")
 
 ASAR_PACKAGE = "@electron/asar"
+# `npx --yes` may download the package on a cold cache, so this is generous -
+# but finite: an offline or wedged npm must not hang the Tyrano build.
+ASAR_TIMEOUT = 900
 
 
 def find_npx():
@@ -45,13 +46,8 @@ def find_npx():
 def _run(args, check=True):
     npx = find_npx()
     cmd = [npx, "--yes", ASAR_PACKAGE] + args
-    log.debug("running: %s", " ".join(cmd))
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    if check and proc.returncode != 0:
-        raise RuntimeError("asar command failed (%d): %s\n%s"
-                           % (proc.returncode, " ".join(cmd),
-                              (proc.stderr or proc.stdout)[-2000:]))
-    return proc
+    return proctools.run(cmd, timeout=ASAR_TIMEOUT, label="npx @electron/asar",
+                         check=check)
 
 
 def list_files(asar_path):
@@ -82,8 +78,7 @@ def main():
     p_extract.add_argument("out_dir")
     args = ap.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
+    logsetup.setup(verbose=args.verbose)
     if args.command == "list":
         for p in list_files(args.asar_path):
             print(p)

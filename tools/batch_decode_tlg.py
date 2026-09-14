@@ -16,6 +16,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kirikiri import tlg
 
+from rpgmaker import logsetup  # noqa: E402
+
 log = logging.getLogger("batch_tlg")
 
 
@@ -43,8 +45,7 @@ def main():
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
+    logsetup.setup(verbose=args.verbose)
     os.makedirs(args.out_dir, exist_ok=True)
     files = sorted(glob.glob(os.path.join(args.in_dir, "**", "*.tlg"),
                              recursive=True))

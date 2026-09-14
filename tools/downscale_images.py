@@ -28,19 +28,33 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpgmaker import config  # noqa: E402
 from rpgmaker import runtime  # noqa: E402
 
+from rpgmaker import logsetup  # noqa: E402
+
 log = logging.getLogger("downscale_images")
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+# signature (8) + IHDR length/type (8) + width/height (8)
+PNG_HEADER_BYTES = 24
 
 
 def png_size(path):
-    """Return (w, h) from the IHDR header, or None if not a readable PNG."""
+    """Return (w, h) from the IHDR header, or None if not a readable PNG.
+
+    The header is read directly (not via an image library) so thousands of
+    files can be checked without decoding any pixels.  A file that carries
+    the PNG signature but is shorter than a header (an interrupted copy) is
+    reported as unreadable instead of raising struct.error.
+    """
     try:
         with open(path, "rb") as f:
-            head = f.read(26)
+            head = f.read(PNG_HEADER_BYTES)
     except OSError:
         return None
     if head[:8] != PNG_MAGIC:
+        return None
+    if len(head) < 24:
+        log.debug("%s: PNG signature but truncated header (%d bytes), skipped",
+                  path, len(head))
         return None
     return struct.unpack(">II", head[16:24])
 
@@ -94,7 +108,7 @@ def main(argv=None):
     ap.add_argument("--workers", type=int, default=None,
                     help="parallel workers (default: auto-tuned to the machine)")
     args = ap.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logsetup.setup()
     root = os.path.abspath(args.web_root)
     if not os.path.isdir(os.path.join(root, "img")):
         sys.exit("not a web root: %s" % root)

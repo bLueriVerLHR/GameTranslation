@@ -30,12 +30,9 @@ import argparse
 import logging
 import sys
 
-from rpgmaker import build, clean, compress, decrypt, deliver, detect, doctor, serve, verify
+from rpgmaker import (build, clean, compress, decrypt, deliver, detect,
+                      doctor, logsetup, serve, verify)
 from rpgmaker import audio as audio_mod
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(filename)s:%(lineno)d %(levelname)-7s %(name)s: %(message)s",
-)
 log = logging.getLogger("pipeline")
 
 
@@ -111,7 +108,9 @@ def cmd_compress(args: argparse.Namespace) -> None:
     wr = resolve_web_root(args.game)
     archive = args.out or (wr + ".7z")
     compress.compress(wr, archive, level=args.level)
-    compress.test_archive(archive)
+    if not compress.test_archive(archive):
+        # A corrupt archive must never leave a green exit code behind.
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------- deliver
@@ -122,16 +121,18 @@ def cmd_deliver(args: argparse.Namespace) -> None:
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    common = argparse.ArgumentParser(add_help=False)
+    logsetup.add_verbose(common)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("build", help="copy web files into a JoiPlay folder")
+    p = sub.add_parser("build", parents=[common], help="copy web files into a JoiPlay folder")
     p.add_argument("game", help="source game folder")
     p.add_argument("-o", "--out", required=True, help="destination JoiPlay folder")
     p.add_argument("--workers", type=int, default=None,
                    help="parallel copy workers (default: auto-tuned to the machine)")
     p.set_defaults(func=cmd_build)
 
-    p = sub.add_parser("decrypt", help="decrypt assets + clear encryption flags")
+    p = sub.add_parser("decrypt", parents=[common], help="decrypt assets + clear encryption flags")
     p.add_argument("game", help="JoiPlay folder (web root)")
     p.add_argument("--key", default=None,
                    help="explicit hex encryptionKey override (when System.json is "
@@ -140,7 +141,7 @@ def main(argv: list[str] | None = None) -> None:
                    help="parallel decrypt workers (default: auto-tuned to the machine)")
     p.set_defaults(func=cmd_decrypt)
 
-    p = sub.add_parser("audio", help="probe + re-encode audio")
+    p = sub.add_parser("audio", parents=[common], help="probe + re-encode audio")
     p.add_argument("game", help="JoiPlay folder (web root)")
     p.add_argument("--probe-only", action="store_true", help="only probe, no encode")
     p.add_argument("--report", default="", help="write probe CSV report")
@@ -149,12 +150,12 @@ def main(argv: list[str] | None = None) -> None:
                    help="parallel ffmpeg workers (default: auto-tuned to the machine)")
     p.set_defaults(func=cmd_audio)
 
-    p = sub.add_parser("clean", help="remove junk/unused images and fonts")
+    p = sub.add_parser("clean", parents=[common], help="remove junk/unused images and fonts")
     p.add_argument("game", help="JoiPlay folder (web root)")
     p.add_argument("--dry-run", action="store_true", help="report only, don't delete")
     p.set_defaults(func=cmd_clean)
 
-    p = sub.add_parser("verify", help="verify build integrity")
+    p = sub.add_parser("verify", parents=[common], help="verify build integrity")
     p.add_argument("game", help="JoiPlay folder (web root)")
     p.add_argument("--decode", action="store_true", help="also full ffmpeg-decode all audio")
     p.add_argument("--sample", type=int, default=0, help="decode only first N files")
@@ -165,14 +166,14 @@ def main(argv: list[str] | None = None) -> None:
                    help="parallel PNG/decode workers (default: auto-tuned to the machine)")
     p.set_defaults(func=cmd_verify)
 
-    p = sub.add_parser("doctor", help="environment self-check "
+    p = sub.add_parser("doctor", parents=[common], help="environment self-check "
                                       "(applications, config, deliverable dirs)")
     p.add_argument("--json", action="store_true",
                    help="machine-readable report (resolved app paths + where "
                         "each one came from: env/config/probe/path)")
     p.set_defaults(func=cmd_doctor)
 
-    p = sub.add_parser("serve", help="HTTP server + smoke test (do NOT run on phone)")
+    p = sub.add_parser("serve", parents=[common], help="HTTP server + smoke test (do NOT run on phone)")
     p.add_argument("game", help="JoiPlay folder (web root)")
     p.add_argument("-p", "--port", type=int, default=8100)
     p.add_argument("--host", default="127.0.0.1",
@@ -183,19 +184,20 @@ def main(argv: list[str] | None = None) -> None:
                    help="run smoke test against key files, then exit")
     p.set_defaults(func=cmd_serve)
 
-    p = sub.add_parser("compress", help="package as 7z-zstd archive")
+    p = sub.add_parser("compress", parents=[common], help="package as 7z-zstd archive")
     p.add_argument("game", help="JoiPlay folder (web root)")
     p.add_argument("-o", "--out", default="", help="archive path (default: game folder + .7z)")
     p.add_argument("--level", type=int, default=15, help="zstd compression level (default 15)")
     p.set_defaults(func=cmd_compress)
 
-    p = sub.add_parser("deliver", help="write back to storage: compress, copy archive "
+    p = sub.add_parser("deliver", parents=[common], help="write back to storage: compress, copy archive "
                                        "to archives dir, extract into games dir")
     p.add_argument("game", help="finished JoiPlay folder (web root, usually in temp)")
     p.add_argument("--level", type=int, default=15, help="zstd compression level (default 15)")
     p.set_defaults(func=cmd_deliver)
 
     args = ap.parse_args(argv)
+    logsetup.setup(verbose=args.verbose)
     args.func(args)
 
 

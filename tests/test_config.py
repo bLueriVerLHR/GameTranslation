@@ -342,15 +342,20 @@ class TestRunPowershell:
         monkeypatch.setenv("POWERSHELL_EXE", str(exe))
         seen = {}
 
-        def fake_run(cmdline, capture_output=False, text=False):
+        def fake_run(cmdline, **kwargs):
             seen["cmdline"] = cmdline
+            seen["kwargs"] = kwargs
             return subprocess.CompletedProcess(cmdline, 0, "ok", "")
 
-        monkeypatch.setattr(config.subprocess, "run", fake_run)
+        monkeypatch.setattr(config.proctools.subprocess, "run", fake_run)
         r = config.run_powershell("Get-Date")
         assert seen["cmdline"][-1] == "Get-Date"
         assert "-NoProfile" in seen["cmdline"]
         assert r.stdout == "ok"
+        # every external call decodes as UTF-8 (never the host locale codec)
+        # and carries a timeout, so a stuck PowerShell cannot hang the run
+        assert seen["kwargs"]["encoding"] == "utf-8"
+        assert seen["kwargs"]["timeout"] == config.POWERSHELL_TIMEOUT
 
     def test_nonzero_exit_raises(self, monkeypatch, tmp_path):
         import subprocess
@@ -358,8 +363,8 @@ class TestRunPowershell:
         exe.write_bytes(b"x")
         monkeypatch.setenv("POWERSHELL_EXE", str(exe))
         monkeypatch.setattr(
-            config.subprocess, "run",
-            lambda cmdline, capture_output=False, text=False:
+            config.proctools.subprocess, "run",
+            lambda cmdline, **kwargs:
                 subprocess.CompletedProcess(cmdline, 1, "", "boom"))
         with pytest.raises(RuntimeError) as ei:
             config.run_powershell("exit 1")

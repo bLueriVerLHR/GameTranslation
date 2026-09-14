@@ -41,6 +41,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from rpgmaker import logsetup  # noqa: E402
 from rpgmaker import compress as rpg_compress  # noqa: E402
 from rpgmaker import deliver as rpg_deliver  # noqa: E402
 from rpgmaker import serve as rpg_serve  # noqa: E402
@@ -51,10 +52,6 @@ from tyrano import build as build_mod  # noqa: E402
 from tyrano import clean as clean_mod  # noqa: E402
 from tyrano import verify as verify_mod  # noqa: E402
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(filename)s:%(lineno)d %(levelname)-7s %(name)s: %(message)s",
-)
 log = logging.getLogger("tyrano.pipeline")
 
 SMOKE_PATHS = ["index.html", "tyrano/tyrano.js", "data/scenario/first.ks",
@@ -145,7 +142,9 @@ def cmd_serve(args):
 def cmd_compress(args):
     archive = args.archive or args.out + ".7z"
     out = rpg_compress.compress(args.out, archive, level=args.level)
-    rpg_compress.test_archive(out)
+    if not rpg_compress.test_archive(out):
+        # A corrupt archive must never leave a green exit code behind.
+        raise SystemExit(1)
     log.info("compressed -> %s", out)
 
 
@@ -156,16 +155,18 @@ def cmd_deliver(args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    common = argparse.ArgumentParser(add_help=False)
+    logsetup.add_verbose(common)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("build", help="unpack asar + prepare JoiPlay folder")
+    p = sub.add_parser("build", parents=[common], help="unpack asar + prepare JoiPlay folder")
     p.add_argument("game", help="original game folder (contains resources/app.asar)")
     p.add_argument("-o", "--out", default=None, help="output folder")
     p.add_argument("--asar", default=None,
                    help="path to app.asar (absolute, or relative to game)")
     p.set_defaults(func=cmd_build)
 
-    p = sub.add_parser("audio", help="mp3 -> ogg + rewrite script refs")
+    p = sub.add_parser("audio", parents=[common], help="mp3 -> ogg + rewrite script refs")
     p.add_argument("out", help="built game folder")
     p.add_argument("--workers", type=int, default=None,
                    help="parallel ffmpeg processes (default: auto-tuned)")
@@ -174,24 +175,24 @@ def main():
                    help="convert at most N files (trial run)")
     p.set_defaults(func=cmd_audio)
 
-    p = sub.add_parser("clean", help="remove MTool residues / junk")
+    p = sub.add_parser("clean", parents=[common], help="remove MTool residues / junk")
     p.add_argument("out", help="built game folder")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_clean)
 
-    p = sub.add_parser("fix-autoplay",
+    p = sub.add_parser("fix-autoplay", parents=[common],
                        help="patch [bgmovie] play() with user-interaction "
                             "fallback (autoplay policy)")
     p.add_argument("out", help="built game folder")
     p.set_defaults(func=cmd_fix_autoplay)
 
-    p = sub.add_parser("verify", help="check the built folder")
+    p = sub.add_parser("verify", parents=[common], help="check the built folder")
     p.add_argument("out", help="built game folder")
     p.add_argument("--source", default=None, help="original game folder")
     p.add_argument("--no-png", action="store_true")
     p.set_defaults(func=cmd_verify)
 
-    p = sub.add_parser("serve", help="HTTP server + smoke test")
+    p = sub.add_parser("serve", parents=[common], help="HTTP server + smoke test")
     p.add_argument("out", help="built game folder")
     p.add_argument("--port", type=int, default=8100)
     p.add_argument("--host", default="127.0.0.1",
@@ -201,19 +202,20 @@ def main():
     p.add_argument("--test", action="store_true", help="smoke test then exit")
     p.set_defaults(func=cmd_serve)
 
-    p = sub.add_parser("compress", help="7z-zstd package")
+    p = sub.add_parser("compress", parents=[common], help="7z-zstd package")
     p.add_argument("out", help="built game folder")
     p.add_argument("-o", "--archive", default=None, help="output .7z path")
     p.add_argument("--level", type=int, default=15)
     p.set_defaults(func=cmd_compress)
 
-    p = sub.add_parser("deliver", help="write back to the storage side")
+    p = sub.add_parser("deliver", parents=[common], help="write back to the storage side")
     p.add_argument("out", help="built game folder")
     p.add_argument("--archive", default=None,
                    help="archive name in the archives dir (default: folder name)")
     p.set_defaults(func=cmd_deliver)
 
     args = ap.parse_args()
+    logsetup.setup(verbose=args.verbose)
     args.func(args)
 
 

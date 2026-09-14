@@ -51,12 +51,11 @@ import plain_io  # noqa: E402
 import plugins_io  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
-from rpgmaker import config  # noqa: E402
+from rpgmaker import config, logsetup  # noqa: E402
 from translate_rpgmaker import (  # noqa: E402
     apply_font_policy, clear_encryption_flags, decrypt_dir,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(message)s")
 log = logging.getLogger("bake")
 
 # Kana detection (canonical, shared via japanese_utils): ・/ー/・ are
@@ -569,6 +568,7 @@ def translate_data(root, D, write=True, workers=None):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
+    logsetup.add_verbose(ap)
     ap.add_argument("game_dir")
     ap.add_argument("out_dir")
     ap.add_argument("--trs", required=True, help="filled template JSON")
@@ -595,6 +595,7 @@ def main():
                          "JP_FONT_PATH, or auto-discovery of docs/table/"
                          "fonts/; default: the game's original font)")
     args = ap.parse_args()
+    logsetup.setup(verbose=args.verbose)
     if not args.cjk_font:
         args.cjk_font = config.find_cjk_font() or ""
     if not args.jp_font:

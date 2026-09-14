@@ -39,6 +39,13 @@ class TestPngSize:
     def test_missing_file(self, web_root):
         assert di.png_size(str(web_root / "nope.png")) is None
 
+    def test_truncated_png_header_is_not_a_crash(self, web_root):
+        """The PNG signature followed by fewer than 24 bytes (interrupted
+        copy) used to raise struct.error from a report-only code path."""
+        p = web_root / "img" / "pictures" / "trunc.png"
+        p.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0d" + b"IHDR")
+        assert di.png_size(str(p)) is None
+
 
 class TestDownscaleOne:
     def test_under_limit_untouched(self, web_root):

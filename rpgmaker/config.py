@@ -39,10 +39,11 @@ import logging
 import os
 import re
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
+
+from . import proctools
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOCAL_ENV_FILE = REPO_ROOT / "docs" / "table" / "env_config.json"
@@ -77,6 +78,10 @@ NWJS_RUNTIME = [
 ]
 # Editor / repack junk that can usually be dropped from img/ (never loaded at runtime).
 IMG_JUNK_EXTS = {".txt", ".clip", ".tmx", ".bak"}
+
+# Windows-side PowerShell has to exist before the cross-system bridge can work,
+# but it must not hang an unattended run either.
+POWERSHELL_TIMEOUT = 3600
 
 
 # ---------------------------------------------------------------- platform
@@ -601,11 +606,12 @@ def run_powershell(command, exe=None):
         raise FileNotFoundError(
             "powershell.exe not found - install PowerShell on the Windows "
             "side / 请在 Windows 侧安装 PowerShell")
-    r = subprocess.run([exe, "-NoProfile", "-Command", command],
-                       capture_output=True, text=True)
+    r = proctools.run([exe, "-NoProfile", "-Command", command],
+                      timeout=POWERSHELL_TIMEOUT, label="powershell",
+                      check=False)
     if r.returncode != 0:
         raise RuntimeError("powershell failed (%s):\n%s"
-                           % (r.returncode, (r.stderr or r.stdout)[-2000:]))
+                           % (r.returncode, proctools.tail(r)))
     return r
 
 

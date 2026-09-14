@@ -21,6 +21,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpgmaker import config as rpg_config  # noqa: E402
 from .tyrano_extract import load_ks  # noqa: E402
 
+from rpgmaker import logsetup  # noqa: E402
+
 log = logging.getLogger("tyrano.verify")
 
 AUDIO_REF = re.compile(r'\b(?:storage|clickse|enterse|decidese|cancelse)=(")([^"]*\.(?:mp3|ogg|m4a|wav))(")')
@@ -103,19 +105,38 @@ def check_audio_refs(web_root, source=None):
 
 
 def _png_size(path):
+    """(w, h) from the IHDR header, or None when it is not a PNG header.
+
+    A file with the PNG signature but a truncated header (interrupted copy)
+    must be reported as unreadable - this function's job is to find bad
+    images, so it must not crash on one.
+    """
     with open(path, "rb") as f:
         head = f.read(24)
-    if head[:8] != b"\x89PNG\r\n\x1a\n":
+    if head[:8] != b"\x89PNG\r\n\x1a\n" or len(head) < 24:
         return None
     w, h = struct.unpack(">II", head[16:24])
     return w, h
 
 
+def _has_png_signature(path):
+    """Cheap signature probe used only for a file whose header was
+    unreadable, to tell a truncated PNG from a non-PNG with a .png name."""
+    try:
+        with open(path, "rb") as f:
+            return f.read(8) == b"\x89PNG\r\n\x1a\n"
+    except OSError:
+        return False
+
+
 def check_png_limits(web_root):
     """Android WebView textures cap at PNG_MAX_DIMENSION px per side; report
-    over-limit."""
+    over-limit.  A file that carries the PNG signature but no readable IHDR
+    (interrupted copy / truncation) is reported too - it renders broken on
+    every platform, and silently skipping it made this check blind."""
     limit = rpg_config.PNG_MAX_DIMENSION
     over = []
+    broken = []
     count = 0
     for dp, _dn, fns in os.walk(web_root):
         for fn in fns:
@@ -124,13 +145,17 @@ def check_png_limits(web_root):
             path = os.path.join(dp, fn)
             size = _png_size(path)
             if size is None:
+                if _has_png_signature(path):
+                    broken.append(_rel(path, web_root))
                 continue
             count += 1
             w, h = size
             if w > limit or h > limit:
                 over.append("%s (%dx%d)" % (_rel(path, web_root), w, h))
-    log.info("png: %d checked", count)
-    return ["png over %d: %s" % (limit, o) for o in over[:10]]
+    log.info("png: %d checked, %d unreadable", count, len(broken))
+    problems = ["png unreadable: %s" % b for b in broken[:10]]
+    problems += ["png over %d: %s" % (limit, o) for o in over[:10]]
+    return problems
 
 
 def verify(web_root, source=None, check_png=True):
@@ -161,8 +186,7 @@ def main():
                     help="skip the PNG size check")
     args = ap.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
+    logsetup.setup(verbose=args.verbose)
     problems = verify(args.web_root, source=args.source,
                       check_png=not args.no_png)
     for p in problems:

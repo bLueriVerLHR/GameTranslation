@@ -13,6 +13,28 @@ import pytest
 from rpgmaker import deliver
 
 
+class TestPsQuote:
+    """PowerShell single-quote escaping: a folder named "Bob's Game" used to
+    produce an unbalanced-quote parse error in the middle of deliver."""
+
+    def test_plain_path_is_wrapped(self):
+        assert deliver.ps_quote(r"C:\Games\X") == r"'C:\Games\X'"
+
+    def test_apostrophe_is_doubled(self):
+        assert deliver.ps_quote("Bob's Game") == "'Bob''s Game'"
+
+    def test_dollar_and_spaces_stay_literal(self):
+        # single quotes suppress PowerShell variable expansion
+        assert deliver.ps_quote("$env:TEMP dir") == "'$env:TEMP dir'"
+
+    def test_remove_windows_side_quotes_the_path(self, monkeypatch):
+        seen = {}
+        monkeypatch.setattr(deliver, "_run_powershell",
+                            lambda cmd: seen.setdefault("cmd", cmd))
+        deliver._remove_windows_side(r"D:\Games\Bob's Game")
+        assert "'D:\\Games\\Bob''s Game'" in seen["cmd"]
+
+
 class TestRunPowershell:
     def test_missing_powershell_raises_with_hint(self, monkeypatch):
         # WSL image without WSLInterop / no PowerShell anywhere: fail fast.
@@ -35,8 +57,9 @@ class TestRunPowershell:
                             else None)
         calls = {}
 
-        def fake_run(cmdline, capture_output=False, text=False):
+        def fake_run(cmdline, **kwargs):
             calls["cmdline"] = cmdline
+            calls["kwargs"] = kwargs
             return subprocess.CompletedProcess(cmdline, 0, stdout="ok",
                                                stderr="")
 
@@ -46,6 +69,9 @@ class TestRunPowershell:
         assert calls["cmdline"][-1] == "Remove-Item -LiteralPath 'x'"
         assert "-NoProfile" in calls["cmdline"]
         assert r.stdout == "ok"
+        # shared runner contract: UTF-8 decoding + a finite timeout
+        assert calls["kwargs"]["encoding"] == "utf-8"
+        assert isinstance(calls["kwargs"]["timeout"], (int, float))
 
     def test_powershell_nonzero_exit_raises_runtime_error(self, monkeypatch):
         exe = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
@@ -55,7 +81,7 @@ class TestRunPowershell:
                             else None)
         monkeypatch.setattr(
             "subprocess.run",
-            lambda cmdline, capture_output=False, text=False:
+            lambda cmdline, **kwargs:
                 subprocess.CompletedProcess(cmdline, 1, stdout="",
                                             stderr="boom"))
         with pytest.raises(RuntimeError) as ei:

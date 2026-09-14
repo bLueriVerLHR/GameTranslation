@@ -311,6 +311,21 @@ class TestVerify:
         problems = tv.verify(root, check_png=False)
         assert any("dangling" in p for p in problems)
 
+    def test_truncated_png_is_reported_not_a_crash(self, tmp_path):
+        """A PNG-signature file shorter than a header (interrupted copy) must
+        be a finding of the check whose job is to find bad images."""
+        root = make_asar_game(str(tmp_path))
+        tb.fix_save_backend(root)
+        ta.rewrite_script_refs(root)
+        os.rename(os.path.join(root, "data", "sound", "se1.mp3"),
+                  os.path.join(root, "data", "sound", "se1.ogg"))
+        bad = os.path.join(root, "data", "bgimage", "trunc.png")
+        os.makedirs(os.path.dirname(bad), exist_ok=True)
+        with open(bad, "wb") as f:
+            f.write(b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0d" + b"IHDR")
+        problems = tv.verify(root)
+        assert any("trunc.png" in p for p in problems)
+
     def test_source_downgrades_shared_missing_refs(self, tmp_path):
         """Refs missing in both build and source are source defects, not
         conversion regressions - downgraded when --source is given."""

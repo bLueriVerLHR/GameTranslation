@@ -54,10 +54,12 @@ import argparse
 import fnmatch
 import os
 import re
-import shutil
-import subprocess
 import sys
 from collections import namedtuple
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import proctools  # noqa: E402
+from rpgmaker.config import find_git  # noqa: E402
 
 # Root-level repo metadata not part of the tool-layout tree.
 EXCLUDED_ROOT_FILES = frozenset({
@@ -165,17 +167,26 @@ def git_repo_files(repo_path):
     this check immune to local artifacts by construction - a gitignored
     download directory, work copy or virtualenv can never be reported as an
     [EXTRA] repo file, so no hand-maintained exclusion list can fall behind.
+
+    The git binary is resolved through the shared resolver (config.TOOLS),
+    not a private PATH lookup, so `pipeline.py doctor` reports the same
+    answer this check uses.  None (no git / git failed) selects the disk-walk
+    fallback below.
     """
-    if shutil.which("git") is None:
+    git = find_git()
+    if not git:
         return None
     try:
-        proc = subprocess.run(
-            ["git", "-C", repo_path, "ls-files", "-z", "--cached",
+        proc = proctools.run(
+            [git, "-C", repo_path, "ls-files", "-z", "--cached",
              "--others", "--exclude-standard"],
-            capture_output=True, check=True, timeout=120)
-    except (OSError, subprocess.SubprocessError):
+            timeout=120, label="git ls-files", check=False,
+            errors="surrogateescape")
+    except OSError:
         return None
-    raw = proc.stdout.decode("utf-8", "surrogateescape")
+    if proc.returncode != 0:
+        return None
+    raw = proc.stdout
     return {p for p in raw.split("\0") if p and not is_excluded(p)}
 
 

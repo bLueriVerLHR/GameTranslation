@@ -5,11 +5,15 @@ Exposed as a plain function + CLI subcommand; NOT run by default in the
 pipeline (so the project stays testable)."""
 import logging
 import os
-import subprocess
 
-from . import config, runtime
+from . import config, proctools, runtime
 
 log = logging.getLogger("rpgmaker.compress")
+
+# zstd at level 15 on a multi-GB game tree: generous, but finite so a stuck
+# 7z is reported instead of blocking an unattended run.
+ARCHIVE_TIMEOUT = 3600
+TEST_TIMEOUT = 600
 
 
 def compress(folder, archive, level=15, threads=None):
@@ -45,9 +49,7 @@ def compress(folder, archive, level=15, threads=None):
             cmd.append("-mmt=%d" % int(threads))
     cmd += [archive, folder]
     log.info("running: %s", " ".join(cmd))
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError("7z failed:\n%s" % r.stderr[-2000:])
+    proctools.run(cmd, timeout=ARCHIVE_TIMEOUT, label="7z")
     log.info("archive created: %s (%.1f MB)",
              archive, os.path.getsize(archive) / 1e6)
     return archive
@@ -59,7 +61,14 @@ def test_archive(archive):
     if not sevenz:
         raise FileNotFoundError(
             "7-Zip not found - install 7-Zip-Zstandard or set the SEVENZ env var")
-    r = subprocess.run([sevenz, "t", archive], capture_output=True, text=True)
+    r = proctools.run([sevenz, "t", archive], timeout=TEST_TIMEOUT,
+                      label="7z", check=False)
     ok = r.returncode == 0 and "Everything is Ok" in r.stdout
-    log.info("archive test: %s", "OK" if ok else "FAILED")
+    if ok:
+        log.info("archive test: OK (%s)", archive)
+    else:
+        # A corrupt archive must never be reported on an INFO line: the
+        # callers check this return value and exit non-zero.
+        log.error("archive test: FAILED (%s) - 7z could not read it back: %s",
+                  archive, proctools.tail(r))
     return ok

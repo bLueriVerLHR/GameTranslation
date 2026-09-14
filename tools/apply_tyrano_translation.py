@@ -23,6 +23,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tyrano.tyrano_extract import load_ks  # noqa: E402
 
+from rpgmaker import logsetup  # noqa: E402
+
 log = logging.getLogger("apply_tyrano_translation")
 
 
@@ -121,8 +123,7 @@ def main():
                     help="patched tree output (default: <work>/patch)")
     args = ap.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
+    logsetup.setup(verbose=args.verbose)
     work = os.path.abspath(args.work_dir)
     scenario = os.path.abspath(args.scenario_dir or os.path.join(work, "scenario"))
     out = os.path.abspath(args.out or os.path.join(work, "patch"))

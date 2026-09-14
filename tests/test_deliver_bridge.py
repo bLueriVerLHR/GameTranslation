@@ -6,8 +6,9 @@ The deliver write-back must respect the AGENTS.md CRITICAL cross-system
 rule: a Windows-side (/mnt/*) file is only ever touched by the Windows-side
 tools, routed through powershell.exe (Windows 7z.exe / Remove-Item); a
 WSL-side file uses the local 7zz.  `config.is_windows_side` is monkeypatched
-both ways and every external subprocess is replaced with a recorder, so the
-branch selection is verified without executing anything.
+both ways and every external process is replaced with a recorder at the
+shared runner seam (`rpgmaker.proctools`), so the branch selection is
+verified without executing anything.
 
 Also covered: the cross-side refusal (archive and dest on different
 platforms), the missing win-7z refusal, and the PowerShell failure path.
@@ -16,7 +17,7 @@ import os
 
 import pytest
 
-from rpgmaker import config, deliver
+from rpgmaker import config, deliver, proctools
 
 # Resolved Windows-side PowerShell path, as returned by the shared resolver
 # inside config.run_powershell().  Tests pin it so the assertion is hermetic
@@ -33,7 +34,7 @@ def _patch_powershell(monkeypatch):
 
 
 def _recorder(monkeypatch, calls, returncode=0):
-    """Replace deliver.subprocess.run with a recorder returning success."""
+    """Replace the shared process runner with a recorder returning success."""
     class _R:
         def __init__(self, cmd, rc):
             self.args = cmd
@@ -44,7 +45,7 @@ def _recorder(monkeypatch, calls, returncode=0):
     def fake_run(cmd, **kw):
         calls.append((cmd, kw))
         return _R(cmd, returncode)
-    monkeypatch.setattr(deliver.subprocess, "run", fake_run)
+    monkeypatch.setattr(proctools.subprocess, "run", fake_run)
     return fake_run
 
 
@@ -269,8 +270,7 @@ class TestDeliverBranchSelection:
                 stdout = "Everything is Ok"
                 stderr = ""
             return _R()
-        monkeypatch.setattr(compress_mod.subprocess, "run", fake_run)
-        monkeypatch.setattr(deliver.subprocess, "run", fake_run)
+        monkeypatch.setattr(proctools.subprocess, "run", fake_run)
         monkeypatch.setattr(config, "find_7z",
                             lambda: str(tmp_path / "7zz"))
         monkeypatch.setattr(config, "is_windows_side", lambda p: False)

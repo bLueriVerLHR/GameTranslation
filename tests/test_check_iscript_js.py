@@ -196,5 +196,5 @@ def test_missing_node_is_reported_not_silently_passed(monkeypatch, tmp_path):
     def no_node(*_a, **_kw):
         raise FileNotFoundError("node")
 
-    monkeypatch.setattr(cij.subprocess, "run", no_node)
+    monkeypatch.setattr(cij.proctools.subprocess, "run", no_node)
     assert cij.main([str(tmp_path)]) == 2

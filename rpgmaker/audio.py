@@ -167,6 +167,11 @@ def transcode_one(ffmpeg, path, info):
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=FFMPEG_TIMEOUT)
         if r.returncode != 0:
             os.remove(tmp)
+            # Per-file failure with the reason: the aggregate counter alone
+            # ("audio: {... 'error': 3}") never says WHICH file or why.
+            log.error("%s: ffmpeg failed (exit %d), file left untouched: %s",
+                      path, r.returncode,
+                      (r.stderr or "").strip()[-300:] or "no stderr")
             return path, "error", 0
         newsize = os.path.getsize(tmp)
         if newsize < fsize:

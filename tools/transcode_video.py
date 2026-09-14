@@ -19,23 +19,30 @@ import collections
 import concurrent.futures
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kirikiri.xp3tool import extract_segment, open_xp3  # noqa: E402
+from rpgmaker import config, proctools  # noqa: E402
 
 VIDEO_EXT = (".wmv", ".mpg", ".mpeg", ".avi")
 
+PROBE_TIMEOUT = 120
+# A VP9 re-encode is legitimately long: no timeout, but the decode is explicit.
+ENCODE_TIMEOUT = None
+
 
 def probe(path):
-    r = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries",
+    ffprobe = config.find_ffprobe()
+    if not ffprobe:
+        return None
+    r = proctools.run(
+        [ffprobe, "-v", "error", "-show_entries",
          "stream=codec_name,width,height:format=duration",
          "-of", "default=noprint_wrappers=1", path],
-        capture_output=True, text=True)
+        timeout=PROBE_TIMEOUT, label="ffprobe", check=False)
     if r.returncode != 0:
         return None
     return dict(ln.split("=", 1) for ln in r.stdout.strip().splitlines()
@@ -52,10 +59,17 @@ def main():
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
-    for tool in ("ffmpeg", "ffprobe"):
-        if not shutil.which(tool):
-            print("error: %s not found on PATH" % tool, file=sys.stderr)
-            return 2
+    ffmpeg = config.find_ffmpeg()
+    ffprobe = config.find_ffprobe()
+    missing = [name for name, path in (("ffmpeg", ffmpeg), ("ffprobe", ffprobe))
+               if not path]
+    if missing:
+        # Single resolver (config.TOOLS), so `pipeline.py doctor` sees the same
+        # answer this check does.
+        print("error: %s not found - install ffmpeg/ffprobe or set the "
+              "FFMPEG / FFPROBE env vars" % ", ".join(missing),
+              file=sys.stderr)
+        return 2
 
     entries = [e for e in open_xp3(args.xp3)
                if e["name"].lower().endswith(VIDEO_EXT)]
@@ -79,15 +93,15 @@ def main():
                     out.write(extract_segment(f, entry["name"], *seg))
             before = probe(raw)
             start = time.time()
-            r = subprocess.run(
-                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            r = proctools.run(
+                [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
                  "-i", raw,
                  "-c:v", "libvpx-vp9", "-crf", str(args.crf), "-b:v", "0",
                  "-row-mt", "1", "-cpu-used", str(args.cpu_used),
                  "-deadline", "good",
                  "-c:a", "libopus", "-b:a", "96k", "-ac", "2",
                  "-f", "webm", dest],
-                capture_output=True, text=True)
+                timeout=ENCODE_TIMEOUT, label="ffmpeg vp9", check=False)
             elapsed = time.time() - start
             if r.returncode != 0 or not os.path.isfile(dest):
                 return (name, 0, elapsed,

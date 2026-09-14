@@ -35,9 +35,6 @@ from . import config, media, runtime
 
 log = logging.getLogger("rpgmaker.audio")
 
-DEFAULT_PROBE_WORKERS = 8   # legacy fallbacks; None = auto-tuned (runtime.py)
-DEFAULT_ENCODE_WORKERS = 4
-
 FFMPEG_TIMEOUT = 900   # per-file transcode timeout (seconds)
 PROBE_TIMEOUT = 120  # per-file probe timeout (seconds)
 

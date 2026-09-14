@@ -94,8 +94,12 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
 python $tk\pipeline.py deliver $out          # 写回存储侧（见 §6a）
 ```
 
-`build`、`decrypt`、`audio` 在 asyncio + 线程池下并行（每步 `--workers N`，
-默认 6/8/4）。`verify --source <原版>` 对照原版检查缺失音频引用：原版也缺
+`build`、`decrypt`、`audio` 在 asyncio + 线程池下并行（每步 `--workers N`）。
+**默认值不写死**：由 `rpgmaker/runtime.py` 按本机**物理核心数**（超线程不计）、
+可用内存与磁盘类型（HDD 减半）自动定档，`--workers N`、环境变量 `GT_WORKERS`
+或 `GT_WORKERS_<KIND>` 可覆盖；`rpgmaker/runtime.py` 是唯一入口，新工具
+不得自己写默认值（有仓库级测试守着：`tests/test_worker_defaults.py`）。
+`verify --source <原版>` 对照原版检查缺失音频引用：原版也缺
 的是既有源怪癖 → 只警告不算失败 — 只有转换造成的丢失才失败。
 
 `serve --test` 启动本地 HTTP 服务器，抓取 `index.html`、`js/main.js`、

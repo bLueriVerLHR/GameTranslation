@@ -36,7 +36,7 @@ class TestAutoWorkers:
 
     def test_upper_bound(self):
         for kind in ("copy", "encode", "compress"):
-            assert runtime.auto_workers(kind) <= runtime.MAX_WORKERS
+            assert runtime.auto_workers(kind) <= runtime.worker_ceiling()
 
     def test_resolve_workers_explicit_wins(self, monkeypatch):
         monkeypatch.setenv("GT_WORKERS", "9")
@@ -67,9 +67,10 @@ class TestResourceProbes:
         assert v is None or isinstance(v, bool)
 
     def test_auto_workers_cpu_bounded(self):
-        cpus = runtime.cpu_count()
-        assert runtime.auto_workers("encode") <= cpus
-        assert runtime.auto_workers("compress") <= cpus
+        """CPU-bound kinds never exceed the *physical* core count."""
+        cores = runtime.physical_cpu_count()
+        for kind in ("encode", "compress", "decode", "tlg"):
+            assert runtime.auto_workers(kind) <= cores
 
 
 class _FakeMemStatus:
@@ -236,3 +237,195 @@ class TestDiskRotationalSysfs:
     def test_rotational_flag_0_false(self, tmp_path, monkeypatch):
         self._mock_rotational(monkeypatch, "0")
         assert runtime.disk_is_rotational(str(tmp_path)) is False
+
+
+def _core_entry(size=48, relationship=0):
+    """One LOGICAL_PROCESSOR_RELATIONSHIP entry (header + zeroed union)."""
+    import struct as _struct
+    return _struct.pack("<II", relationship, size) + b"\x00" * (size - 8)
+
+
+class _FakeTopologyKernel32:
+    """Mimics the two-call GetLogicalProcessorInformationEx protocol."""
+
+    def __init__(self, payload=b"", second_ok=True):
+        self.payload = payload
+        self.second_ok = second_ok
+        self.calls = 0
+
+    def GetLogicalProcessorInformationEx(self, relation, buf, plen):
+        self.calls += 1
+        if not buf:
+            plen._obj.value = len(self.payload)
+            return 0            # ERROR_INSUFFICIENT_BUFFER, as the real API does
+        import ctypes as _ctypes
+        _ctypes.memmove(buf, self.payload, len(self.payload))
+        plen._obj.value = len(self.payload)
+        return 1 if self.second_ok else 0
+
+
+class _FakeCtypesTopology:
+    """Minimal `ctypes` stand-in exposing only what the topology probe uses."""
+
+    def __init__(self, kernel32):
+        import ctypes as _ctypes
+        self.windll = type("W", (), {"kernel32": kernel32})()
+        self.create_string_buffer = _ctypes.create_string_buffer
+        self.byref = _ctypes.byref
+
+
+class TestPhysicalCores:
+    """The worker defaults are based on *physical* cores, so the probe has to
+    be right (or degrade safely) on every platform."""
+
+    def test_counts_only_core_entries(self, monkeypatch):
+        # 6 processor cores + 1 package entry ("number of sockets"): only the
+        # RelationProcessorCore (0) entries are cores.
+        payload = _core_entry() * 6 + _core_entry(size=8, relationship=1)
+        monkeypatch.setattr(runtime, "ctypes",
+                            _FakeCtypesTopology(_FakeTopologyKernel32(payload)))
+        assert runtime._physical_windows() == 6
+
+    def test_empty_topology_returns_none(self, monkeypatch):
+        monkeypatch.setattr(runtime, "ctypes",
+                            _FakeCtypesTopology(_FakeTopologyKernel32(b"")))
+        assert runtime._physical_windows() is None
+
+    def test_second_call_failure_returns_none(self, monkeypatch):
+        monkeypatch.setattr(runtime, "ctypes", _FakeCtypesTopology(
+            _FakeTopologyKernel32(_core_entry(), second_ok=False)))
+        assert runtime._physical_windows() is None
+
+    def test_malformed_entry_size_returns_none(self, monkeypatch):
+        payload = _core_entry() + b"\x00\x00\x00\x00" + _core_entry()
+        monkeypatch.setattr(runtime, "ctypes",
+                            _FakeCtypesTopology(_FakeTopologyKernel32(payload)))
+        assert runtime._physical_windows() is None
+
+    def test_no_windll_degrades_to_none(self, monkeypatch):
+        import types as _types
+        monkeypatch.setattr(runtime, "ctypes", _types.SimpleNamespace())
+        assert runtime._physical_windows() is None
+    def test_linux_cpuinfo_counts_hyperthreads_once(self):
+        # 4 cores with 2 SMT threads each: 8 processors, 4 distinct pairs.
+        text = "\n".join(
+            "processor\t: %d\nphysical id\t: 0\ncore id\t\t: %d\n" % (i, i // 2)
+            for i in range(8))
+        assert runtime._physical_linux_cpuinfo(text) == 4
+
+    def test_linux_cpuinfo_two_sockets(self):
+        text = ""
+        for socket in (0, 1):
+            for core in (0, 1):
+                text += ("processor\t: %d\nphysical id\t: %d\ncore id\t\t: %d\n\n"
+                         % (socket * 2 + core, socket, core))
+        assert runtime._physical_linux_cpuinfo(text) == 4
+
+    def test_linux_cpuinfo_without_physical_id(self):
+        """Single-socket/container/ARM boxes have no `physical id` line; the
+        core ids must still add up (this used to return None)."""
+        text = "processor\t: 0\ncore id\t\t: 0\n\nprocessor\t: 1\ncore id\t\t: 1\n"
+        assert runtime._physical_linux_cpuinfo(text) == 2
+
+    def test_linux_cpuinfo_without_topology_is_none(self):
+        assert runtime._physical_linux_cpuinfo("processor\t: 0\n") is None
+        assert runtime._physical_linux_cpuinfo("") is None
+
+    def test_sysfs_counts_sibling_groups(self, tmp_path, monkeypatch):
+        """Fallback path: distinct thread_siblings_list values = cores."""
+        cpu = tmp_path / "cpu"
+        for i, siblings in enumerate(("0,4", "1,5", "2,6", "3,7", "0,4")):
+            d = cpu / ("cpu%d" % i) / "topology"
+            d.mkdir(parents=True)
+            (d / "thread_siblings_list").write_text(siblings, encoding="ascii")
+        (cpu / "cpufreq").mkdir()
+        (cpu / "online").write_text("1", encoding="ascii")
+        assert runtime._physical_linux_sysfs(str(cpu)) == 4
+
+    def test_sysfs_missing_dir_is_none(self, tmp_path):
+        assert runtime._physical_linux_sysfs(str(tmp_path / "nope")) is None
+
+    def test_never_exceeds_logical_and_is_positive(self):
+        n = runtime.physical_cpu_count()
+        assert isinstance(n, int) and 1 <= n <= runtime.cpu_count()
+
+    def test_result_is_memoized(self, monkeypatch):
+        monkeypatch.setattr(runtime, "_PHYSICAL_CORES", 7)
+        assert runtime.physical_cpu_count() == 7
+
+    def test_falls_back_to_logical_when_probe_fails(self, monkeypatch):
+        monkeypatch.setattr(runtime, "_PHYSICAL_CORES", None)
+        monkeypatch.setattr(runtime, "cpu_count", lambda: 12)
+        monkeypatch.setattr(runtime, "_physical_windows", lambda: None)
+        monkeypatch.setattr(sys, "platform", "win32")
+        assert runtime.physical_cpu_count() == 12
+
+    def test_absurd_probe_value_falls_back(self, monkeypatch):
+        """A probe that reports more cores than threads is wrong: ignore it."""
+        monkeypatch.setattr(runtime, "_PHYSICAL_CORES", None)
+        monkeypatch.setattr(runtime, "cpu_count", lambda: 4)
+        monkeypatch.setattr(runtime, "_physical_windows", lambda: 99)
+        monkeypatch.setattr(sys, "platform", "win32")
+        assert runtime.physical_cpu_count() == 4
+
+
+class TestAutoWorkersPhysicalBase:
+    """`auto_workers` must be derived from the physical cores (no hardcoded
+    per-kind cap that silently under-uses a bigger machine)."""
+
+    @staticmethod
+    def _pin(monkeypatch, cores, avail_gib=64, hdd=False):
+        monkeypatch.setattr(runtime, "physical_cpu_count", lambda: cores)
+        monkeypatch.setattr(runtime, "memory_available_bytes",
+                            lambda: avail_gib * 1024 ** 3)
+        monkeypatch.setattr(runtime, "disk_is_rotational", lambda p: hdd)
+
+    def test_cpu_bound_kinds_default_to_the_core_count(self, monkeypatch):
+        self._pin(monkeypatch, 6)
+        for kind in ("encode", "decode", "tlg", "compress"):
+            assert runtime.auto_workers(kind) == 6
+
+    def test_io_bound_kinds_may_oversubscribe(self, monkeypatch):
+        self._pin(monkeypatch, 6)
+        assert runtime.auto_workers("decrypt") == 6
+        assert runtime.auto_workers("png") == 6
+        assert runtime.auto_workers("clean") == 6
+        assert runtime.auto_workers("qc") == 6
+        assert runtime.auto_workers("probe") == 12
+        assert runtime.auto_workers("copy") == 14
+
+    def test_a_bigger_machine_gets_more_workers(self, monkeypatch):
+        """The whole point: no absolute cap ties the default to one machine."""
+        self._pin(monkeypatch, 8)
+        small = runtime.auto_workers("encode")
+        self._pin(monkeypatch, 32)
+        big = runtime.auto_workers("encode")
+        assert big > small == 8 and big == 32
+
+    def test_hdd_halves_the_cpu_bound_kinds(self, monkeypatch):
+        self._pin(monkeypatch, 8, hdd=True)
+        assert runtime.auto_workers("encode") == 4
+        assert runtime.auto_workers("decode") == 4
+        assert runtime.auto_workers("compress") == 8      # threads, not disk I/O
+
+    def test_ram_only_truncates_when_workers_do_not_fit(self, monkeypatch):
+        # 512 MiB free / 256 MiB per ffmpeg process = 2 workers, not 16
+        self._pin(monkeypatch, 16, avail_gib=0.5)
+        assert runtime.auto_workers("encode") == 2
+        # in-process decodes are lighter (128 MiB each)
+        assert runtime.auto_workers("decode") == 4
+
+    def test_ram_failure_is_not_a_cap(self, monkeypatch):
+        self._pin(monkeypatch, 16)
+        monkeypatch.setattr(runtime, "memory_available_bytes", lambda: None)
+        assert runtime.auto_workers("encode") == 16
+
+    def test_env_override_is_clamped_by_the_ceiling(self, monkeypatch):
+        self._pin(monkeypatch, 4)
+        monkeypatch.setenv("GT_WORKERS", "9999")
+        assert runtime.auto_workers("encode") == runtime.worker_ceiling()
+        assert runtime.worker_ceiling() >= runtime.MAX_WORKERS
+
+    def test_ceiling_grows_with_the_machine(self, monkeypatch):
+        self._pin(monkeypatch, 64)
+        assert runtime.worker_ceiling() == 256

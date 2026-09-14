@@ -25,8 +25,6 @@ from . import config, runtime
 
 log = logging.getLogger("rpgmaker.decrypt")
 
-DEFAULT_WORKERS = 8  # legacy fallback; None = auto-tuned (see runtime.py)
-
 
 def load_encryption_key(web_root):
     """Read encryptionKey from data/System.json -> bytes (16) or None."""

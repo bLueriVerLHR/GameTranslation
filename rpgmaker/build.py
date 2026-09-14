@@ -14,8 +14,6 @@ from . import config, runtime
 
 log = logging.getLogger("rpgmaker.build")
 
-DEFAULT_WORKERS = 6  # legacy fallback; None = auto-tuned (see runtime.py)
-
 
 def _copy_file(src, dst):
     shutil.copy2(src, dst)

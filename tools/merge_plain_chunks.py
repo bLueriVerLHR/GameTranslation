@@ -33,11 +33,7 @@ import plain_io  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpgmaker import cliutil  # noqa: E402
-
-# QC is CPU-ish and file-I/O bound per chunk; cap the worker pool so a huge
-# chunk count (hundreds of agent chunks) does not spawn unbounded threads
-# (review §4.2: parallelize the per-chunk QC, keep output order).
-MAX_QC_WORKERS = 8
+from rpgmaker import runtime  # noqa: E402
 
 KANA = japanese_utils.KANA
 UNCERTAIN = re.compile(r"【[^】]*\?[^】]*】")
@@ -166,7 +162,13 @@ def cmd(work_dir: Annotated[str, cliutil.Argument(
         return _process_chunk(chunks_dir, num)
 
     if len(nums) > 1:
-        with ThreadPoolExecutor(max_workers=min(MAX_QC_WORKERS, len(nums))) as ex:
+        # QC is CPU-ish and file-I/O bound per chunk; the pool follows the
+        # machine (physical cores, see rpgmaker/runtime.py) and stays capped by
+        # the chunk count, so hundreds of agent chunks cannot spawn unbounded
+        # threads (review §4.2: parallelize the per-chunk QC, keep output
+        # order).
+        workers = min(runtime.auto_workers("qc", path=chunks_dir), len(nums))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
             results = list(ex.map(run, nums))
     else:
         results = [run(n) for n in nums]

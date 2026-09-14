@@ -29,14 +29,14 @@ import shutil
 import sys
 import tempfile
 import time
-from typing import Annotated
+from typing import Annotated, Optional
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 # Repo root for the packages, tools dir for the sibling helpers.
 sys.path.append(os.path.dirname(_HERE))
 from kirikiri.xp3tool import extract_segment, open_xp3  # noqa: E402
-from rpgmaker import cliutil, media  # noqa: E402
+from rpgmaker import cliutil, media, runtime  # noqa: E402
 
 log = logging.getLogger("transcode_video")
 
@@ -95,12 +95,15 @@ def cmd(xp3: Annotated[str, cliutil.Argument(help="xp3 archive holding the movie
             "--crf", help="VP9 constant-quality level (lower = better/bigger)")] = 32,
         cpu_used: Annotated[int, cliutil.Option(
             "--cpu-used", help="VP9 speed 0-8 (lower = slower/smaller)")] = 4,
-        jobs: Annotated[int, cliutil.Option(
-            "--jobs", help="videos encoded in parallel")] = 3,
+        jobs: Annotated[Optional[int], cliutil.Option(
+            "--jobs", help="videos encoded in parallel (default: half the "
+                    "physical cores, because each VP9 encoder is itself "
+                    "multi-threaded)")] = None,
         verbose: cliutil.Verbose = False,
         quiet: cliutil.Quiet = False,
         log_file: cliutil.LogFile = None) -> int:
     cliutil.setup_logging(verbose, quiet, log_file)
+    jobs = runtime.resolve_workers("video", jobs, path=out)
 
     entries = [e for e in open_xp3(xp3) if e["name"].lower().endswith(VIDEO_EXT)]
     os.makedirs(out, exist_ok=True)

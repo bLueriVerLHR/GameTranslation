@@ -650,7 +650,8 @@ _以下为当时（错误）的记录：_
   终止于 **某个宏文件里的一个 `text` 标签**，之后再无任何标签，且
   `is_wait=false`、`nextOrder()` 手调不动 —— 形态像异常从 `startTag`
   冒出（此版本 Tyrano 自带的 try/catch 被注释掉了）。**异常本身尚未抓到，
-  此项未完成**；排查脚本在 `.tmp/trail_story.py`、`.tmp/catch_tag_error.py`。
+  此项未完成**；排查脚本在 `.tmp/archive/scripts/diag/trail_story.py`、
+`.tmp/archive/scripts/diag/catch_tag_error.py`。
 
 ### 3.1 点击推进被浮动层截断（已修）
 

@@ -395,6 +395,15 @@ def _export_globals(js_text):
     Re-declaring the top-level names on `window` makes them reachable from
     [eval] expressions (embScript resolves unqualified names through the
     scope chain up to the global object).
+
+    Function declarations need this even more than `var`: `function Foo() {}`
+    inside Tyrano's eval() creates a *local* binding in evalScript's scope, so
+    a later `[if exp="Foo(x)==1"]` would silently resolve to something else
+    (measured: the game's per-character voice check was shadowed by the
+    runtime shim's 0-returning fallback stub, which muted every dialogue
+    voice).  The declaration regex must therefore accept the two common
+    brace styles -- `function f() {` and `function f()\n{` -- because games
+    are split roughly evenly between them.
     """
     names = []
     depth = 0
@@ -402,7 +411,12 @@ def _export_globals(js_text):
         m = re.match(r"^\s*var\s+([A-Za-z_][A-Za-z0-9_]*)\s*=", line)
         if m and depth == 0 and m.group(1) not in names:
             names.append(m.group(1))
-        m = re.match(r"^\s*function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\s*\{", line)
+        # No `\s*\{` at the end: the opening brace may be on the next line
+        # (`function f(a)\n{`), which is how this corpus writes it.  A named
+        # function declaration is unambiguous without it, and the lines it
+        # spans are counted by the depth tracker below, so a nested
+        # declaration is still skipped.
+        m = re.match(r"^\s*function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)", line)
         if m and depth == 0 and m.group(1) not in names:
             names.append(m.group(1))
         depth += line.count("{") - line.count("}")

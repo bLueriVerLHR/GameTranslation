@@ -261,6 +261,36 @@ class TestExportGlobals:
         out = ck._export_globals("function AnimeData() {\n}\n")
         assert "window.AnimeData = AnimeData;" in out
 
+    def test_function_exported_with_brace_on_the_next_line(self):
+        """Regression: this corpus writes `function f(a)\n{` and those
+        declarations were skipped, so the engine's eval scoped them locally
+        and the global lookup silently fell through to the runtime shim's
+        fallback stub (measured: every dialogue voice was muted because the
+        game's CharVoiceFlgCheck was shadowed by a stub returning 0)."""
+        src = ("function CharVoiceNumGet(vo_name)\n"
+               "{\n"
+               "\tvar ret;\n"
+               "\tret = 0;\n"
+               "\treturn ret;\n"
+               "}\n")
+        out = ck._export_globals(src)
+        assert "window.CharVoiceNumGet = CharVoiceNumGet;" in out
+
+    def test_nested_function_is_not_exported(self):
+        src = ("function Outer()\n"
+               "{\n"
+               "  function Inner() { return 1; }\n"
+               "  return Inner();\n"
+               "}\n")
+        out = ck._export_globals(src)
+        assert "window.Outer = Outer;" in out
+        assert "Inner" not in out.split("window.Outer")[-1]
+
+    def test_anonymous_function_expression_is_not_exported(self):
+        out = ck._export_globals("var f = function (x) { return x; };\n")
+        assert "window.f = f;" in out
+        assert "window.function" not in out
+
     def test_no_export_when_none(self):
         assert ck._export_globals("var i = 0;\nfor (i = 0; i < 3; i++) {}\n") is not None
 

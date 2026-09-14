@@ -153,13 +153,20 @@ docs/table/
 - **合并前必须通过检查（mandatory）**：
   1. 卫生门禁（见上节第一条）：`tests/test_repo_hygiene.py` 全绿；
   2. `python -m py_compile` 所有改动的 `.py`（工具可运行）；
-  3. 文档一致性：`python tools/check_docs.py`（README 目录树与仓库文件
+  3. **lint**：`<venv-python> -m ruff check .` 全绿（规则钉在
+     `pyproject.toml`：只有定位缺陷的 F/E9，不选风格类；`tests/test_lint.py`
+     会把同一命令当门禁跑，未装 ruff 则跳过）；
+  4. 文档一致性：`python tools/check_docs.py`（README 目录树与仓库文件
      同步）、文档语言为中文；
-  4. **单元测试（mandatory，2026-08 定案）**：新功能/新工具必须写单元
+  5. **单元测试（mandatory，2026-08 定案）**：新功能/新工具必须写单元
      测试（`tests/`，pytest），**正例、反例、边缘情况都要覆盖**，提交前
      全绿——venv 解释器按平台取 `.venv/bin/python`（POSIX）或
      `.venv\Scripts\python.exe`（Windows），命令形如
-     `<venv-python> -m pytest tests/`。
+     `<venv-python> -m pytest tests/`（默认 `-n auto` 并行，`-n 0` 串行）。
+- **既有约定单点维护（改代码前先看这两处）**：命令行与日志有唯一入口——
+  新工具直接照 `rpgmaker/cliutil.py` 文档串的模板写（Typer + `main(argv=None)`，
+  不再用 argparse），日志只用 `rpgmaker/logsetup.py`；外部程序/包也各有唯一
+  入口（见「功能优先用现成包」表），不得另起一套。
 - 提交信息主要用中文描述，但不得含游戏名与敏感词。
 
 ## 语言规则（mandatory）

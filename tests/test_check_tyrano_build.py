@@ -134,3 +134,35 @@ def test_snap_without_artvis_is_not_judged_offscreen():
     s = snap()
     s["imgs"] = [{"src": "bgimage/z_t001a.png", "rect": [0, 0, 1024, 768], "z": 10}]
     assert G.judge(s) == []
+
+
+def test_cdp_helper_dir_prefers_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("VISUAL_CHECK_SCRIPTS", str(tmp_path))
+    assert G.cdp_helper_dir() == str(tmp_path)
+
+
+def test_cdp_helper_dir_has_no_machine_path(monkeypatch):
+    """No personal/absolute path may be baked in: without the env var the
+    resolver either finds the repo-local tools/cdp or reports nothing."""
+    monkeypatch.delenv("VISUAL_CHECK_SCRIPTS", raising=False)
+    resolved = G.cdp_helper_dir()
+    assert resolved is None or resolved.startswith(
+        str(Path(G.__file__).resolve().parent))
+
+
+def test_load_cdp_reports_a_missing_helper(monkeypatch, tmp_path):
+    """A missing helper must be an actionable error, not an ImportError or a
+    path that only exists on the author's machine."""
+    monkeypatch.setenv("VISUAL_CHECK_SCRIPTS", str(tmp_path))
+    with pytest.raises(SystemExit) as ei:
+        G.load_cdp()
+    msg = str(ei.value)
+    assert "cdp_shot.py" in msg
+    assert "VISUAL_CHECK_SCRIPTS" in msg
+
+
+def test_load_cdp_imports_from_the_env_dir(monkeypatch, tmp_path):
+    (tmp_path / "cdp_shot.py").write_text("MARK = 'loaded'\n", encoding="utf-8")
+    monkeypatch.setenv("VISUAL_CHECK_SCRIPTS", str(tmp_path))
+    monkeypatch.delitem(sys.modules, "cdp_shot", raising=False)
+    assert G.load_cdp().MARK == "loaded"

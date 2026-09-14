@@ -19,18 +19,21 @@ invariants that kept regressing between automated checks and play-testing:
 Usage:
     python tools/check_tyrano_build.py --port 9390 --states 30 [--json]
 Start the build first (`tyrano/pipeline.py serve <dir> --port ...`) and launch a
-browser with a remote-debugging port. The CDP client comes from the visual-check
-skill; set VISUAL_CHECK_SCRIPTS if it lives elsewhere.
+browser with a remote-debugging port.  The CDP client (cdp_shot.py) is an
+optional dependency: it is looked up in $VISUAL_CHECK_SCRIPTS first, then in
+a repo-local tools/cdp/.  No machine path is ever embedded here, and a
+missing helper is reported instead of failing obscurely.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 import time
 
-DEFAULT_SKILL = r"C:\Users\blur\.pi\agent\skills\visual-check\scripts"
+log = logging.getLogger("check_tyrano_build")
 
 SKIP_JS = r"""JSON.stringify((function(){var b=document.getElementById('tyrano_base');
  var g=b?b.getBoundingClientRect():null;var s=Math.min(innerWidth/1024,innerHeight/768);
@@ -166,16 +169,39 @@ def judge(snap):
     return notes
 
 
+def cdp_helper_dir():
+    """Directory that holds the external `cdp_shot.py` CDP helper, or None.
+
+    $VISUAL_CHECK_SCRIPTS wins (an installed visual-check skill, wherever it
+    lives); otherwise a repo-local tools/cdp/ is used.  A per-machine path
+    must never be baked into this file - it leaks the author's home layout
+    and breaks every other checkout.
+    """
+    env = os.environ.get("VISUAL_CHECK_SCRIPTS")
+    if env:
+        return env
+    local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cdp")
+    return local if os.path.isdir(local) else None
+
+
 def load_cdp():
-    scripts = os.environ.get("VISUAL_CHECK_SCRIPTS", DEFAULT_SKILL)
+    scripts = cdp_helper_dir()
+    found = scripts and os.path.isfile(os.path.join(scripts, "cdp_shot.py"))
+    if not found:
+        raise SystemExit(
+            "error: the CDP helper (cdp_shot.py) is not available.\n"
+            "  looked in: %s\n"
+            "  set VISUAL_CHECK_SCRIPTS to the directory that holds it "
+            "(a visual-check skill's scripts/ dir), or drop it in "
+            "tools/cdp/ - this gate needs it to read the page over CDP."
+            % (scripts or "<none>"))
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
     try:
         import cdp_shot
     except ImportError as exc:  # pragma: no cover - environment dependent
-        raise SystemExit(
-            "error: cannot import the CDP helper (cdp_shot.py): %s\n"
-            "set VISUAL_CHECK_SCRIPTS to the directory holding it" % exc)
+        raise SystemExit("error: cannot import cdp_shot from %s: %s"
+                         % (scripts, exc))
     return cdp_shot
 
 
@@ -214,6 +240,10 @@ def run(port, states, shots_dir):
         try:
             snap = json.loads(cdp.eval_js(SNAP_JS))
         except Exception as exc:
+            # Locate the failure: which state, and on which page/port.
+            log.error("state %d/%d: page probe failed on port %s: %s: %s "
+                      "- stopping the run here (states seen=%d)",
+                      i, states, port, type(exc).__name__, exc, seen)
             print("  [%02d] probe failed: %s" % (i, str(exc)[:60]))
             break
         seen = i + 1
@@ -242,7 +272,12 @@ def main(argv=None):
     ap.add_argument("--shots", default=None, metavar="DIR",
                     help="save a screenshot for every failing state")
     ap.add_argument("--json", action="store_true", help="machine-readable result")
+    ap.add_argument("-v", "--verbose", action="store_true",
+                    help="DEBUG diagnostics (per-state probes)")
     args = ap.parse_args(argv)
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s")
     fails, seen = run(args.port, args.states, args.shots)
     if args.json:
         print(json.dumps({"states": seen, "failures": fails}, ensure_ascii=False, indent=2))

@@ -24,7 +24,6 @@ branch in transcode_one().  A strategy returns only its encoder-specific
 args; the fixed prefix (`-map 0:a:0`), the loop-tag metadata and the temp
 file/atomic replace live in transcode_one alone.
 """
-import asyncio
 import csv
 import json
 import logging
@@ -198,7 +197,6 @@ def probe_all(web_root, workers=None, sample=None):
     files = list(iter_audio_files(web_root))
     if sample:
         files = files[:sample]
-    results = {}
 
     def work(path):
         rel = os.path.relpath(path, web_root)
@@ -206,14 +204,11 @@ def probe_all(web_root, workers=None, sample=None):
         info["fsize"] = os.path.getsize(path)
         return rel, info
 
-    async def _run():
-        loop = asyncio.get_running_loop()
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            pairs = await asyncio.gather(
-                *(loop.run_in_executor(ex, work, p) for p in files))
-        return dict(pairs)
-
-    results = asyncio.run(_run())
+    # ex.map keeps input order (which the asyncio.gather version also did),
+    # so the log lines and the returned mapping are unchanged.
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        pairs = list(ex.map(work, files))
+    results = dict(pairs)
     log.info("probed %d audio files", len(results))
     return results
 
@@ -222,7 +217,7 @@ def reencode_all(web_root, infos, workers=None):
     """Transcode using pre-probed info. Returns dict of counts + bytes saved.
 
     ffmpeg runs are heavyweight subprocesses; a modest thread pool keeps the
-    CPU/disk busy without thrashing, and asyncio awaits them all at once.
+    CPU/disk busy without thrashing.
     `workers=None` auto-tunes from the machine (see runtime.py).
     """
     workers = runtime.resolve_workers("encode", workers, path=web_root)
@@ -240,20 +235,15 @@ def reencode_all(web_root, infos, workers=None):
         path = os.path.join(web_root, rel)
         return transcode_one(ffmpeg, path, info)
 
-    async def _run():
-        nonlocal saved, done
-        loop = asyncio.get_running_loop()
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            results = await asyncio.gather(
-                *(loop.run_in_executor(ex, work, item) for item in infos.items()))
-        for path, status, saved_bytes in results:
-            counts[status] = counts.get(status, 0) + 1
-            saved += saved_bytes
-            done += 1
-            if done % 500 == 0 or done == total:
-                log.info("...%d/%d", done, total)
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        results = list(ex.map(work, infos.items()))
+    for path, status, saved_bytes in results:
+        counts[status] = counts.get(status, 0) + 1
+        saved += saved_bytes
+        done += 1
+        if done % 500 == 0 or done == total:
+            log.info("...%d/%d", done, total)
 
-    asyncio.run(_run())
     log.info("audio: %s, saved %.1f MB", dict(counts), saved / 1e6)
     return counts, saved
 

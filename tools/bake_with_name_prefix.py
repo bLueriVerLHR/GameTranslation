@@ -26,8 +26,11 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import bake_translation as B
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
+sys.path.insert(0, _HERE)                   # sibling tools
+import bake_translation as B  # noqa: E402
+from rpgmaker import logsetup  # noqa: E402
 
 log = logging.getLogger("bake-prefix")
 
@@ -57,7 +60,7 @@ def exact(s, D):
 
 
 def main():
-    logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(message)s")
+    logsetup.setup()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("game_dir")
     ap.add_argument("out_dir")

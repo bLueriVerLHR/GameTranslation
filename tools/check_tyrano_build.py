@@ -33,6 +33,11 @@ import os
 import sys
 import time
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
+sys.path.insert(0, _HERE)                   # sibling tools
+from rpgmaker import logsetup  # noqa: E402
+
 log = logging.getLogger("check_tyrano_build")
 
 SKIP_JS = r"""JSON.stringify((function(){var b=document.getElementById('tyrano_base');
@@ -275,9 +280,7 @@ def main(argv=None):
     ap.add_argument("-v", "--verbose", action="store_true",
                     help="DEBUG diagnostics (per-state probes)")
     args = ap.parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s")
+    logsetup.setup(verbose=args.verbose)
     fails, seen = run(args.port, args.states, args.shots)
     if args.json:
         print(json.dumps({"states": seen, "failures": fails}, ensure_ascii=False, indent=2))

@@ -179,6 +179,16 @@ docs/table/
   `INFO` 写阶段与结果（文件数、键数、命中数），`WARN` 写可恢复异常
   （重试后成功、推测性跳过），`ERROR` 写失败。默认只显示 INFO 及以上，
   `--verbose`/`-v` 开 DEBUG。
+- **配置只在一个地方**：`rpgmaker/logsetup.py` 的 `setup(verbose=...)`
+  （时间戳+等级+logger 名，并顺带把控制台流改成 UTF-8 `replace`，否则
+  Windows 上重定向输出遇到 CJK 会 UnicodeEncodeError 而中断）。**只能从
+  `main()` 调用，绝不能在 import 期配置**——import 期调用会改写整个进程
+  （含 pytest 会话）的 root logger，并让后续配置静默失效。例外：**6 个可从
+  自身目录直接运行的模块**（`kirikiri/xp3tool.py`、`kirikiri/xp3pack.py`、
+  `tyrano/build.py`、`tyrano/clean.py`、`tyrano/autoplay.py`、
+  `wolfrpg/dxarchive.py`；另 `unity/rmunite/extract_game.py`）保留本地
+  两行配置，因为那时仓库根不在 `sys.path` 上。
+- **调试与日志**
 - **日志必须带定位信息**：文件路径（相对路径即可）、行号/偏移（用
   `文件名:行号` 或 `文件名:0x偏移` 格式）、可重试的具体原因，不写
   "Failed to read" 这种无法定位的裸报错。
@@ -544,7 +554,7 @@ RPG Maker 流水线。下述为桌面翻译路线；手机转换另见
   | 媒体探测/解码检查 | `rpgmaker/media.py` | `av`（PyAV）——**不再需要 ffprobe** |
   | CLI | `rpgmaker/cli.py`（两个入口的包装 `pipeline.py` / `tyrano/pipeline.py`） | `typer` |
   | 外部进程执行 | `rpgmaker/proctools.py` | 标准库 `subprocess`（超时 + UTF-8 + 统一失败信息） |
-  | 日志配置 | `rpgmaker/logsetup.py` | 标准库 `logging` |
+  | 日志配置 | `rpgmaker/logsetup.py`（唯一入口，只能从 `main()` 调用） | 标准库 `logging` |
   | 测试 | `tests/` | `pytest` + `pytest-xdist`（默认 `-n auto`）+ `pytest-cov` |
 
   新代码**不得**再自己拼 ffprobe/7z 的 argv、解它们的 stdout、或写第二

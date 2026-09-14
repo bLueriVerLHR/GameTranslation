@@ -2,11 +2,9 @@
 # -*- coding: utf-8 -*-
 """Build the JoiPlay folder: copy only the web files, skip NW.js runtime + junk.
 
-Copies run in parallel: one thread per web dir + one pool for root files,
-orchestrated by asyncio, so the build is I/O-bound on disk bandwidth instead
-of a single-threaded walk.
+Copies run in parallel: one thread per web dir + one pool for root files, so the
+build is I/O-bound on disk bandwidth instead of a single-threaded walk.
 """
-import asyncio
 import logging
 import os
 import shutil
@@ -24,9 +22,8 @@ def _copy_file(src, dst):
     return dst
 
 
-async def _copy_many(web_root, dst, dirs, root_files, workers):
+def _copy_many(web_root, dst, dirs, root_files, workers):
     """Copy `dirs` (whole trees) + `root_files` (single files) in parallel."""
-    loop = asyncio.get_running_loop()
     ignores = shutil.ignore_patterns(*config.NWJS_RUNTIME)
     jobs = []
     for d in dirs:
@@ -43,7 +40,7 @@ async def _copy_many(web_root, dst, dirs, root_files, workers):
     if not jobs:
         return
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        await asyncio.gather(*(loop.run_in_executor(ex, j) for j in jobs))
+        list(ex.map(lambda j: j(), jobs))
 
 
 def build_joiplay(web_root, dst, keep_movies=True, workers=None):
@@ -62,7 +59,7 @@ def build_joiplay(web_root, dst, keep_movies=True, workers=None):
         if fn not in config.NWJS_RUNTIME
         and os.path.isfile(os.path.join(web_root, fn))
     ]
-    asyncio.run(_copy_many(web_root, dst, dirs, root_files, workers))
+    _copy_many(web_root, dst, dirs, root_files, workers)
     log.info("copied %d root files", len(root_files))
     for d in dirs:
         dst_dir = os.path.join(dst, d)

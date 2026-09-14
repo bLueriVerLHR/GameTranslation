@@ -29,8 +29,11 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
+sys.path.insert(0, _HERE)                   # sibling tools: plain_io
 import plain_io  # noqa: E402
+from rpgmaker import logsetup  # noqa: E402
 
 log = logging.getLogger("unlock_gallery")
 
@@ -238,7 +241,7 @@ def main(argv=None):
     ap.add_argument("--plugin", default="GalleryUnlock", help="plugin file name")
     args = ap.parse_args(argv)
 
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logsetup.setup()
     root = os.path.abspath(args.web_root)
     if not os.path.isfile(os.path.join(root, "index.html")):
         sys.exit("not a web root: %s" % root)

@@ -17,18 +17,18 @@ Chunks are processed IN ORDER: chunk N's context file ends with a carry-over
 of the last dialogue lines of chunk N-1, so a linear scene keeps continuity
 even when split across chunks.
 """
-import argparse
 import json
 import logging
 import os
 import re
 import sys
+from typing import Annotated
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
 sys.path.insert(0, _HERE)                   # sibling tools
 import plain_io  # noqa: E402
-from rpgmaker import logsetup  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 # Single source for the game-owner tone policy (NEUTRAL_TONE + <work>/tone.md):
 # the full-flow and completion shard generators must never drift apart, and a
 # game's tone must never be hardcoded in a tool (docs/translation.md §3).
@@ -79,31 +79,32 @@ RULES = """## Rules (batch-append contract, mandatory)
 """
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("work_dir")
-    ap.add_argument("--max-chars", type=int, default=11000,
-                     help="cap each chunk by total key char length (default "
-                          "11000; the proven batch-append size under the 90 KB "
-                          "context budget)")
-    ap.add_argument("--dict", default="",
-                    help="MTool/AI translation dict (root <title>.json) for the "
-                         "terminology glossary; optional, auto-detected from "
-                         "template.json keys otherwise")
-    ap.add_argument("--window", type=int, default=2,
-                    help="context window radius around each key (default 2; "
-                         "use 1 to shrink context.md when it exceeds the "
-                         "~90 KB budget)")
-    ap.add_argument("--truncate", type=int, default=45,
-                    help="max chars per context transcript line (default 45)")
-    ap.add_argument("--tone", default="",
-                    help="tone/character block file (default: <work>/tone.md; "
-                         "a neutral fallback is used when absent)")
-    ap.add_argument("-v", "--verbose", action="store_true")
-    args = ap.parse_args()
-    logsetup.setup(verbose=args.verbose)
+def cmd(work_dir: Annotated[str, cliutil.Argument(
+            help="translation work dir (template.json inside it)")],
+        max_chars: Annotated[int, cliutil.Option(
+            "--max-chars", help="cap each chunk by total key char length "
+            "(default 11000; the proven batch-append size under the 90 KB "
+            "context budget)")] = 11000,
+        mtool_dict: Annotated[str, cliutil.Option(
+            "--dict", help="MTool/AI translation dict (root <title>.json) for "
+            "the terminology glossary; optional, auto-detected from "
+            "template.json keys otherwise")] = "",
+        window: Annotated[int, cliutil.Option(
+            "--window", help="context window radius around each key (default "
+            "2; use 1 to shrink context.md when it exceeds the ~90 KB "
+            "budget)")] = 2,
+        truncate: Annotated[int, cliutil.Option(
+            "--truncate", help="max chars per context transcript line "
+            "(default 45)")] = 45,
+        tone: Annotated[str, cliutil.Option(
+            "--tone", help="tone/character block file (default: <work>/tone.md; "
+            "a neutral fallback is used when absent)")] = "",
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    work = os.path.abspath(args.work_dir)
+    work = os.path.abspath(work_dir)
     chunks_dir = os.path.join(work, "chunks")
     os.makedirs(chunks_dir, exist_ok=True)
 
@@ -113,14 +114,14 @@ def main():
     ordered = list(tmpl.keys())          # already in story order
 
     D = {}
-    if args.dict and os.path.exists(args.dict):
-        D = plain_io.load_json(args.dict)
-    elif args.dict:
+    if mtool_dict and os.path.exists(mtool_dict):
+        D = plain_io.load_json(mtool_dict)
+    elif mtool_dict:
         log.warning("translation dict not found, glossary stays empty: %s",
-                    args.dict)
+                    mtool_dict)
 
-    if args.tone:
-        with open(args.tone, encoding="utf-8-sig") as f:
+    if tone:
+        with open(tone, encoding="utf-8-sig") as f:
             tone = f.read().strip() + "\n"
     else:
         tone = load_tone(work)
@@ -144,7 +145,7 @@ def main():
     chunks = []
     cur, cur_size = [], 0
     for k in ordered:
-        if cur and cur_size + len(k) > args.max_chars:
+        if cur and cur_size + len(k) > max_chars:
             chunks.append(cur)
             cur, cur_size = [], 0
         cur.append(k)
@@ -208,7 +209,7 @@ def main():
             lines += [""]
         lines += ["## Scene transcript (dialogue in story order; [K] = key to translate; | = context line)", ""]
         last_win = []
-        win_cap = 2 * args.window + 1
+        win_cap = 2 * window + 1
         for k in keys:
             info = ctx.get(k, {})
             where = info.get("where", "")
@@ -216,7 +217,7 @@ def main():
             lines.append("[K] %s   <= %s" % (k, where))
             for w in win:
                 if w != k and w not in last_win:
-                    lines.append("  | %s" % (w[:args.truncate]))
+                    lines.append("  | %s" % (w[:truncate]))
             last_win = [w for w in win if w != k]
         with open(base + ".context.md", "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
@@ -226,7 +227,15 @@ def main():
         maps = plain_io.load_json(os.path.join(chunks_dir, "chunk_%02d.meta.json" % n))["maps"]
         print("chunk_%02d: %d keys, %d chars, maps=%s"
               % (n, len(keys), sum(len(k) for k in keys), maps[:3]))
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="gen_completion_shards.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

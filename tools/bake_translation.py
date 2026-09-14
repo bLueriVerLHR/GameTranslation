@@ -33,7 +33,6 @@ Usage:
   --no-kv    do not write translation_kv.json into out_dir (default: written)
 """
 
-import argparse
 import glob
 import json
 import logging
@@ -43,6 +42,8 @@ import shutil
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from typing import Annotated, Optional
+
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -51,7 +52,7 @@ import plain_io  # noqa: E402
 import plugins_io  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
-from rpgmaker import config, logsetup  # noqa: E402
+from rpgmaker import cliutil, config  # noqa: E402
 from translate_rpgmaker import (  # noqa: E402
     apply_font_policy, clear_encryption_flags, decrypt_dir,
 )
@@ -566,51 +567,53 @@ def translate_data(root, D, write=True, workers=None):
         _report_name_refs(refs, event_names)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    logsetup.add_verbose(ap)
-    ap.add_argument("game_dir")
-    ap.add_argument("out_dir")
-    ap.add_argument("--trs", required=True, help="filled template JSON")
-    ap.add_argument("--glossary", default="", help="name overrides JSON")
-    ap.add_argument("--min-coverage", type=float, default=DEFAULT_MIN_COVERAGE,
-                    help="refuse to bake below this coverage (default %(default)s)")
-    ap.add_argument("--force", action="store_true",
-                    help="bake anyway when coverage is below --min-coverage")
-    ap.add_argument("--no-kv", action="store_true",
-                    help="do not write translation_kv.json")
-    ap.add_argument("--workers", type=int, default=None,
-                    help="parallel data-file workers for the bake pass "
-                         "(default: single-threaded; >1 translates the data "
-                         "files concurrently - output is identical, only the "
-                         "coverage totals are accumulated per worker)")
-    ap.add_argument("--cjk-font", default="",
-                    help="CJK ttf to bundle (MV: gamefont.css split; MZ: "
-                         "swap the main @font-face src). Default: resolved "
-                         "via CJK_FONT_PATH / docs/table/local_font_path.txt "
-                         "/ auto-discovery of docs/table/fonts/")
-    ap.add_argument("--jp-font", default="",
-                    help="Japanese fallback font for kana/JP punctuation "
-                         "(second line of docs/table/local_font_path.txt, "
-                         "JP_FONT_PATH, or auto-discovery of docs/table/"
-                         "fonts/; default: the game's original font)")
-    args = ap.parse_args()
-    logsetup.setup(verbose=args.verbose)
-    if not args.cjk_font:
-        args.cjk_font = config.find_cjk_font() or ""
-    if not args.jp_font:
-        args.jp_font = config.find_jp_font() or ""
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game directory")],
+        out_dir: Annotated[str, cliutil.Argument(help="baked output directory")],
+        trs: Annotated[str, cliutil.Option("--trs", help="filled template JSON")],
+        glossary: Annotated[str, cliutil.Option(
+            "--glossary", help="name overrides JSON")] = "",
+        min_coverage: Annotated[float, cliutil.Option(
+            "--min-coverage", help="refuse to bake below this coverage "
+            "(default %s)" % DEFAULT_MIN_COVERAGE)] = DEFAULT_MIN_COVERAGE,
+        force: Annotated[bool, cliutil.Option(
+            "--force", help="bake anyway when coverage is below "
+            "--min-coverage")] = False,
+        no_kv: Annotated[bool, cliutil.Option(
+            "--no-kv", help="do not write translation_kv.json")] = False,
+        workers: Annotated[Optional[int], cliutil.Option(
+            "--workers", help="parallel data-file workers for the bake pass "
+            "(default: single-threaded; >1 translates the data files "
+            "concurrently - output is identical, only the coverage totals "
+            "are accumulated per worker)")] = None,
+        cjk_font: Annotated[str, cliutil.Option(
+            "--cjk-font", help="CJK ttf to bundle (MV: gamefont.css split; MZ: "
+            "swap the main @font-face src). Default: resolved via "
+            "CJK_FONT_PATH / docs/table/local_font_path.txt / "
+            "auto-discovery of docs/table/fonts/")] = "",
+        jp_font: Annotated[str, cliutil.Option(
+            "--jp-font", help="Japanese fallback font for kana/JP punctuation "
+            "(second line of docs/table/local_font_path.txt, JP_FONT_PATH, "
+            "or auto-discovery of docs/table/fonts/; default: the game's "
+            "original font)")] = "",
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
+    if not cjk_font:
+        cjk_font = config.find_cjk_font() or ""
+    if not jp_font:
+        jp_font = config.find_jp_font() or ""
 
-    game_dir = os.path.abspath(args.game_dir)
-    out_dir = os.path.abspath(args.out_dir)
+    game_dir = os.path.abspath(game_dir)
+    out_dir = os.path.abspath(out_dir)
     if not os.path.isdir(game_dir):
-        sys.exit("game_dir not found: %s" % game_dir)
+        return cliutil.fail("game_dir not found: %s" % game_dir)
     if os.path.abspath(out_dir) == game_dir:
-        sys.exit("out_dir must differ from game_dir")
+        return cliutil.fail("out_dir must differ from game_dir")
 
-    D = plain_io.load_json(args.trs)
-    if args.glossary:
-        G = plain_io.load_json(args.glossary)
+    D = plain_io.load_json(trs)
+    if glossary:
+        G = plain_io.load_json(glossary)
         for k, v in G.items():
             if v and (k not in D or not D.get(k)):
                 D[k] = v
@@ -633,13 +636,13 @@ def main():
     # from scratch.  --force overrides for intentional phase-1 harvest bakes.
     if glob.glob(os.path.join(game_dir, "data", "*.json")):
         STATS.update(hit=0, miss=0)
-        translate_data(game_dir, D, write=False, workers=args.workers)
+        translate_data(game_dir, D, write=False, workers=workers)
         cov = coverage()
         if cov is not None:
             log.info("coverage: %d hit / %d missed = %.1f%%",
                      STATS["hit"], STATS["miss"], 100 * cov)
-            if cov < args.min_coverage and not args.force:
-                sys.exit(
+            if cov < min_coverage and not force:
+                return cliutil.fail(
                     "REFUSING to bake: coverage %.1f%% < %.0f%% (existing "
                     "translation file covers too little - the bake would leave "
                     "most of the game in Japanese and contaminate a later "
@@ -648,7 +651,7 @@ def main():
                     "<game_dir> <work> -> subagent chunks -> merge -> bake.\n"
                     "  To bake anyway (intentional partial harvest): --force.\n"
                     "  To adjust the threshold: --min-coverage N."
-                    % (100 * cov, 100 * args.min_coverage))
+                    % (100 * cov, 100 * min_coverage))
     else:
         log.info("no data/*.json in game_dir (encrypted data?) - coverage "
                  "check skipped; bake on the decrypted build for the gate")
@@ -659,19 +662,27 @@ def main():
     decrypt_dir(out_dir)
     clear_encryption_flags(out_dir)
     STATS.update(hit=0, miss=0)
-    translate_data(out_dir, D, write=True, workers=args.workers)
+    translate_data(out_dir, D, write=True, workers=workers)
     cov = coverage()
     if cov is not None:
         log.info("baked coverage: %d hit / %d missed = %.1f%%",
                  STATS["hit"], STATS["miss"], 100 * cov)
-    apply_font_policy(out_dir, args.cjk_font, args.jp_font)
-    if not args.no_kv:
+    apply_font_policy(out_dir, cjk_font, jp_font)
+    if not no_kv:
         kv_path = os.path.join(out_dir, "translation_kv.json")
         with open(kv_path, "w", encoding="utf-8") as f:
             json.dump(D, f, ensure_ascii=False, indent=1)
         log.info("archived translation KV -> %s", kv_path)
     log.info("done -> %s", out_dir)
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="bake_translation.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

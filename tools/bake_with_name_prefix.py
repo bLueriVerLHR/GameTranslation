@@ -19,18 +19,19 @@ Exact-match only - no fragment replacement, so no cross-branch pollution.
 Usage:
     python bake_with_name_prefix.py <game_dir> <out_dir> --trs dict.json
 """
-import argparse
 import json
 import logging
 import os
 import re
 import sys
+from typing import Annotated
+
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
 sys.path.insert(0, _HERE)                   # sibling tools
 import bake_translation as B  # noqa: E402
-from rpgmaker import logsetup  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("bake-prefix")
 
@@ -59,22 +60,23 @@ def exact(s, D):
     return None
 
 
-def main():
-    logsetup.setup()
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("game_dir")
-    ap.add_argument("out_dir")
-    ap.add_argument("--trs", required=True, help="MTool dict JSON ({jp: zh})")
-    args = ap.parse_args()
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game directory")],
+        out_dir: Annotated[str, cliutil.Argument(help="output directory")],
+        trs: Annotated[str, cliutil.Option(
+            "--trs", help="MTool dict JSON ({jp: zh})")],
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    game_dir = os.path.abspath(args.game_dir)
-    out_dir = os.path.abspath(args.out_dir)
+    game_dir = os.path.abspath(game_dir)
+    out_dir = os.path.abspath(out_dir)
     if not os.path.isdir(game_dir):
-        sys.exit("game_dir not found: %s" % game_dir)
+        return cliutil.fail("game_dir not found: %s" % game_dir)
     if os.path.abspath(out_dir) == game_dir:
-        sys.exit("out_dir must differ from game_dir")
+        return cliutil.fail("out_dir must differ from game_dir")
 
-    D = json.load(open(args.trs, encoding="utf-8"))
+    D = json.load(open(trs, encoding="utf-8"))
     log.info("loaded %d dict entries", len(D))
 
     log.info("copying %s -> %s", game_dir, out_dir)
@@ -90,7 +92,15 @@ def main():
     finally:
         B.exact = orig
     log.info("done -> %s", out_dir)
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="bake_with_name_prefix.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

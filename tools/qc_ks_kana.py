@@ -18,18 +18,19 @@ Usage:
     python3 tools/qc_ks_kana.py --values <translated.json>
 """
 
-import argparse
 import glob
 import json
 import logging
 import os
 import sys
+from typing import Annotated, Optional
+
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kirikiri.ks_extract import (KANA, display_text, iter_display_lines,  # noqa: E402
                                 load_ks, translatable)
 
-from rpgmaker import logsetup  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("qc_ks_kana")
 
@@ -73,31 +74,42 @@ def scan_values(translated_path):
     return len(trans), residual
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("-v", "--verbose", action="store_true")
-    ap.add_argument("--values", default=None, metavar="translated.json",
-                    help="check a dictionary's values instead of a tree")
-    ap.add_argument("target", nargs="?", help="scenario/patch directory")
-    args = ap.parse_args()
-
-    logsetup.setup(verbose=args.verbose)
-    if args.values:
-        total, residual = scan_values(args.values)
+def cmd(values: Annotated[Optional[str], cliutil.Option(
+            "--values", metavar="translated.json",
+            help="check a dictionary's values instead of a tree")] = None,
+        target: Annotated[Optional[str], cliutil.Argument(
+            help="scenario/patch directory")] = None,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Report kana left in a scenario tree (or in a dictionary's values)."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    if values:
+        total, residual = scan_values(values)
         log.info("values: %d entries, %d with kana", total, residual)
-    else:
-        if not args.target:
-            print("error: need a directory or --values", file=sys.stderr)
-            raise SystemExit(1)
-        total, residual = scan_tree(args.target)
-        log.info("%d translatable lines, %d kana residual (%.1f%%)",
-                 total, residual, 100.0 * residual / total if total else 0.0)
-        if residual:
-            log.info("residuals are real display text - check each one before "
-                     "translating: a hit inside target=\"*...\" would break a "
-                     "jump, and identifiers are never translated")
+        return 0
+    if not target:
+        return cliutil.fail("need a directory or --values")
+    total, residual = scan_tree(target)
+    log.info("%d translatable lines, %d kana residual (%.1f%%)",
+             total, residual, 100.0 * residual / total if total else 0.0)
+    if residual:
+        log.info("residuals are real display text - check each one before "
+                 "translating: a hit inside target=\"*...\" would break a "
+                 "jump, and identifiers are never translated")
+    return 0
+
+
+# --help prints the tool's full documentation: a single-command Typer app
+# shows the COMMAND docstring, so the module docstring is attached to it
+# (the argparse version printed the same text as its description).
+cmd.__doc__ = __doc__
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="qc_ks_kana.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -19,7 +19,6 @@ import os
 import shutil
 import sys
 
-import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
@@ -448,15 +447,15 @@ class TestMainCoverageGate:
         monkeypatch.setattr("sys.argv", argv)
         return bake.main()
 
-    def test_low_coverage_refused(self, tmp_path, monkeypatch):
+    def test_low_coverage_refused(self, tmp_path, monkeypatch, capsys):
         root = self._game_with_lines(tmp_path)
         out = str(tmp_path / "out")
         trs = str(tmp_path / "trs.json")
         # only 1 of 3 kana display lines covered -> 33% < 50%
         write_json(trs, {"こんにちは": "你好"})
-        with pytest.raises(SystemExit) as exc:
-            self._run_main(root, out, trs, monkeypatch=monkeypatch)
-        assert "REFUSING to bake" in str(exc.value)
+        code = self._run_main(root, out, trs, monkeypatch=monkeypatch)
+        assert code == 1
+        assert "REFUSING to bake" in capsys.readouterr().err
         assert not os.path.exists(out)
 
     def test_min_coverage_adjustable(self, tmp_path, monkeypatch):
@@ -465,9 +464,8 @@ class TestMainCoverageGate:
         trs = str(tmp_path / "trs.json")
         write_json(trs, {"こんにちは": "你好", "さようなら": "再见"})
         # 2/3 = 66% passes a 0.5 threshold but fails 0.8
-        with pytest.raises(SystemExit):
-            self._run_main(root, out, trs, "--min-coverage", "0.8",
-                           monkeypatch=monkeypatch)
+        assert self._run_main(root, out, trs, "--min-coverage", "0.8",
+                              monkeypatch=monkeypatch) == 1
         assert not os.path.exists(out)
 
     def test_force_overrides_refusal(self, tmp_path, monkeypatch):
@@ -593,13 +591,12 @@ class TestMainCoverageGate:
         warns = [r.message for r in caplog.records if r.levelno >= 30]
         assert not any("dangling name refs" in w for w in warns)
 
-    def test_out_dir_must_differ(self, tmp_path, monkeypatch):
+    def test_out_dir_must_differ(self, tmp_path, monkeypatch, capsys):
         root = str(tmp_path / "game")
         make_game(root, maps={"Map001.json": ("", [])})
         trs = str(tmp_path / "trs.json")
         write_json(trs, {})
         monkeypatch.setattr("sys.argv",
                             ["bake_translation.py", root, root, "--trs", trs])
-        with pytest.raises(SystemExit) as exc:
-            bake.main()
-        assert "must differ" in str(exc.value)
+        assert bake.main() == 1
+        assert "must differ" in capsys.readouterr().err

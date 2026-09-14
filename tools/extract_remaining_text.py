@@ -23,12 +23,13 @@ and JA-bearing js/plugins.js plugin parameter strings (kind "plugin",
 macros - control codes are substitution references, never translated; the
 referenced name is translated in the DB).
 """
-import argparse
 import collections
 import json
 import os
 import re
 import sys
+from typing import Annotated
+
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ctrl_codes  # noqa: E402
@@ -37,6 +38,9 @@ import plain_io  # noqa: E402
 import plugins_io  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 # A line that is ONLY control codes (e.g. \M[お], \V[5], \C[27]) is a lookup
 # reference or style switch, never display text - ExternMessage \M[ID] keys
@@ -284,16 +288,20 @@ def build_name_macros(data_dir):
     return macros
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("game_dir")
-    ap.add_argument("out_dir")
-    ap.add_argument("--no-plugins", action="store_true",
-                    help="skip js/plugins.js parameter text extraction")
-    args = ap.parse_args()
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
+        out_dir: Annotated[str, cliutil.Argument(
+            help="work folder to write the translation package into")],
+        no_plugins: Annotated[bool, cliutil.Option(
+            "--no-plugins",
+            help="skip js/plugins.js parameter text extraction")] = False,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Extract the remaining (untranslated) kana strings in story order."""
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    game_dir = os.path.abspath(args.game_dir)
-    out_dir = os.path.abspath(args.out_dir)
+    game_dir = os.path.abspath(game_dir)
+    out_dir = os.path.abspath(out_dir)
     data_dir = os.path.join(game_dir, "data")
     os.makedirs(out_dir, exist_ok=True)
 
@@ -378,7 +386,7 @@ def main():
         data = plain_io.load_json(os.path.join(data_dir, fname))
         process_db(data, col, fname)
 
-    if not args.no_plugins:
+    if not no_plugins:
         n = extract_plugin_text(game_dir, col)
         if n:
             log("plugin parameter text: %d strings" % n)
@@ -410,7 +418,15 @@ def main():
     log("template keys: %d" % len(col.order))
     log("by kind: %s" % dict(col.counts.most_common()))
     log("order sample: %s" % col.order[:8])
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="extract_remaining_text.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

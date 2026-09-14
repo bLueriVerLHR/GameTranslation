@@ -26,17 +26,17 @@ missing helper is reported instead of failing obscurely.
 """
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 import os
 import sys
 import time
+from typing import Annotated
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
 sys.path.insert(0, _HERE)                   # sibling tools
-from rpgmaker import logsetup  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("check_tyrano_build")
 
@@ -269,22 +269,36 @@ def run(port, states, shots_dir):
     return fails, seen
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--port", type=int, default=9390, help="browser debug port")
-    ap.add_argument("--states", type=int, default=30, help="messages to advance through")
-    ap.add_argument("--shots", default=None, metavar="DIR",
-                    help="save a screenshot for every failing state")
-    ap.add_argument("--json", action="store_true", help="machine-readable result")
-    ap.add_argument("-v", "--verbose", action="store_true",
-                    help="DEBUG diagnostics (per-state probes)")
-    args = ap.parse_args(argv)
-    logsetup.setup(verbose=args.verbose)
-    fails, seen = run(args.port, args.states, args.shots)
-    if args.json:
-        print(json.dumps({"states": seen, "failures": fails}, ensure_ascii=False, indent=2))
+def cmd(port: Annotated[int, cliutil.Option(
+            "--port", help="browser debug port")] = 9390,
+        states: Annotated[int, cliutil.Option(
+            "--states", help="messages to advance through")] = 30,
+        shots: Annotated[str, cliutil.Option(
+            "--shots", metavar="DIR", help="save a screenshot for every "
+            "failing state")] = None,
+        json_out: Annotated[bool, cliutil.Option(
+            "--json", help="machine-readable result")] = False,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
+    fails, seen = run(port, states, shots)
+    if json_out:
+        print(json.dumps({"states": seen, "failures": fails},
+                         ensure_ascii=False, indent=2))
     return 1 if fails else 0
+
+
+# argparse showed the module docstring (usage block included) as the
+# description; a single-command Typer app renders the command's docstring, so
+# point it at the same text instead of keeping a second copy in sync.
+cmd.__doc__ = __doc__
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="check_tyrano_build.py")
 
 
 if __name__ == "__main__":

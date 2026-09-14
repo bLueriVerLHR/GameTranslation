@@ -22,16 +22,19 @@ Usage:
 Exit codes: 0 = captured; 1 = no window/error; 2 = interop missing.
 The WSL-side path of the saved PNG is printed on success.
 """
-import argparse
+import logging
 import os
 import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
+from typing import Annotated, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 from rpgmaker import config  # noqa: E402
 
-log = None  # module logger set in main()
+log = logging.getLogger("wsl_capture")
 
 BINFMT_ROOT = "/proc/sys/fs/binfmt_misc"
 SCRIPT_NAME = "capture_window.ps1"
@@ -120,31 +123,43 @@ def run_capture(args, powershell):
     return 0, out, err
 
 
-def main(argv=None):
-    global log
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--process", help="target process name (without .exe)")
-    ap.add_argument("--title", help="window title substring filter")
-    ap.add_argument("--out", help="output file name (default <proc>_<ts>.png)")
-    ap.add_argument("--dir", default=None,
-                    help="output directory, WSL form (default: the Windows "
-                         "user's Pictures folder)")
-    ap.add_argument("--full", action="store_true", help="capture whole screen")
-    ap.add_argument("--window-only", action=argparse.BooleanOptionalAction,
-                    default=True,
-                    help="capture only the window pixels (default)")
-    ap.add_argument("--force-visible", action=argparse.BooleanOptionalAction,
-                    default=True,
-                    help="move window into the visible area first (default)")
-    ap.add_argument("--width", type=int, default=0, help="resize width")
-    ap.add_argument("--height", type=int, default=0, help="resize height")
-    ap.add_argument("--timeout", type=int, default=120,
-                    help="powershell timeout in seconds")
-    args = ap.parse_args(argv)
+def cmd(process: Annotated[Optional[str], cliutil.Option(
+            "--process", help="target process name (without .exe)")] = None,
+        title: Annotated[Optional[str], cliutil.Option(
+            "--title", help="window title substring filter")] = None,
+        out: Annotated[Optional[str], cliutil.Option(
+            "--out", help="output file name (default <proc>_<ts>.png)")] = None,
+        out_dir: Annotated[Optional[str], cliutil.Option(
+            "--dir", help="output directory, WSL form (default: the Windows "
+            "user's Pictures folder)")] = None,
+        full: Annotated[bool, cliutil.Option(
+            "--full", help="capture whole screen")] = False,
+        window_only: Annotated[bool, cliutil.Option(
+            "--window-only/--no-window-only",
+            help="capture only the window pixels (default)")] = True,
+        force_visible: Annotated[bool, cliutil.Option(
+            "--force-visible/--no-force-visible",
+            help="move window into the visible area first (default)")] = True,
+        width: Annotated[int, cliutil.Option(
+            "--width", help="resize width")] = 0,
+        height: Annotated[int, cliutil.Option(
+            "--height", help="resize height")] = 0,
+        timeout: Annotated[int, cliutil.Option(
+            "--timeout", help="powershell timeout in seconds")] = 120,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    if not args.full and not args.process:
-        ap.error("--process is required unless --full")
+    if not full and not process:
+        print("--process is required unless --full", file=sys.stderr)
+        return 2
+
+    options = SimpleNamespace(
+        process=process, title=title, out=out, dir=out_dir, full=full,
+        window_only=window_only, force_visible=force_visible,
+        width=width, height=height, timeout=timeout,
+    )
 
     powershell = powershell_exe()
     if not powershell:
@@ -157,14 +172,14 @@ def main(argv=None):
         print("  " + INTEROP_FIX, file=sys.stderr)
         return 2
 
-    code, out, err = run_capture(args, powershell)
+    code, out_lines, err = run_capture(options, powershell)
     if code != 0:
         print(f"error: capture failed (exit {code})", file=sys.stderr)
         if err:
             print(err, file=sys.stderr)
         return 1
 
-    win_path = out[-1]
+    win_path = out_lines[-1]
     local_path = config.localize(win_path)
     if not os.path.exists(local_path):
         print(f"error: output not found: {local_path}", file=sys.stderr)
@@ -173,5 +188,15 @@ def main(argv=None):
     return 0
 
 
+app = cliutil.command_app(cmd, help=__doc__)
+# argparse used the module docstring as the command description; keep that
+# visible in --help (a collapsed single-command app shows the command help).
+cmd.__doc__ = __doc__
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="wsl_capture.py")
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

@@ -14,12 +14,16 @@ CSV in place.
 Usage:
     python bake_csv_translation.py <joiplay_dir> --trs <translated.json>
 """
-import argparse
 import csv
 import io
 import json
 import os
 import sys
+from typing import Annotated
+
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 
 def read_csv(path):
@@ -42,24 +46,26 @@ def write_csv(path, text, enc):
         f.write(data)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("game_dir")
-    ap.add_argument("--trs", required=True)
-    args = ap.parse_args()
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="built game directory")],
+        trs: Annotated[str, cliutil.Option(
+            "--trs", help="translated.json ({jp: zh})")],
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    trs = json.load(open(args.trs, encoding="utf-8"))
-    csv_path = os.path.join(args.game_dir, "data", "ExternMessage.csv")
+    trs_dict = json.load(open(trs, encoding="utf-8"))
+    csv_path = os.path.join(game_dir, "data", "ExternMessage.csv")
     if not os.path.exists(csv_path):
         print("no data/ExternMessage.csv; nothing to do")
-        sys.exit(0)
+        return 0
 
     text, enc = read_csv(csv_path)
     rows = list(csv.reader(io.StringIO(text)))
     changed = 0
     for r in rows:
         if len(r) >= 2 and r[0].strip() and r[0].strip() != "名前":
-            new = trs.get(r[1])
+            new = trs_dict.get(r[1])
             if new is not None and new != r[1]:
                 r[1] = new
                 changed += 1
@@ -68,7 +74,15 @@ def main():
     writer.writerows(rows)
     write_csv(csv_path, out.getvalue(), enc)
     print("baked %d bodies into data/ExternMessage.csv (%s)" % (changed, enc))
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="bake_csv_translation.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

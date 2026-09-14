@@ -17,16 +17,20 @@ names you do not want to change, then run:
     python translate_rpgmaker.py <game_dir> <out_dir> --trs translations.json
 """
 
-import argparse
 import glob
 import json
 import os
 import re
 import sys
+from typing import Annotated
+
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 # Same whitelist as translate_rpgmaker.py
 DISPLAY_KEYS = {
@@ -145,16 +149,20 @@ def is_event_container(data):
     return rpgmaker_common.is_event_container(data)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("game_dir", help="source game folder")
-    ap.add_argument("--output", default="translations.json",
-                    help="output JSON template path (default: translations.json)")
-    args = ap.parse_args()
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
+        output: Annotated[str, cliutil.Option(
+            "--output",
+            help="output JSON template path (default: translations.json)"
+        )] = "translations.json",
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Extract RPG Maker MZ/MV display text into a translation template."""
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    game_dir = os.path.abspath(args.game_dir)
+    game_dir = os.path.abspath(game_dir)
     if not os.path.isdir(game_dir):
-        sys.exit("game_dir not found: %s" % game_dir)
+        return cliutil.fail("game_dir not found: %s" % game_dir)
 
     seen = []
     data_dir = os.path.join(game_dir, "data")
@@ -188,11 +196,19 @@ def main():
 
     unique = list(dict.fromkeys(seen))
     template = {k: "" for k in unique}
-    with open(args.output, "w", encoding="utf-8") as f:
+    with open(output, "w", encoding="utf-8") as f:
         json.dump(template, f, ensure_ascii=False, indent=2)
 
-    print("extracted %d unique text entries -> %s" % (len(unique), args.output))
+    print("extracted %d unique text entries -> %s" % (len(unique), output))
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="extract_text.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

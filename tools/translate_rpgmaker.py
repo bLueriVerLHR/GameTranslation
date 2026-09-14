@@ -24,7 +24,6 @@ Decryption details (custom scheme found in this engine's rmmz_core.js):
     output file = original name with the trailing underscore removed
 """
 
-import argparse
 import collections
 import csv
 import glob
@@ -34,12 +33,14 @@ import os
 import re
 import shutil
 import sys
+from typing import Annotated, Optional
+
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
-from rpgmaker import config  # noqa: E402
+from rpgmaker import cliutil, config  # noqa: E402
 
 RPGMV_HEADER = bytes.fromhex("5250474d560000000003010000000000")
 SPLIT = re.compile(r"(\\\.|\n)")
@@ -720,46 +721,55 @@ def apply_font_policy(root, cjk_font_src, jp_font_src=None):
         add_cjk_font_fallback(root)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("game_dir", help="source game folder")
-    ap.add_argument("out_dir", help="output folder (will be created)")
-    ap.add_argument("--trs", default=None, help="translation kv JSON file")
-    ap.add_argument("--skip-translate", action="store_true",
-                    help="only copy + decrypt, do not apply translation")
-    ap.add_argument("--plugins", action="store_true",
-                    help="also patch js/plugins.js (risky, default off)")
-    ap.add_argument("--cjk-font", default="",
-                    help="CJK ttf to bundle (MV: fonts/gamefont.css split; "
-                         "MZ: swap the main @font-face src). Default: "
-                         "resolved via CJK_FONT_PATH / "
-                         "docs/table/local_font_path.txt / auto-discovery "
-                         "of docs/table/fonts/")
-    ap.add_argument("--jp-font", default="",
-                    help="Japanese fallback font for kana/JP punctuation "
-                         "(second line of docs/table/local_font_path.txt "
-                         "or JP_FONT_PATH; default: the game's original "
-                         "font)")
-    args = ap.parse_args()
-    if not args.cjk_font:
-        args.cjk_font = config.find_cjk_font() or ""
-    if not args.jp_font:
-        args.jp_font = config.find_jp_font() or ""
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
+        out_dir: Annotated[str, cliutil.Argument(
+            help="output folder (will be created)")],
+        trs: Annotated[Optional[str], cliutil.Option(
+            "--trs", help="translation kv JSON file")] = None,
+        skip_translate: Annotated[bool, cliutil.Option(
+            "--skip-translate",
+            help="only copy + decrypt, do not apply translation")] = False,
+        plugins: Annotated[bool, cliutil.Option(
+            "--plugins",
+            help="also patch js/plugins.js (risky, default off)")] = False,
+        cjk_font: Annotated[str, cliutil.Option(
+            "--cjk-font",
+            help="CJK ttf to bundle (MV: fonts/gamefont.css split; "
+                 "MZ: swap the main @font-face src). Default: "
+                 "resolved via CJK_FONT_PATH / "
+                 "docs/table/local_font_path.txt / auto-discovery "
+                 "of docs/table/fonts/")] = "",
+        jp_font: Annotated[str, cliutil.Option(
+            "--jp-font",
+            help="Japanese fallback font for kana/JP punctuation "
+                 "(second line of docs/table/local_font_path.txt "
+                 "or JP_FONT_PATH; default: the game's original "
+                 "font)")] = "",
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Copy + decrypt + bake a translation into an RPG Maker tree."""
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    game_dir = os.path.abspath(args.game_dir)
-    out_dir = os.path.abspath(args.out_dir)
+    if not cjk_font:
+        cjk_font = config.find_cjk_font() or ""
+    if not jp_font:
+        jp_font = config.find_jp_font() or ""
+
+    game_dir = os.path.abspath(game_dir)
+    out_dir = os.path.abspath(out_dir)
     if not os.path.isdir(game_dir):
-        sys.exit("game_dir not found: %s" % game_dir)
+        return cliutil.fail("game_dir not found: %s" % game_dir)
     if os.path.abspath(out_dir) == game_dir:
-        sys.exit("out_dir must differ from game_dir")
+        return cliutil.fail("out_dir must differ from game_dir")
 
     # Translation decision flow:
     #   1. did the user ask for a translation?   -> --trs given
     #   2. no -> is there a translation file?    -> detect_trs()
     #   3. yes -> did the user forbid it?        -> --skip-translate
     #   4. not forbidden -> load and apply
-    trs_path = args.trs
-    if args.skip_translate:
+    trs_path = trs
+    if skip_translate:
         log("translation disabled by --skip-translate")
     elif not trs_path:
         trs_path = detect_trs(game_dir)
@@ -768,7 +778,7 @@ def main():
         else:
             log("no translation file detected in game root; translating skipped")
     if trs_path and not os.path.exists(trs_path):
-        sys.exit("translation file not found: %s" % trs_path)
+        return cliutil.fail("translation file not found: %s" % trs_path)
 
     log("copying %s -> %s" % (game_dir, out_dir))
     shutil.copytree(game_dir, out_dir, dirs_exist_ok=True)
@@ -776,18 +786,26 @@ def main():
     decrypt_dir(out_dir)
     clear_encryption_flags(out_dir)
 
-    if not args.skip_translate and trs_path:
+    if not skip_translate and trs_path:
         D = json.load(open(trs_path, encoding="utf-8"))
         index = build_index(D)
         log("loaded %d translation entries from %s" % (len(D), trs_path))
-        translate_data(out_dir, D, index, args.plugins)
+        translate_data(out_dir, D, index, plugins)
         translate_extern_csv(out_dir, D, index)
-        apply_font_policy(out_dir, args.cjk_font, args.jp_font)
+        apply_font_policy(out_dir, cjk_font, jp_font)
     else:
         log("translation skipped")
 
     log("done -> %s" % out_dir)
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="translate_rpgmaker.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

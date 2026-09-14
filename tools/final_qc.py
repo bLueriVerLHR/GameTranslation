@@ -14,15 +14,19 @@ Checks (each printed with a count + samples):
 Usage:
     python tools\\final_qc.py <merged.json> [--exempt kana_whitelist.txt]
 """
-import argparse
 import json
 import os
 import re
 import sys
+from typing import Annotated
+
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ctrl_codes  # noqa: E402
 import japanese_utils  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 KANA = japanese_utils.KANA
 CODE = re.compile(r"\\[A-Za-z]+(?:\[[^\]]*\])?")
@@ -72,19 +76,21 @@ def collect(p, exemptions=()):
     return found
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("merged_json")
-    ap.add_argument("--exempt", default="",
-                    help="file with regexes (one per line) matched against "
-                         "VALUES; matching values are exempted from the kana "
-                         "residual check (e.g. onomatopoeia, author-name lines)")
-    args = ap.parse_args()
+def cmd(merged_json: Annotated[str, cliutil.Argument(
+            help="merged translated.json / completion.json")],
+        exempt: Annotated[str, cliutil.Option(
+            "--exempt", help="file with regexes (one per line) matched against "
+            "VALUES; matching values are exempted from the kana residual "
+            "check (e.g. onomatopoeia, author-name lines)")] = "",
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    p = json.load(open(args.merged_json, encoding="utf-8"))
+    p = json.load(open(merged_json, encoding="utf-8"))
     exemptions = []
-    if args.exempt and sys.stdin and args.exempt != "-":
-        for line in open(args.exempt, encoding="utf-8"):
+    if exempt and sys.stdin and exempt != "-":
+        for line in open(exempt, encoding="utf-8"):
             line = line.strip()
             if line and not line.startswith("#"):
                 exemptions.append(re.compile(line))
@@ -101,7 +107,15 @@ def main():
 
     for label, key in REPORTS:
         report(label, found[key])
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="final_qc.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

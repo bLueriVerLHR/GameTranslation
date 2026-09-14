@@ -547,10 +547,15 @@ class TestMain:
         xp3tool.main()
         assert (out / "x.txt").read_bytes() == b"hello"
 
-    def test_main_bad_magic_exits(self, tmp_path, monkeypatch):
+    def test_main_bad_magic_returns_one(self, tmp_path, monkeypatch):
+        """A bad archive is a failure, reported as the exit code (tools return
+        their code; the framework no longer raises SystemExit from inside)."""
         p = tmp_path / "bad.xp3"
         p.write_bytes(b"garbage-data")
         monkeypatch.setattr(sys, "argv", ["xp3tool.py", "list", str(p)])
-        with pytest.raises(SystemExit) as exc:
-            xp3tool.main()
-        assert exc.value.code == 1
+        assert xp3tool.main() == 1
+
+    def test_unknown_subcommand_returns_two(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, "argv", ["xp3tool.py", "nope"])
+        assert xp3tool.main() == 2
+        assert "No such command" in capsys.readouterr().err

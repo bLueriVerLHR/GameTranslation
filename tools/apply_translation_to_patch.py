@@ -18,10 +18,15 @@ context location for matching, not the original text).
 Usage:
     python tools/apply_translation_to_patch.py <patch_dir> <translated.json>
 """
-import argparse
 import glob
 import json
 import os
+import sys
+from typing import Annotated
+
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 BEGIN = "> BEGIN STRING"
 END = "> END STRING"
@@ -97,15 +102,19 @@ def inject(path, t, stats):
             f.write(sep.join(out))
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("patch_dir", help="directory containing rewt-patch/")
-    ap.add_argument("translated_json")
-    args = ap.parse_args()
+def cmd(patch_dir: Annotated[str, cliutil.Argument(
+            help="directory containing rewt-patch/")],
+        translated_json: Annotated[str, cliutil.Argument(
+            help="translated.json to write back")],
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Write a translated.json back into a rewolf-trans patch tree."""
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    t = json.load(open(args.translated_json, encoding="utf-8"))
+    t = json.load(open(translated_json, encoding="utf-8"))
     stats = {"applied": 0, "files": 0}
-    root = os.path.join(args.patch_dir, "rewt-patch")
+    root = os.path.join(patch_dir, "rewt-patch")
     for path in sorted(glob.glob(os.path.join(root, "**", "*.txt"), recursive=True)):
         if path.endswith("_Danger.txt") or path.endswith("_Extra.txt"):
             continue
@@ -114,7 +123,15 @@ def main():
         if stats["applied"] > before:
             stats["files"] += 1
     print("applied %d strings across %d files" % (stats["applied"], stats["files"]))
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="apply_translation_to_patch.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

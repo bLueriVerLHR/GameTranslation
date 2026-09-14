@@ -16,12 +16,19 @@ Usage:
     python3 kirikiri/xp3pack.py <in_dir> <out.xp3>
 """
 
-import argparse
 import logging
 import os
 import struct
 import sys
 import zlib
+from typing import Annotated
+
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, appended (not inserted) so a same-named sibling module in
+# this directory still wins.
+sys.path.append(os.path.dirname(_HERE))
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("xp3pack")
 
@@ -110,26 +117,31 @@ def verify(out_path, files):
     return len(parsed)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("-v", "--verbose", action="store_true")
-    ap.add_argument("in_dir")
-    ap.add_argument("out_xp3")
-    args = ap.parse_args()
-
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
+def cmd(in_dir: Annotated[str, cliutil.Argument(help="directory to pack")],
+        out_xp3: Annotated[str, cliutil.Argument(help="output .xp3 archive")],
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Pack a directory into an xp3 archive (self-verified after writing)."""
+    cliutil.setup_logging(verbose, quiet, log_file)
     try:
-        files, total = pack(args.in_dir, args.out_xp3)
+        files, total = pack(in_dir, out_xp3)
         log.info("%s: packed %d files, %d bytes payload",
-                 args.out_xp3, len(files), total)
-        verify(args.out_xp3, files)
+                 out_xp3, len(files), total)
+        verify(out_xp3, files)
     except (Xp3PackError, OSError, zlib.error) as exc:
         log.error("%s", exc)
-        raise SystemExit(1)
+        return 1
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="xp3pack.py")
 
 
 if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    main()
+    raise SystemExit(main())

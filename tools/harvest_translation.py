@@ -27,18 +27,19 @@ Keys with no match are written to <work_dir>/missing.json for AI translation.
 Usage:
     python harvest_translation.py <work_dir> <mtool_dict.json> --out translated.json
 """
-import argparse
 import json
 import logging
 import os
 import re
 import sys
+from typing import Annotated
+
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
 sys.path.insert(0, _HERE)                   # sibling tools
-from rpgmaker import logsetup  # noqa: E402
 import ctrl_codes  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("harvest")
 
@@ -87,24 +88,23 @@ def split_block(k):
     return None, lines
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("work_dir")
-    ap.add_argument("dict_path", help="MTool/AI runtime translation JSON")
-    ap.add_argument("--out", default="translated.json",
-                    help="output harvested translation JSON")
-    ap.add_argument("-v", "--verbose", action="store_true",
-                    help="DEBUG diagnostics")
-    args = ap.parse_args()
+def cmd(work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
+        dict_path: Annotated[str, cliutil.Argument(
+            help="MTool/AI runtime translation JSON")],
+        out: Annotated[str, cliutil.Option(
+            "--out", help="output harvested translation JSON")] = "translated.json",
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
     # Configure logging here, never at import time: a module-level call
     # rewrites the root logger for whatever imported this file (tests too)
     # and turns a later configuration into a silent no-op.
-    logsetup.setup(verbose=args.verbose)
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    work = os.path.abspath(args.work_dir)
+    work = os.path.abspath(work_dir)
     t = json.load(open(os.path.join(work, "template.json"), encoding="utf-8-sig"))
     kinds = json.load(open(os.path.join(work, "kinds.json"), encoding="utf-8-sig"))
-    d = json.load(open(args.dict_path, encoding="utf-8"))
+    d = json.load(open(dict_path, encoding="utf-8"))
     log.info("template %d keys, dict %d entries", len(t), len(d))
 
     snorm = {}
@@ -205,7 +205,7 @@ def main():
             translated[k] = val
             stats[how] += 1
 
-    out = os.path.join(work, args.out)
+    out = os.path.join(work, out)
     json.dump(translated, open(out, "w", encoding="utf-8"),
               ensure_ascii=False, indent=2)
     json.dump(missing, open(os.path.join(work, "missing.json"), "w", encoding="utf-8"),
@@ -213,7 +213,15 @@ def main():
     log.info("harvested %d / %d keys: %s", len(translated), len(t), stats)
     log.info("missing %d -> %s", len(missing),
              os.path.join(work, "missing.json"))
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="harvest_translation.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

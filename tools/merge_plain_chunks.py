@@ -18,18 +18,21 @@ Usage:
     python merge_plain_chunks.py <work_dir> [--out chunks_translated.json]
                                  [--strict] [--no-report]
 """
-import argparse
 import glob
 import json
 import os
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ctrl_codes  # noqa: E402
 import japanese_utils  # noqa: E402
 import plain_io  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 # QC is CPU-ish and file-I/O bound per chunk; cap the worker pool so a huge
 # chunk count (hundreds of agent chunks) does not spawn unbounded threads
@@ -133,15 +136,19 @@ def _process_chunk(chunks_dir, num):
     return num, keys, vals, issues, ok
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("work_dir")
-    ap.add_argument("--out", default="chunks_translated.json")
-    ap.add_argument("--strict", action="store_true",
-                    help="exit non-zero when any chunk has issues")
-    args = ap.parse_args()
+def cmd(work_dir: Annotated[str, cliutil.Argument(
+            help="translation work dir (chunks/ inside it)")],
+        out: Annotated[str, cliutil.Option(
+            "--out", help="merged output file name, inside work_dir")] = \
+        "chunks_translated.json",
+        strict: Annotated[bool, cliutil.Option(
+            "--strict", help="exit non-zero when any chunk has issues")] = False,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    work = os.path.abspath(args.work_dir)
+    work = os.path.abspath(work_dir)
     chunks_dir = os.path.join(work, "chunks")
     merged = {}
     problems = 0
@@ -179,14 +186,22 @@ def main():
               % (num, len(keys), tag,
                  ": " + "; ".join(issues) if issues else ""))
 
-    with open(os.path.join(work, args.out), "w", encoding="utf-8") as f:
+    with open(os.path.join(work, out), "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=1)
-    print("merged: %d keys (%d chunks) -> %s" % (len(merged), chunks, args.out))
+    print("merged: %d keys (%d chunks) -> %s" % (len(merged), chunks, out))
     if problems:
         print("WARN: %d/%d chunks have issues (see above)" % (problems, chunks))
-        if args.strict:
-            sys.exit(1)
+        if strict:
+            return 1
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="merge_plain_chunks.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

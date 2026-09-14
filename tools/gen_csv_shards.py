@@ -17,10 +17,14 @@ Usage:
 Tone: injected from `<work>/tone.md` (or --tone FILE) with a neutral fallback -
 a game's tone is never hardcoded in a tool (AGENTS.md, 工具禁止硬编码游戏专属数据).
 """
-import argparse
 import glob
 import json
 import os
+import sys
+from typing import Annotated
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 CSV_MD = """# Translation chunk {num} - ExternMessage.csv bodies (part {part})
 
@@ -60,21 +64,29 @@ coherent piece.
 """
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("work_dir")
-    ap.add_argument("--max-chars", type=int, default=5000)
-    ap.add_argument("--start", type=int, default=0)
-    ap.add_argument("--resume", action="store_true")
-    ap.add_argument("--out-dir", default="chunks",
-                    help="chunk subdirectory (default: chunks)")
-    ap.add_argument("--tone", default="",
-                    help="tone/character block file (default: <work>/tone.md; "
-                         "when absent a neutral tone is used - a game's tone "
-                         "is never hardcoded in a tool)")
-    args = ap.parse_args()
+def cmd(work_dir: Annotated[str, cliutil.Argument(
+            help="translation work dir (csv_template.json inside it)")],
+        max_chars: Annotated[int, cliutil.Option(
+            "--max-chars", help="cap each chunk by total key char length")] \
+        = 5000,
+        start: Annotated[int, cliutil.Option(
+            "--start", help="first chunk number")] = 0,
+        resume: Annotated[bool, cliutil.Option(
+            "--resume", help="skip keys already translated in "
+            "chunk_*.translated.json")] = False,
+        out_dir: Annotated[str, cliutil.Option(
+            "--out-dir", help="chunk subdirectory (default: chunks)")] = \
+        "chunks",
+        tone: Annotated[str, cliutil.Option(
+            "--tone", help="tone/character block file (default: <work>/tone.md; "
+            "when absent a neutral tone is used - a game's tone is never "
+            "hardcoded in a tool)")] = "",
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    work = os.path.abspath(args.work_dir)
+    work = os.path.abspath(work_dir)
     tpl = json.load(open(os.path.join(work, "csv_template.json"),
                          encoding="utf-8"))
     glossary = json.load(open(os.path.join(work, "glossary.json"),
@@ -89,7 +101,7 @@ def main():
 
     # Tone policy: game-specific, therefore injected from <work>/tone.md (or
     # --tone), never baked into this tool.
-    tone_path = args.tone or os.path.join(work, "tone.md")
+    tone_path = tone or os.path.join(work, "tone.md")
     if os.path.exists(tone_path):
         with open(tone_path, encoding="utf-8-sig") as f:
             tone = f.read().strip()
@@ -102,10 +114,10 @@ def main():
                 "clearly overflow the message window.")
         print("WARN: no tone file at %s - using the neutral tone" % tone_path)
 
-    chunks_dir = os.path.join(work, args.out_dir)
+    chunks_dir = os.path.join(work, out_dir)
     os.makedirs(chunks_dir, exist_ok=True)
 
-    if args.resume:
+    if resume:
         done = set()
         for p in glob.glob(os.path.join(chunks_dir, "*.translated.json")):
             raw = open(p, "rb").read()
@@ -119,7 +131,7 @@ def main():
     keys = list(tpl.keys())
     buckets, cur, cur_len = [], [], 0
     for k in keys:
-        if cur and cur_len + len(k) > args.max_chars:
+        if cur and cur_len + len(k) > max_chars:
             buckets.append(cur)
             cur, cur_len = [], 0
         cur.append(k)
@@ -127,7 +139,7 @@ def main():
     if cur:
         buckets.append(cur)
 
-    num = args.start
+    num = start
     part = 0
     for b in buckets:
         base = os.path.join(chunks_dir, "chunk_%02d" % num)
@@ -142,8 +154,16 @@ def main():
                                                  sum(len(k) for k in b)))
         num += 1
         part += 1
-    print("wrote %d chunks (%02d..%02d)" % (len(buckets), args.start, num - 1))
+    print("wrote %d chunks (%02d..%02d)" % (len(buckets), start, num - 1))
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="gen_csv_shards.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

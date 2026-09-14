@@ -6,10 +6,17 @@ The parameter parsing lives inside main() so the module can be imported
 without executing anything (this package is a set of standalone tools that
 share per-game helpers).
 """
-import argparse
 import json
 import os
 import re
+import sys
+from typing import Annotated
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, appended (not inserted) so a same-named sibling module in
+# this directory still wins.
+sys.path.append(os.path.dirname(_HERE))
+from rpgmaker import cliutil  # noqa: E402
 
 
 def translate_line(text, base, names):
@@ -29,31 +36,34 @@ def translate_line(text, base, names):
     return None
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("work_dir", help="work dir holding the series base translated.json")
-    ap.add_argument("game_key", help="per-game subdir name in the work dir")
-    ap.add_argument("--names", default="",
-                    help="optional {game_key: {name: translation}} table file; "
-                         "without it the 【name】 prefix is left untouched")
-    args = ap.parse_args()
+def cmd(work_dir: Annotated[str, cliutil.Argument(
+            help="work dir holding the series base translated.json")],
+        game_key: Annotated[str, cliutil.Argument(
+            help="per-game subdir name in the work dir")],
+        names: Annotated[str, cliutil.Option(
+            "--names", help="optional {game_key: {name: translation}} table "
+            "file; without it the 【name】 prefix is left untouched")] = "",
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    out = os.path.abspath(args.work_dir)
-    key = args.game_key
+    out = os.path.abspath(work_dir)
+    key = game_key
     base = json.load(open(os.path.join(out, "translated.json"), encoding="utf-8"))
     meta = json.load(open(os.path.join(out, key, "keys_target_meta.json"),
                           encoding="utf-8"))
 
     # character name table per game (from CharacterActorSO if present, plus
     # known series names)
-    names = {}
-    if args.names and os.path.exists(args.names):
-        names = json.load(open(args.names, encoding="utf-8")).get(key, {})
+    names_table = {}
+    if names and os.path.exists(names):
+        names_table = json.load(open(names, encoding="utf-8")).get(key, {})
 
     final = {}
     unresolved = []
     for k in meta:
-        t = translate_line(k, base, names)
+        t = translate_line(k, base, names_table)
         if t:
             final[k] = t
         else:
@@ -69,7 +79,20 @@ def main():
               encoding="utf-8") as f:
         for t in unresolved:
             f.write(t.replace("\n", "\\n") + "\n")
+    return 0
+
+
+# argparse showed the module docstring as the description; a single-command
+# Typer app renders the command's docstring, so point it at the same text
+# instead of keeping a second copy in sync.
+cmd.__doc__ = __doc__
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="prefill.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

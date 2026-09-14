@@ -4,19 +4,19 @@
 Usage: python3 tools/batch_decode_tlg.py <in_dir> <out_dir> [--jobs N]
 """
 
-import argparse
 import glob
 import logging
 import os
 import sys
 import time
 from multiprocessing import Pool
+from typing import Annotated, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kirikiri import tlg
 
-from rpgmaker import logsetup  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("batch_tlg")
 
@@ -37,30 +37,31 @@ def decode_one(args):
         return (name, False, str(exc))
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("in_dir")
-    ap.add_argument("out_dir")
-    ap.add_argument("--jobs", type=int, default=os.cpu_count())
-    ap.add_argument("-v", "--verbose", action="store_true")
-    args = ap.parse_args()
-
-    logsetup.setup(verbose=args.verbose)
-    os.makedirs(args.out_dir, exist_ok=True)
-    files = sorted(glob.glob(os.path.join(args.in_dir, "**", "*.tlg"),
+def cmd(in_dir: Annotated[str, cliutil.Argument(help="directory with *.tlg")],
+        out_dir: Annotated[str, cliutil.Argument(help="output directory for PNGs")],
+        jobs: Annotated[Optional[int], cliutil.Option(
+            "--jobs", help="worker processes (default: CPU count)")] = None,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
+    if jobs is None:
+        jobs = os.cpu_count()
+    os.makedirs(out_dir, exist_ok=True)
+    files = sorted(glob.glob(os.path.join(in_dir, "**", "*.tlg"),
                              recursive=True))
     if not files:
-        log.error("%s: no *.tlg found", args.in_dir)
+        log.error("%s: no *.tlg found", in_dir)
         return 1
 
     # warm the numba JIT once in the parent before forking workers
     if files:
         tlg.decode(open(files[0], "rb").read())
-    log.info("%d tlg files -> %s (jobs=%d)", len(files), args.out_dir,
-             args.jobs)
+    log.info("%d tlg files -> %s (jobs=%d)", len(files), out_dir,
+             jobs)
     t0 = time.perf_counter()
-    with Pool(args.jobs) as pool:
-        results = pool.map(decode_one, [(f, args.out_dir) for f in files],
+    with Pool(jobs) as pool:
+        results = pool.map(decode_one, [(f, out_dir) for f in files],
                            chunksize=8)
     dt = time.perf_counter() - t0
     ok = sum(1 for _, s, _ in results if s)
@@ -70,6 +71,16 @@ def main():
     for name, err in fail[:10]:
         log.warning("FAIL %s: %s", name, err)
     return 1 if fail else 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+# argparse used the module docstring as the command description; keep that
+# visible in --help (a collapsed single-command app shows the command help).
+cmd.__doc__ = __doc__
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="batch_decode_tlg.py")
 
 
 if __name__ == "__main__":

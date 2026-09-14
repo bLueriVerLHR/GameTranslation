@@ -12,8 +12,6 @@ import sys
 import types
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from unity.rmunite import extract_game as X  # noqa: E402
@@ -134,5 +132,6 @@ class TestMain:
         assert "UnityPy" not in vars(X)
 
     def test_cli_requires_two_positional_args(self):
-        with pytest.raises(SystemExit):
-            X.main([])
+        # a usage error is exit code 2 (returned, not raised: tools return
+        # their code so main() stays callable from tests)
+        assert X.main([]) == 2

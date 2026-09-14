@@ -21,12 +21,18 @@ Only the *standard* v8 layout is supported (cryptVersion 0 / old DXA
 keying).  Wolf Pro / ChaCha20 / AES variants are detected and rejected with
 a clear error - the project pipeline never touches those.
 """
-import argparse
 import logging
 import os
 import struct
 import sys
 import zlib
+from typing import Annotated
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, appended (not inserted) so a same-named sibling module in
+# this directory still wins.
+sys.path.append(os.path.dirname(_HERE))
+from rpgmaker import cliutil  # noqa: E402
 
 logger = logging.getLogger("dxarchive")
 
@@ -646,44 +652,39 @@ def _strip_protection(path: str) -> None:
             f.write(data[len(ANTI_UNPACK_DATA) :])
 
 
-def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(
-        description="Unpack a DXArchive v8 .wolf file from a Wolf RPG game."
-    )
-    ap.add_argument("archive", help="path to the .wolf file")
-    ap.add_argument("out_dir", help="output directory")
-    ap.add_argument(
-        "--key",
-        default=None,
-        help="game key string (per-game; defaults to the engine default). "
-        "Passed explicitly: the key is game data, never hardcoded here.",
-    )
-    ap.add_argument(
-        "--no-protection-cleanup",
-        action="store_true",
-        help="keep the 62-byte unpack-protection sentinel in database files",
-    )
-    ap.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="enable DEBUG logging",
-    )
-    args = ap.parse_args(argv)
+def cmd(archive: Annotated[str, cliutil.Argument(help="path to the .wolf file")],
+        out_dir: Annotated[str, cliutil.Argument(help="output directory")],
+        key: Annotated[str, cliutil.Option(
+            "--key", help="game key string (per-game; defaults to the engine "
+            "default). Passed explicitly: the key is game data, never "
+            "hardcoded here.")] = None,
+        no_protection_cleanup: Annotated[bool, cliutil.Option(
+            "--no-protection-cleanup", help="keep the 62-byte "
+            "unpack-protection sentinel in database files")] = False,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(name)s %(message)s",
-    )
-
-    key = args.key.encode("ascii") if args.key else DEFAULT_KEY_STRING
+    key_bytes = key.encode("ascii") if key else DEFAULT_KEY_STRING
     try:
-        n = unpack_archive(args.archive, args.out_dir, key, args.no_protection_cleanup)
+        n = unpack_archive(archive, out_dir, key_bytes, no_protection_cleanup)
     except (ValueError, OSError) as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 1
-    print(f"unpacked {n} files from {args.archive}")
+        return cliutil.fail(str(e))
+    print(f"unpacked {n} files from {archive}")
     return 0
+
+
+# argparse showed the module docstring as the description; a single-command
+# Typer app renders the command's docstring, so point it at the same text
+# instead of keeping a second copy in sync.
+cmd.__doc__ = __doc__
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="dxarchive.py")
 
 
 if __name__ == "__main__":

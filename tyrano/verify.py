@@ -15,13 +15,15 @@ import os
 import re
 import struct
 import sys
+from typing import Annotated, Optional
+
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from rpgmaker import config as rpg_config  # noqa: E402
 from .tyrano_extract import load_ks  # noqa: E402
 
-from rpgmaker import logsetup  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("tyrano.verify")
 
@@ -174,26 +176,31 @@ def verify(web_root, source=None, check_png=True):
     return problems
 
 
-def main():
-    import argparse
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("-v", "--verbose", action="store_true")
-    ap.add_argument("web_root")
-    ap.add_argument("--source", default=None,
-                    help="original game folder (audio existence fallback)")
-    ap.add_argument("--no-png", action="store_true",
-                    help="skip the PNG size check")
-    args = ap.parse_args()
-
-    logsetup.setup(verbose=args.verbose)
-    problems = verify(args.web_root, source=args.source,
-                      check_png=not args.no_png)
+def cmd(web_root: Annotated[str, cliutil.Argument(help="built game folder")],
+        source: Annotated[Optional[str], cliutil.Option(
+            "--source", help="original game folder (audio existence fallback)"
+        )] = None,
+        no_png: Annotated[bool, cliutil.Option(
+            "--no-png", help="skip the PNG size check")] = False,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Verify a built TyranoScript folder (problems are printed, one per line)."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    problems = verify(web_root, source=source, check_png=not no_png)
     for p in problems:
         print("PROBLEM:", p)
     if problems:
-        raise SystemExit(1)
+        return 1
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="verify.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

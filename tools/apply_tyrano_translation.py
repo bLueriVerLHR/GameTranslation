@@ -14,10 +14,12 @@ Usage:
         [--scenario-dir DIR] [--out DIR]
 """
 
-import argparse
 import logging
 import os
 import sys
+from typing import Annotated, Optional
+
+import typer
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/, tyrano/
@@ -25,7 +27,7 @@ sys.path.insert(0, _HERE)                   # sibling tools: plain_io
 import plain_io  # noqa: E402
 from tyrano.tyrano_extract import load_ks  # noqa: E402
 
-from rpgmaker import logsetup  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("apply_tyrano_translation")
 
@@ -80,7 +82,7 @@ def apply(work_dir, scenario_dir, out_dir):
     structure = plain_io.load_json(os.path.join(work_dir, "structure.json"))
     if not os.path.isdir(scenario_dir):
         log.error("scenario dir not found: %s", scenario_dir)
-        raise SystemExit(1)
+        raise typer.Exit(code=1)
 
     stats = {"replaced": 0, "untranslated": 0, "missing": []}
     os.makedirs(out_dir, exist_ok=True)
@@ -109,23 +111,34 @@ def apply(work_dir, scenario_dir, out_dir):
     return stats
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("-v", "--verbose", action="store_true")
-    ap.add_argument("work_dir")
-    ap.add_argument("--scenario-dir", default=None,
-                    help="scenario tree to patch (default: <work>/scenario)")
-    ap.add_argument("--out", default=None,
-                    help="patched tree output (default: <work>/patch)")
-    args = ap.parse_args()
+def cmd(work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
+        scenario_dir: Annotated[Optional[str], cliutil.Option(
+            "--scenario-dir", help="scenario tree to patch "
+            "(default: <work>/scenario)")] = None,
+        out: Annotated[Optional[str], cliutil.Option(
+            "--out", help="patched tree output (default: <work>/patch)")] = None,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Write translated.json back into the TyranoScript .ks tree."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    work = os.path.abspath(work_dir)
+    scenario = os.path.abspath(scenario_dir or os.path.join(work, "scenario"))
+    out_dir = os.path.abspath(out or os.path.join(work, "patch"))
+    apply(work, scenario, out_dir)
+    return 0
 
-    logsetup.setup(verbose=args.verbose)
-    work = os.path.abspath(args.work_dir)
-    scenario = os.path.abspath(args.scenario_dir or os.path.join(work, "scenario"))
-    out = os.path.abspath(args.out or os.path.join(work, "patch"))
-    apply(work, scenario, out)
+
+# --help prints the tool's full documentation: a single-command Typer app
+# shows the COMMAND docstring, so the module docstring is attached to it
+# (the argparse version printed the same text as its description).
+cmd.__doc__ = __doc__
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="apply_tyrano_translation.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -253,11 +253,16 @@ class TestMain:
         entries = xp3tool.open_xp3(str(out))
         assert [e["name"] for e in entries] == ["a.txt"]
 
-    def test_main_empty_dir_exits(self, tmp_path, monkeypatch):
+    def test_main_empty_dir_returns_one(self, tmp_path, monkeypatch):
+        """An empty input directory is a failure, reported as the exit code
+        (a command returns its code instead of raising SystemExit)."""
         indir = tmp_path / "in"
         indir.mkdir()
         monkeypatch.setattr(sys, "argv",
                             ["xp3pack.py", str(indir), str(tmp_path / "o.xp3")])
-        with pytest.raises(SystemExit) as exc:
-            xp3pack.main()
-        assert exc.value.code == 1
+        assert xp3pack.main() == 1
+
+    def test_unknown_option_returns_two(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, "argv", ["xp3pack.py", "--nope"])
+        assert xp3pack.main() == 2
+        assert "No such option" in capsys.readouterr().err

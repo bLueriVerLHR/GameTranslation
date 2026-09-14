@@ -39,10 +39,10 @@ DEFAULT_PROBE_WORKERS = 8   # legacy fallbacks; None = auto-tuned (runtime.py)
 DEFAULT_ENCODE_WORKERS = 4
 
 FFMPEG_TIMEOUT = 900   # per-file transcode timeout (seconds)
-FFPROBE_TIMEOUT = 120  # per-file probe timeout (seconds)
+PROBE_TIMEOUT = 120  # per-file probe timeout (seconds)
 
 
-def probe_one(path, timeout=FFPROBE_TIMEOUT):
+def probe_one(path, timeout=PROBE_TIMEOUT):
     """Probe one file through `rpgmaker/media.py` (PyAV, in-process).
 
     No ffprobe subprocess: the packaged FFmpeg bindings expose container and

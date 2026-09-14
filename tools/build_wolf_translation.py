@@ -40,13 +40,17 @@ map) get all locations.
 Usage:
     python tools/build_wolf_translation.py <patch_dir> <work_dir> [--no-danger] [--no-extra]
 """
-import argparse
 import os
 import re
 import sys
+from typing import Annotated
+
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import plain_io  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 JA = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
 
@@ -165,22 +169,27 @@ def _map_order(mname):
     return (0 if not mname.startswith("[CE]") else 1, mname)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("patch_dir", help="directory containing rewt-patch/")
-    ap.add_argument("out_dir")
-    ap.add_argument("--no-danger", action="store_true",
-                    help="skip *_Danger.txt (higher-risk strings)")
-    ap.add_argument("--no-extra", action="store_true",
-                    help="skip *_Extra.txt files")
-    args = ap.parse_args()
+def cmd(patch_dir: Annotated[str, cliutil.Argument(
+            help="directory containing rewt-patch/")],
+        out_dir: Annotated[str, cliutil.Argument(
+            help="work folder to write the translation package into")],
+        no_danger: Annotated[bool, cliutil.Option(
+            "--no-danger",
+            help="skip *_Danger.txt (higher-risk strings)")] = False,
+        no_extra: Annotated[bool, cliutil.Option(
+            "--no-extra", help="skip *_Extra.txt files")] = False,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Turn a rewolf-trans patch tree into the standard work package."""
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    patch_root = os.path.join(args.patch_dir, "rewt-patch")
+    patch_root = os.path.join(patch_dir, "rewt-patch")
     if not os.path.isdir(patch_root):
-        sys.exit("no rewt-patch/ under %s" % args.patch_dir)
-    os.makedirs(args.out_dir, exist_ok=True)
+        return cliutil.fail("no rewt-patch/ under %s" % patch_dir)
+    os.makedirs(out_dir, exist_ok=True)
 
-    items = collect(patch_root, not args.no_danger, not args.no_extra)
+    items = collect(patch_root, not no_danger, not no_extra)
 
     # dedup keys (keep first occurrence / lowest order), skip pure-ASCII
     seen = {}
@@ -233,15 +242,23 @@ def main():
                      seen[k]["label"]) for k in keys]
     structure = build_structure(struct_items)
 
-    plain_io.save_json(os.path.join(args.out_dir, "template.json"), template)
-    plain_io.save_json(os.path.join(args.out_dir, "kinds.json"), kinds)
-    plain_io.save_json(os.path.join(args.out_dir, "context.json"), context)
-    plain_io.save_json(os.path.join(args.out_dir, "structure.json"), structure)
+    plain_io.save_json(os.path.join(out_dir, "template.json"), template)
+    plain_io.save_json(os.path.join(out_dir, "kinds.json"), kinds)
+    plain_io.save_json(os.path.join(out_dir, "context.json"), context)
+    plain_io.save_json(os.path.join(out_dir, "structure.json"), structure)
 
     n_ja = sum(1 for k in keys if JA.search(k))
     print("template: %d keys (%d with Japanese); maps: %d; global: %d"
           % (len(keys), n_ja, len(structure["maps"]), len(structure["global"])))
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="build_wolf_translation.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

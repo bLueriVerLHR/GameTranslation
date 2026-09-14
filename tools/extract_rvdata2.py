@@ -25,12 +25,13 @@ message lines, 102 choices, 402/403/404 choice branches, 408/108 comments,
 Usage:
     python extract_rvdata2.py <game_dir> <out_dir>
 """
-import argparse
 import collections
 import json
 import os
 import re
 import sys
+from typing import Annotated
+
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ctrl_codes  # noqa: E402
@@ -38,6 +39,9 @@ import japanese_utils  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
 from rvdata2_io import load_rvdata2  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 JA = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
 KANA = japanese_utils.KANA
@@ -250,17 +254,20 @@ def build_structure_tree(ce_data, collector, where_prefix):
     return items
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("game_dir")
-    ap.add_argument("out_dir")
-    args = ap.parse_args()
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
+        out_dir: Annotated[str, cliutil.Argument(
+            help="work folder to write the translation package into")],
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Extract VX Ace (rvdata2) text into the standard work package."""
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    game_dir = os.path.abspath(args.game_dir)
-    out_dir = os.path.abspath(args.out_dir)
+    game_dir = os.path.abspath(game_dir)
+    out_dir = os.path.abspath(out_dir)
     data_dir = os.path.join(game_dir, "data")
     if not os.path.isdir(data_dir):
-        sys.exit("no data/ dir under %s" % game_dir)
+        return cliutil.fail("no data/ dir under %s" % game_dir)
     os.makedirs(out_dir, exist_ok=True)
 
     col = Collector()
@@ -381,7 +388,15 @@ def main():
 
     log("template: %d keys; names: %d candidates; maps: %d"
         % (len(template), len(names), len(tree)))
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="extract_rvdata2.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

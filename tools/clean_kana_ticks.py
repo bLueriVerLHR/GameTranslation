@@ -7,14 +7,17 @@ author/plugin/name values are exempt (see the local word table, docs/translation
 Usage:
     python tools\\clean_kana_ticks.py <merged.json> [--exempt <file>]
 """
-import argparse
 import json
 import os
 import re
 import sys
+from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import japanese_utils  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 KANA_ALL = japanese_utils.KANA_PURE_WORD
 KANA = japanese_utils.KANA
@@ -129,16 +132,14 @@ def clean_value(k, v):
     return "".join(out)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("merged_json")
-    ap.add_argument("--exempt", default="",
-                    help="extra author/name values file (one per line)")
-    args = ap.parse_args()
-    P = os.path.abspath(args.merged_json)
+def cmd(merged_json: Annotated[str, cliutil.Argument(
+            help="merged translated.json to clean in place")],
+        exempt: Annotated[str, cliutil.Option(
+            "--exempt", help="extra author/name values file (one per line)")] = "") -> int:
+    P = os.path.abspath(merged_json)
     global AUTHOR_NAMES
-    if args.exempt:
-        for line in open(args.exempt, encoding="utf-8"):
+    if exempt:
+        for line in open(exempt, encoding="utf-8"):
             line = line.strip()
             if line:
                 AUTHOR_NAMES.add(line)
@@ -164,7 +165,18 @@ def main():
     for k, v in left[:30]:
         print("K:", repr(k)[:55])
         print("V:", repr(v)[:70])
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+# argparse used the module docstring as the command description; keep that
+# visible in --help (a collapsed single-command app shows the command help).
+cmd.__doc__ = __doc__
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="clean_kana_ticks.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -13,15 +13,18 @@ QC + repair + merge for subagent-translated chunks.
   same ``\n`` line count, no kana left in values.
 - merge: completion.json {key: value} + report.
 """
-import argparse
 import json
 import os
 import re
 import sys
+from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ctrl_codes  # noqa: E402
 import japanese_utils  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 # The canonical KANA (search pattern) is the value check; KANA_BLOCKS_HW was
 # the older block-range variant and is no longer used.
@@ -165,14 +168,17 @@ def patch_altered_keys(src, out, issues):
     return out
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("work_dir")
-    ap.add_argument("--merge", default="completion.json",
-                    help="output merged translation file name")
-    args = ap.parse_args()
+def cmd(work_dir: Annotated[str, cliutil.Argument(
+            help="translation work dir (chunks/ inside it)")],
+        merge: Annotated[str, cliutil.Option(
+            "--merge", help="output merged translation file name")] = \
+        "completion.json",
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    work = os.path.abspath(args.work_dir)
+    work = os.path.abspath(work_dir)
     chunks_dir = os.path.join(work, "chunks")
     merged = {}
     report = []
@@ -217,13 +223,21 @@ def main():
             if k in src:
                 merged[k] = v
 
-    with open(os.path.join(work, args.merge), "w", encoding="utf-8") as f:
+    with open(os.path.join(work, merge), "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=1)
-    print("merged:", len(merged), "entries ->", args.merge)
+    print("merged:", len(merged), "entries ->", merge)
     for r in report:
         print(r)
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="qc_translation_chunks.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
 

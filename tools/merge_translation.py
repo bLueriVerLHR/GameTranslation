@@ -22,14 +22,17 @@ Usage:
   --chunks    the merge_plain_chunks.py output (agent chunks).  Omitted for
               legacy: globs chunks/*.translated.json.
 """
-import argparse
 import glob
 import json
 import os
 import sys
+from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import plain_io  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 
 def load_sweeps(path):
@@ -41,24 +44,27 @@ def load_sweeps(path):
     return rules
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("work_dir")
-    ap.add_argument("--chunks", default="",
-                    help="merge_plain_chunks.py output, relative to work_dir "
-                         "(default: glob legacy chunks/*.translated.json)")
-    ap.add_argument("--prefilled", default="",
-                    help="prefilled.json (MTool exact hits), relative to "
-                         "work_dir; optional")
-    ap.add_argument("--sweep", default="",
-                    help="terminology sweep rules JSON (list of pairs), "
-                         "relative to work_dir")
-    ap.add_argument("--out", default="translated.json",
-                    help="output file name, relative to work_dir")
-    args = ap.parse_args()
+def cmd(work_dir: Annotated[str, cliutil.Argument(
+            help="translation work dir")],
+        chunks: Annotated[str, cliutil.Option(
+            "--chunks", help="merge_plain_chunks.py output, relative to "
+            "work_dir (default: glob legacy chunks/*.translated.json)")] = "",
+        prefilled: Annotated[str, cliutil.Option(
+            "--prefilled", help="prefilled.json (MTool exact hits), relative "
+            "to work_dir; optional")] = "",
+        sweep: Annotated[str, cliutil.Option(
+            "--sweep", help="terminology sweep rules JSON (list of pairs), "
+            "relative to work_dir")] = "",
+        out: Annotated[str, cliutil.Option(
+            "--out", help="output file name, relative to work_dir")] = \
+        "translated.json",
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    work = os.path.abspath(args.work_dir)
-    sweeps = load_sweeps(os.path.join(work, args.sweep)) if args.sweep else []
+    work = os.path.abspath(work_dir)
+    sweeps = load_sweeps(os.path.join(work, sweep)) if sweep else []
 
     def sweep(v):
         for a, b in sweeps:
@@ -66,11 +72,11 @@ def main():
         return v
 
     merged = {}
-    if args.chunks:
-        d = plain_io.load_json(os.path.join(work, args.chunks))
+    if chunks:
+        d = plain_io.load_json(os.path.join(work, chunks))
         for k, v in d.items():
             merged[k] = sweep(v)
-        print("chunks merged: %d keys (from %s)" % (len(merged), args.chunks))
+        print("chunks merged: %d keys (from %s)" % (len(merged), chunks))
     else:
         for p in sorted(glob.glob(os.path.join(work, "chunks", "*.translated.json"))):
             d = plain_io.load_json(p)
@@ -78,8 +84,8 @@ def main():
                 merged[k] = sweep(v)
         print("chunks merged: %d keys" % len(merged))
 
-    if args.prefilled:
-        pref = plain_io.load_json(os.path.join(work, args.prefilled))
+    if prefilled:
+        pref = plain_io.load_json(os.path.join(work, prefilled))
         pref_swept = 0
         for k, v in pref.items():
             nv = sweep(v)
@@ -95,11 +101,19 @@ def main():
     print("merged keys: %d | template keys: %d | missing: %d | extra: %d"
           % (len(merged), len(tpl), len(missing), len(extra)))
 
-    out = os.path.join(work, args.out)
-    with open(out, "w", encoding="utf-8") as f:
+    out_path = os.path.join(work, out)
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=1)
-    print("wrote %s with %d keys" % (out, len(merged)))
+    print("wrote %s with %d keys" % (out_path, len(merged)))
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="merge_translation.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

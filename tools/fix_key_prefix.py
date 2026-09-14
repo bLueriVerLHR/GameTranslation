@@ -7,18 +7,21 @@ Strips the leading key from every affected value in a chunks dir.
 Usage:
     python tools\\fix_key_prefix.py <work_dir> [--chunks chunks]
 """
-import argparse
 import glob
 import json
 import os
+import sys
+from typing import Annotated
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("work_dir")
-    ap.add_argument("--chunks", default="chunks")
-    args = ap.parse_args()
-    W = os.path.join(os.path.abspath(args.work_dir), args.chunks)
+def cmd(work_dir: Annotated[str, cliutil.Argument(
+            help="translation work dir (contains chunks/)")],
+        chunks: Annotated[str, cliutil.Option(
+            "--chunks", help="chunks subdirectory name")] = "chunks") -> int:
+    W = os.path.join(os.path.abspath(work_dir), chunks)
     total = 0
     for tp in sorted(glob.glob(os.path.join(W, "*.translated.json"))):
         out = json.load(open(tp, encoding="utf-8"))
@@ -37,7 +40,18 @@ def main():
                   % (os.path.basename(tp), ch))
             total += ch
     print("total:", total)
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+# argparse used the module docstring as the command description; keep that
+# visible in --help (a collapsed single-command app shows the command help).
+cmd.__doc__ = __doc__
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="fix_key_prefix.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

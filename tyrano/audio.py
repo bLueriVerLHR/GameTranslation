@@ -14,6 +14,8 @@ import re
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Annotated, Optional
+
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -22,7 +24,7 @@ from rpgmaker import config as rpg_config  # noqa: E402
 from rpgmaker import runtime as rpg_runtime  # noqa: E402
 from .tyrano_extract import load_ks  # noqa: E402
 
-from rpgmaker import logsetup  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("tyrano.audio")
 
@@ -162,24 +164,30 @@ def convert(web_root, workers=None, keep=False, sample=None):
     return counts
 
 
-def main():
-    import argparse
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("-v", "--verbose", action="store_true")
-    ap.add_argument("web_root", help="built game folder (contains data/)")
-    ap.add_argument("--keep", action="store_true",
-                    help="keep the original mp3 files")
-    ap.add_argument("--sample", type=int, default=None,
-                    help="convert at most N files (trial run)")
-    ap.add_argument("--workers", type=int, default=None,
-                    help="parallel ffmpeg processes (default: auto-tuned)")
-    args = ap.parse_args()
+def cmd(web_root: Annotated[str, cliutil.Argument(
+            help="built game folder (contains data/)")],
+        keep: Annotated[bool, cliutil.Option(
+            "--keep", help="keep the original mp3 files")] = False,
+        sample: Annotated[Optional[int], cliutil.Option(
+            "--sample", help="convert at most N files (trial run)")] = None,
+        workers: Annotated[Optional[int], cliutil.Option(
+            "--workers", help="parallel ffmpeg processes (default: auto-tuned)"
+        )] = None,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Convert a built TyranoScript game's mp3 audio to ogg."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    print(convert(web_root, workers=workers, keep=keep, sample=sample))
+    return 0
 
-    logsetup.setup(verbose=args.verbose)
-    print(convert(args.web_root, workers=args.workers, keep=args.keep,
-                  sample=args.sample))
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="audio.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

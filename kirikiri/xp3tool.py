@@ -11,11 +11,19 @@ Usage:
     python3 kirikiri/xp3tool.py extract <game>.xp3 <out_dir>
 """
 
-import argparse
 import logging
 import os
 import struct
+import sys
 import zlib
+from typing import Annotated
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, appended (not inserted) so a same-named sibling module in
+# this directory still wins; the toolkit import below only needs the package
+# marker plus stdlib for cliutil/logsetup.
+sys.path.append(os.path.dirname(_HERE))
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("xp3tool")
 
@@ -210,29 +218,43 @@ def extract_all(path, outdir):
     return written, total
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("-v", "--verbose", action="store_true")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    p_list = sub.add_parser("list")
-    p_list.add_argument("xp3")
-    p_extract = sub.add_parser("extract")
-    p_extract.add_argument("xp3")
-    p_extract.add_argument("outdir")
-    args = ap.parse_args()
+def cmd_list(xp3: Annotated[str, cliutil.Argument(help="xp3 archive")],
+             verbose: cliutil.Verbose = False,
+             quiet: cliutil.Quiet = False,
+             log_file: cliutil.LogFile = None) -> int:
+    """List the entries of an xp3 archive."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    return _guarded(list_entries, xp3)
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
+
+def cmd_extract(xp3: Annotated[str, cliutil.Argument(help="xp3 archive")],
+                outdir: Annotated[str, cliutil.Argument(help="output directory")],
+                verbose: cliutil.Verbose = False,
+                quiet: cliutil.Quiet = False,
+                log_file: cliutil.LogFile = None) -> int:
+    """Extract every entry of an xp3 archive."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    return _guarded(extract_all, xp3, outdir)
+
+
+def _guarded(action, *action_args):
+    """Run an archive operation, turning a bad archive into exit code 1."""
     try:
-        if args.cmd == "list":
-            list_entries(args.xp3)
-        else:
-            extract_all(args.xp3, args.outdir)
+        action(*action_args)
     except (Xp3Error, OSError, zlib.error) as exc:
         log.error("%s", exc)
-        raise SystemExit(1)
+        return 1
+    return 0
+
+
+app = cliutil.app(help=__doc__)
+app.command(name="list")(cmd_list)
+app.command(name="extract")(cmd_extract)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="xp3tool.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -115,10 +115,13 @@ class TestBuildWorkPackage:
         assert "#たろう" in tpl
 
     def test_no_scenario_dir_fails(self, tmp_path):
+        import typer
         root = str(tmp_path / "g")
         os.makedirs(root)
-        with pytest.raises(SystemExit):
+        # The builder raises the framework's exit signal; the CLI returns 1.
+        with pytest.raises(typer.Exit) as exc:
             bt.build(root, str(tmp_path / "w"), None, None)
+        assert exc.value.exit_code == 1
 
 
 class TestApplyWorkPackage:

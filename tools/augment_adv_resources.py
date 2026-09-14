@@ -31,14 +31,19 @@ Usage:
         [--min-coverage 0.5] [--force]
 """
 
-import argparse
 import os
 import sys
+from typing import Annotated, Optional
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import typer
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
+sys.path.insert(0, _HERE)                   # sibling tools
 import bake_translation  # noqa: E402
 import japanese_utils  # noqa: E402
 import plain_io  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 
 # ADV text-resource detection uses the coarser hiragana+katakana block range
 # (U+3040-30FF, no half-width) - keep it distinct from the canonical KANA so
@@ -247,36 +252,58 @@ def bake_resources(game_dir, trs, min_coverage, force, lang_dirs,
     log("baked resources done")
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("game_dir")
-    ap.add_argument("work_dir", nargs="?")
-    ap.add_argument("--order", default="",
-                    help="comma list of resource file stems in story order")
-    ap.add_argument("--window", type=int, default=2)
-    ap.add_argument("--bake", action="store_true")
-    ap.add_argument("--trs", default="translated.json")
-    ap.add_argument("--min-coverage", type=float, default=DEFAULT_MIN_COVERAGE)
-    ap.add_argument("--force", action="store_true")
-    ap.add_argument("--lang-dirs", default=",".join(DEFAULT_DIRS))
-    ap.add_argument("--tweet-files", default=",".join(DEFAULT_TWEETS))
-    args = ap.parse_args()
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="game directory")],
+        work_dir: Annotated[Optional[str], cliutil.Argument(
+            help="translation work dir (required unless --bake)")] = None,
+        order: Annotated[str, cliutil.Option(
+            "--order", help="comma list of resource file stems in story "
+            "order")] = "",
+        window: Annotated[int, cliutil.Option("--window")] = 2,
+        bake: Annotated[bool, cliutil.Option("--bake")] = False,
+        trs: Annotated[str, cliutil.Option("--trs")] = "translated.json",
+        min_coverage: Annotated[float, cliutil.Option(
+            "--min-coverage")] = DEFAULT_MIN_COVERAGE,
+        force: Annotated[bool, cliutil.Option("--force")] = False,
+        lang_dirs: Annotated[str, cliutil.Option(
+            "--lang-dirs")] = ",".join(DEFAULT_DIRS),
+        tweet_files: Annotated[str, cliutil.Option(
+            "--tweet-files")] = ",".join(DEFAULT_TWEETS),
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    if args.bake:
-        bake_resources(args.game_dir, args.trs, args.min_coverage,
-                       args.force,
-                       [x for x in args.lang_dirs.split(",") if x],
-                       [x for x in args.tweet_files.split(",") if x])
-        return
+    dirs = [x for x in lang_dirs.split(",") if x]
+    tweets = [x for x in tweet_files.split(",") if x]
+    # The resource walkers report their own argument errors with SystemExit
+    # (walk_resources without --order, bake_resources under the coverage
+    # gate); the command turns those into an exit code.
+    try:
+        if bake:
+            bake_resources(game_dir, trs, min_coverage, force, dirs, tweets)
+            return 0
 
-    if not args.work_dir:
-        ap.error("work_dir is required unless --bake")
-    items = walk_resources(args.game_dir,
-                           [x for x in args.lang_dirs.split(",") if x],
-                           [x for x in args.tweet_files.split(",") if x],
-                           [x for x in args.order.split(",") if x])
-    augment(args.work_dir, items, args.window)
+        if not work_dir:
+            raise typer.BadParameter("work_dir is required unless --bake")
+        items = walk_resources(game_dir, dirs, tweets,
+                               [x for x in order.split(",") if x])
+        augment(work_dir, items, window)
+    except SystemExit as exc:
+        code = exc.code
+        if code is None or code == 0:
+            return 0
+        if isinstance(code, int):
+            return code
+        return cliutil.fail(str(code))
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="augment_adv_resources.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

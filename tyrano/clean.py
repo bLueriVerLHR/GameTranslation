@@ -10,6 +10,15 @@ before removal.
 """
 import logging
 import os
+import sys
+from typing import Annotated
+
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, appended (not inserted) so a same-named sibling module in
+# this directory still wins.
+sys.path.append(os.path.dirname(_HERE))
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("tyrano.clean")
 
@@ -91,21 +100,25 @@ def cleanup_all(web_root, dry_run=False):
     return removed
 
 
-def main():
-    import argparse
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("-v", "--verbose", action="store_true")
-    ap.add_argument("web_root")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="only report what would be removed")
-    args = ap.parse_args()
-
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
-    for p in cleanup_all(args.web_root, dry_run=args.dry_run):
+def cmd(web_root: Annotated[str, cliutil.Argument(help="built game folder")],
+        dry_run: Annotated[bool, cliutil.Option(
+            "--dry-run", help="only report what would be removed")] = False,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Remove build leftover / packaged runtime junk from a Tyrano build."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    for p in cleanup_all(web_root, dry_run=dry_run):
         print(p)
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="clean.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

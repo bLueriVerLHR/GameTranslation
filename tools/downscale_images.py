@@ -14,13 +14,13 @@ The default per-side limit is PNG_MAX_DIMENSION (rpgmaker/config.py).
 Usage:
   python downscale_images.py <web_root> [--limit N] [--dry-run] [--workers N]
 """
-import argparse
 import glob
 import logging
 import os
 import struct
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from typing import Annotated, Optional
 
 from PIL import Image
 
@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpgmaker import config  # noqa: E402
 from rpgmaker import runtime  # noqa: E402
 
-from rpgmaker import logsetup  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("downscale_images")
 
@@ -98,22 +98,36 @@ def scan(root, limit, workers, dry_run):
     log.info("downscaled %d images", done)
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("web_root", help="game web root (contains img/)")
-    ap.add_argument("--limit", type=int, default=config.PNG_MAX_DIMENSION,
-                    help="max pixels per side (default %(default)s)")
-    ap.add_argument("--dry-run", action="store_true", help="report only, write nothing")
-    ap.add_argument("--workers", type=int, default=None,
-                    help="parallel workers (default: auto-tuned to the machine)")
-    args = ap.parse_args(argv)
-    logsetup.setup()
-    root = os.path.abspath(args.web_root)
+def cmd(web_root: Annotated[str, cliutil.Argument(
+            help="game web root (contains img/)")],
+        limit: Annotated[int, cliutil.Option(
+            "--limit", help="max pixels per side")] = config.PNG_MAX_DIMENSION,
+        dry_run: Annotated[bool, cliutil.Option(
+            "--dry-run", help="report only, write nothing")] = False,
+        workers: Annotated[Optional[int], cliutil.Option(
+            "--workers", help="parallel workers (default: auto-tuned to "
+            "the machine)")] = None,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
+    root = os.path.abspath(web_root)
     if not os.path.isdir(os.path.join(root, "img")):
-        sys.exit("not a web root: %s" % root)
-    scan(root, args.limit, args.workers, args.dry_run)
+        print("not a web root: %s" % root, file=sys.stderr)
+        return 1
+    scan(root, limit, workers, dry_run)
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+# argparse used the module docstring as the command description; keep that
+# visible in --help (a collapsed single-command app shows the command help).
+cmd.__doc__ = __doc__
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="downscale_images.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

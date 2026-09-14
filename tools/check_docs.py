@@ -50,14 +50,15 @@ Usage
 Exit code: 0 when the tree matches the repo; 1 when anything is missing,
 mistyped or extra (a diff is printed).
 """
-import argparse
 import fnmatch
 import os
 import re
 import sys
 from collections import namedtuple
+from typing import Annotated, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 from rpgmaker import proctools  # noqa: E402
 from rpgmaker.config import find_git  # noqa: E402
 
@@ -287,36 +288,41 @@ def render(report, verbose=False):
     return lines
 
 
-def run(argv=None):
-    """Run the check and return the exit code (0 = consistent, 1 = drift)."""
-    ap = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--readme", default=None,
-                    help="README path (default: <repo>/README.md)")
-    ap.add_argument("--repo", default=".",
-                    help="repository root (default: current directory)")
-    ap.add_argument("--verbose", action="store_true",
-                    help="also print every checked tree entry")
-    args = ap.parse_args(argv)
-
-    repo = os.path.abspath(args.repo)
-    readme = args.readme or os.path.join(repo, "README.md")
+def cmd(readme: Annotated[Optional[str], cliutil.Option(
+            "--readme", help="README path (default: <repo>/README.md)")] = None,
+        repo: Annotated[str, cliutil.Option(
+            "--repo", help="repository root (default: current directory)")] = ".",
+        verbose: Annotated[bool, cliutil.Option(
+            "--verbose", help="also print every checked tree entry")] = False,
+        ) -> int:
+    repo_root = os.path.abspath(repo)
+    readme_path = readme or os.path.join(repo_root, "README.md")
     try:
-        report = compare(readme, repo)
+        report = compare(readme_path, repo_root)
     except (OSError, ValueError) as e:
         print("check_docs: %s" % e, file=sys.stderr)
         return 1
-    for line in render(report, verbose=args.verbose):
+    for line in render(report, verbose=verbose):
         print(line)
     if report.missing or report.type_mismatch or report.extra:
         return 1
     return 0
 
 
-def main(argv=None):
-    sys.exit(run(argv))
+app = cliutil.command_app(cmd, help=__doc__)
+# argparse used the module docstring as the command description; keep that
+# visible in --help (a collapsed single-command app shows the command help).
+cmd.__doc__ = __doc__
+
+
+def run(argv=None) -> int:
+    """Run the check and return the exit code (0 = consistent, 1 = drift)."""
+    return cliutil.run(app, argv, prog="check_docs.py")
+
+
+def main(argv=None) -> int:
+    return run(argv)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

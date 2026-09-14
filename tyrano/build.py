@@ -15,6 +15,15 @@ import logging
 import os
 import re
 import shutil
+import sys
+from typing import Annotated, Optional
+
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, appended (not inserted) so a same-named sibling module in
+# this directory still wins.
+sys.path.append(os.path.dirname(_HERE))
+from rpgmaker import cliutil  # noqa: E402
 
 from . import asar as asar_mod
 
@@ -111,21 +120,26 @@ def build(game_dir, out_dir, asar_path=None):
     return work
 
 
-def main():
-    import argparse
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("-v", "--verbose", action="store_true")
-    ap.add_argument("game_dir")
-    ap.add_argument("out_dir")
-    ap.add_argument("--asar", default=None,
-                    help="path to app.asar (absolute, or relative to game_dir)")
-    args = ap.parse_args()
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="game root folder")],
+        out_dir: Annotated[str, cliutil.Argument(help="build output folder")],
+        asar: Annotated[Optional[str], cliutil.Option(
+            "--asar", help="path to app.asar (absolute, or relative to "
+            "game_dir)")] = None,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Unpack the Electron build and strip the desktop runtime."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    build(game_dir, out_dir, asar)
+    return 0
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
-    build(args.game_dir, args.out_dir, args.asar)
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="build.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

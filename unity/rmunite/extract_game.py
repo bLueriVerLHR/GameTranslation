@@ -7,13 +7,19 @@ pure helpers testable) without the Unity toolchain installed.  A bundle that
 cannot be read is reported at WARN level with its path - never skipped
 silently, because a skipped bundle is untranslated story text.
 """
-import argparse
 import collections
 import json
 import logging
 import os
 import re
 import sys
+from typing import Annotated
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, appended (not inserted) so a same-named sibling module in
+# this directory still wins.
+sys.path.append(os.path.dirname(_HERE))
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("unity.rmunite.extract_game")
 
@@ -76,25 +82,23 @@ def collect_bundles(root):
     return sorted(found)
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("game_dir")
-    ap.add_argument("out_dir")
-    ap.add_argument("-v", "--verbose", action="store_true")
-    args = ap.parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s")
+def cmd(game_dir: Annotated[str, cliutil.Argument(
+            help="Unity game directory (holding <name>_Data/)")],
+        out_dir: Annotated[str, cliutil.Argument(
+            help="output directory for the extracted text")],
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
     # Validate the input before importing the heavy optional dependency, so a
     # wrong path fails fast with a clear message on any machine.
-    root = find_bundle_root(args.game_dir)
+    root = find_bundle_root(game_dir)
     if not root:
         return 2
 
     import UnityPy  # noqa: PLC0415 - optional heavy dependency, CLI path only
 
-    out_dir = args.out_dir
     os.makedirs(out_dir, exist_ok=True)
 
     stats = collections.Counter()
@@ -208,5 +212,17 @@ def main(argv=None):
     return 1 if skipped else 0
 
 
+# argparse showed the module docstring as the description; a single-command
+# Typer app renders the command's docstring, so point it at the same text
+# instead of keeping a second copy in sync.
+cmd.__doc__ = __doc__
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="extract_game.py")
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

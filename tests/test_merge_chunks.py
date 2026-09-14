@@ -4,8 +4,6 @@
 import json
 import random
 
-import pytest
-
 import merge_plain_chunks as mpc
 import plain_io
 
@@ -108,9 +106,8 @@ class TestMergeFlow:
                             ["まだ日本語"])  # kana residue -> issue
         monkeypatch.setattr("sys.argv",
                             ["merge_plain_chunks.py", str(work), "--strict"])
-        with pytest.raises(SystemExit) as exc:
-            mpc.main()
-        assert exc.value.code == 1
+        # the tool returns its exit code (1) instead of raising SystemExit
+        assert mpc.main() == 1
 
     def test_missing_zh_skipped(self, tmp_path, monkeypatch, capsys):
         work = tmp_path

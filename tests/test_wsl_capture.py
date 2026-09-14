@@ -250,10 +250,11 @@ def test_args_no_outdir_default():
     assert "-ProcessName" in cmd
 
 
-def test_capture_no_process_without_full(fake_env, tmp_path, monkeypatch):
-    with pytest.raises(SystemExit) as exc:
-        run_main(["--dir", str(tmp_path)], monkeypatch, tmp_path)
-    assert exc.value.code == 2  # argparse error
+def test_capture_no_process_without_full(fake_env, tmp_path, monkeypatch,
+                                         capsys):
+    """--process is required in window mode: usage error, exit code 2."""
+    assert run_main(["--dir", str(tmp_path)], monkeypatch, tmp_path) == 2
+    assert "--process is required unless --full" in capsys.readouterr().err
 
 
 def test_powershell_missing(monkeypatch, tmp_path):

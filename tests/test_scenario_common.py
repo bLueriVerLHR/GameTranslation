@@ -133,8 +133,13 @@ class TestBuildKsSmoke:
         assert (work / "scenario" / "start.ks").is_file()
 
     def test_no_scenario_dir_raises(self, tmp_path):
+        import typer
         import build_ks_translation as ks
         root = tmp_path / "g"
         root.mkdir()
-        with pytest.raises(SystemExit):
+        # A missing scenario dir is a failure raised from the builder: the
+        # CLI turns it into exit code 1 (tools return codes now, so the
+        # helper signals it the way the framework does).
+        with pytest.raises(typer.Exit) as exc:
             ks.build(str(root), str(tmp_path / "w"), None, None)
+        assert exc.value.exit_code == 1

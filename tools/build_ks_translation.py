@@ -30,11 +30,13 @@ Usage:
         [--scenario-dir scenario] [--entry start.ks]
 """
 
-import argparse
 import logging
 import os
 import sys
 from collections import deque
+from typing import Annotated, Optional
+
+import typer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kirikiri.ks_extract import (display_text, load_ks, scenario_storage_refs,
@@ -42,7 +44,7 @@ from kirikiri.ks_extract import (display_text, load_ks, scenario_storage_refs,
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import scenario_common  # noqa: E402
 
-from rpgmaker import logsetup  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("build_ks_translation")
 
@@ -142,7 +144,7 @@ def build(game_dir, work_dir, scenario_dir, entry):
         log.error("no scenario dir found under %s (tried %s); extract the "
                   "game with kirikiri/xp3tool.py first",
                   game_dir, ", ".join(SCENARIO_CANDIDATES))
-        raise SystemExit(1)
+        raise typer.Exit(code=1)
 
     tpl, kinds, ctx = {}, {}, {}
     maps = []
@@ -178,23 +180,33 @@ def build(game_dir, work_dir, scenario_dir, entry):
     return num_keys
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("-v", "--verbose", action="store_true")
-    ap.add_argument("game_dir")
-    ap.add_argument("work_dir")
-    ap.add_argument("--scenario-dir", default=None,
-                    help="scenario dir relative to game_dir (default: "
-                         "auto-detect scenario/ or System/Scenario)")
-    ap.add_argument("--entry", default=DEFAULT_ENTRY,
-                    help="entry scenario file for story order "
-                         "(default: start.ks)")
-    args = ap.parse_args()
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="extracted game dir")],
+        work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
+        scenario_dir: Annotated[Optional[str], cliutil.Option(
+            "--scenario-dir", help="scenario dir relative to game_dir "
+            "(default: auto-detect scenario/ or System/Scenario)")] = None,
+        entry: Annotated[str, cliutil.Option(
+            "--entry", help="entry scenario file for story order "
+            "(default: start.ks)")] = DEFAULT_ENTRY,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Build the KiriKiri translation work package (.ks lines -> keys)."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    build(game_dir, work_dir, scenario_dir, entry)
+    return 0
 
-    logsetup.setup(verbose=args.verbose)
-    build(args.game_dir, args.work_dir, args.scenario_dir, args.entry)
+
+# --help prints the tool's full documentation: a single-command Typer app
+# shows the COMMAND docstring, so the module docstring is attached to it
+# (the argparse version printed the same text as its description).
+cmd.__doc__ = __doc__
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="build_ks_translation.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

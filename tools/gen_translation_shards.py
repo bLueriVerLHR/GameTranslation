@@ -55,15 +55,19 @@ Glossary: `<work_dir>/glossary.json` {name/term: translation} — negotiated
 once with the game owner, afterwards maintained ONLY through the edit tool
 (agents never write it; every shard reads a snapshot of it).
 """
-import argparse
 import glob
 import json
 import os
 import re
 import sys
+import types
+from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import plain_io  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 GLOBAL_KINDS = {"db-name", "db-description", "db-message1", "db-message2",
                 "db-message3", "db-message4", "system", "note", "help",
@@ -313,35 +317,54 @@ def _emit_chunks(chunks_dir, args, global_keys, map_keys, tone, glossary,
     return num
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("work_dir")
-    ap.add_argument("--per-chunk", type=int, default=0,
-                    help="cap chunks by key count instead of total key char "
-                         "length (legacy; disables auto sizing)")
-    ap.add_argument("--max-chars", type=int, default=0,
-                    help="cap chunks by total key char length instead of "
-                         "key count (single overlong key gets its own chunk; "
-                         "disables auto sizing)")
-    ap.add_argument("--start", type=int, default=0)
-    ap.add_argument("--resume", action="store_true")
-    ap.add_argument("--out-dir", default="chunks",
-                    help="chunk subdirectory (default: chunks)")
-    ap.add_argument("--window", type=int, default=2,
-                    help="context window radius per key (default 2)")
-    ap.add_argument("--truncate", type=int, default=45,
-                    help="max chars per context transcript line")
-    ap.add_argument("--target-chunks", type=int, default=0,
-                    help="auto: pick --max-chars for about N story+global "
-                         "chunks (0 = off)")
-    ap.add_argument("--global-per-chunk", type=int, default=600,
-                    help="cap GLOBAL/DB/UI chunks by key count (default 600; "
-                         "short keys, transcript lines dominate the context)")
-    ap.add_argument("--context-budget-kb", type=int,
-                    default=DEFAULT_CONTEXT_BUDGET_KB,
-                    help="auto: keep every chunk's context.md under this many "
-                         "KB (default %(default)s; 90KB+ chunks are flaky)")
-    args = ap.parse_args()
+def cmd(work_dir: Annotated[str, cliutil.Argument(
+            help="translation work dir (template.json / context.json "
+            "inside it)")],
+        per_chunk: Annotated[int, cliutil.Option(
+            "--per-chunk", help="cap chunks by key count instead of total "
+            "key char length (legacy; disables auto sizing)")] = 0,
+        max_chars: Annotated[int, cliutil.Option(
+            "--max-chars", help="cap chunks by total key char length instead "
+            "of key count (single overlong key gets its own chunk; disables "
+            "auto sizing)")] = 0,
+        start: Annotated[int, cliutil.Option(
+            "--start", help="first chunk number")] = 0,
+        resume: Annotated[bool, cliutil.Option(
+            "--resume", help="skip keys already covered by chunks/*.zh.txt")] \
+        = False,
+        out_dir: Annotated[str, cliutil.Option(
+            "--out-dir", help="chunk subdirectory (default: chunks)")] = \
+        "chunks",
+        window: Annotated[int, cliutil.Option(
+            "--window", help="context window radius per key (default 2)")] = 2,
+        truncate: Annotated[int, cliutil.Option(
+            "--truncate", help="max chars per context transcript line")] = 45,
+        target_chunks: Annotated[int, cliutil.Option(
+            "--target-chunks", help="auto: pick --max-chars for about N "
+            "story+global chunks (0 = off)")] = 0,
+        global_per_chunk: Annotated[int, cliutil.Option(
+            "--global-per-chunk", help="cap GLOBAL/DB/UI chunks by key count "
+            "(default 600; short keys, transcript lines dominate the "
+            "context)")] = 600,
+        context_budget_kb: Annotated[int, cliutil.Option(
+            "--context-budget-kb", help="auto: keep every chunk's "
+            "context.md under this many KB (default 90; 90KB+ chunks are "
+            "flaky)")] = DEFAULT_CONTEXT_BUDGET_KB,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
+
+    # The writers/estimators below take the parsed options as one object and
+    # mutate it (auto sizing rewrites max_chars), and the tests build the same
+    # shape with a stub, so keep that contract instead of threading a dozen
+    # parameters through every helper.
+    args = types.SimpleNamespace(
+        work_dir=work_dir, per_chunk=per_chunk, max_chars=max_chars,
+        start=start, resume=resume, out_dir=out_dir, window=window,
+        truncate=truncate, target_chunks=target_chunks,
+        global_per_chunk=global_per_chunk,
+        context_budget_kb=context_budget_kb)
 
     work = os.path.abspath(args.work_dir)
     tpl, kinds, structure, glossary, macros, ctx, tone, chunks_dir = \
@@ -364,6 +387,7 @@ def main():
     num = _emit_chunks(chunks_dir, args, global_keys, map_keys, tone,
                        glossary, macros, ctx)
     print("wrote chunks %02d..%02d into %s" % (args.start, num, chunks_dir))
+    return 0
 
 
 def _split_by_len(keys, max_chars):
@@ -631,5 +655,12 @@ def _is_dialogue(k, ctx):
                                                  "name"))
 
 
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="gen_translation_shards.py")
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

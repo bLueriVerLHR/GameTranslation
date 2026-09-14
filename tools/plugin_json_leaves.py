@@ -34,16 +34,20 @@ rebuild:
 Extraction is structural (JSON walk + display-key heuristics), not
 game-specific: per-game exemptions belong in the --exempt file.
 """
-import argparse
 import json
 import os
 import re
 import sys
+from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
+sys.path.insert(0, _HERE)                   # sibling tools
 import japanese_utils  # noqa: E402
 import plugins_io  # noqa: E402
 import plain_io  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 
 KANA = japanese_utils.KANA
 CJK = re.compile(r"[\u4e00-\u9fff]")
@@ -232,9 +236,19 @@ def collect_blob_leaves(blob, exempt, out_leaves, warns, plugin=None,
     return n
 
 
-def cmd_extract(args):
-    exempt = load_exempt(args.exempt)
-    text = open(os.path.join(args.game_dir, "js", "plugins.js"),
+def cmd_extract(game_dir: Annotated[str, cliutil.Argument(
+            help="game directory (js/plugins.js)")],
+        work_dir: Annotated[str, cliutil.Argument(help="output work dir")],
+        exempt: Annotated[str, cliutil.Option(
+            "--exempt", help="JSON file: {\"leaf\": \"reason\"} of leaves to "
+            "skip (functional lookups, enums, brand names)")] = "",
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Collect translatable leaves of JSON plugin parameters."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    exempt_leaves = load_exempt(exempt)
+    text = open(os.path.join(game_dir, "js", "plugins.js"),
                 encoding="utf-8").read()
     plugins = plugins_io.parse_plugins_js(text)
 
@@ -255,14 +269,14 @@ def cmd_extract(args):
                 except ValueError:
                     blob = None
                 if blob is not None:
-                    n = collect_blob_leaves(blob, exempt, leaves, warns,
+                    n = collect_blob_leaves(blob, exempt_leaves, leaves, warns,
                                             plugin=name, param=key)
                     blobs[val] = {"plugin": name, "count": n}
                     continue
             if KANA.search(val):
                 flat.append({"string": val, "plugin": name, "param": key})
 
-    out = args.work_dir
+    out = work_dir
     os.makedirs(out, exist_ok=True)
     plain_io.save_json(os.path.join(out, "plugin_leaves.json"), leaves)
     plain_io.save_json(os.path.join(out, "plugin_flat.json"), flat)
@@ -273,16 +287,29 @@ def cmd_extract(args):
           % (len(blobs), len(leaves), total, len(flat)))
     for w in warns:
         print("WARN: %s" % w)
-    if not args.exempt:
+    if not exempt:
         print("NOTE: no --exempt file given; review lookup-y keys above.")
+    return 0
 
 
-def cmd_rebuild(args):
-    work = args.work_dir
+def cmd_rebuild(game_dir: Annotated[str, cliutil.Argument(
+            help="game directory (js/plugins.js)")],
+        work_dir: Annotated[str, cliutil.Argument(help="work dir")],
+        trans: Annotated[str, cliutil.Option(
+            "--trans", help="merged translated leaf dict "
+            "(default translated.json)")] = "translated.json",
+        out: Annotated[str, cliutil.Option(
+            "--out")] = "plugin_blobs_translated.json",
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Rebuild whole plugin-parameter strings from the translated leaves."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    work = work_dir
     blobs = plain_io.load_json(os.path.join(work, "plugin_blobs.json"))
-    trans = plain_io.load_json(os.path.join(work, args.trans))
+    trans_dict = plain_io.load_json(os.path.join(work, trans))
 
-    text = open(os.path.join(args.game_dir, "js", "plugins.js"),
+    text = open(os.path.join(game_dir, "js", "plugins.js"),
                 encoding="utf-8").read()
     plugins = plugins_io.parse_plugins_js(text)
     param_where = {}
@@ -299,7 +326,7 @@ def cmd_rebuild(args):
         except ValueError:
             print("WARN: unparseable blob: %r" % orig[:60])
             continue
-        new_decoded = apply_trans(decoded, trans, dead)
+        new_decoded = apply_trans(decoded, trans_dict, dead)
         new_param = encode_string_json(new_decoded)
         if isinstance(new_param, str):
             pass
@@ -313,7 +340,7 @@ def cmd_rebuild(args):
                     decode_string_json(json.loads(new_param)))
             ]
             remaining = sum(1 for v in rebuilt_leaves
-                            if trans.get(v) and trans[v] != v)
+                            if trans_dict.get(v) and trans_dict[v] != v)
         except ValueError:
             remaining = -1
         if remaining != 0:
@@ -322,7 +349,7 @@ def cmd_rebuild(args):
         if new_param != orig:
             pairs[orig] = new_param
 
-    out = os.path.join(work, args.out)
+    out = os.path.join(work, out)
     plain_io.save_json(out, pairs)
     print("blob pairs: %d | dead translations: %d" % (len(pairs), len(dead)))
     for d in sorted(dead):
@@ -332,29 +359,14 @@ def cmd_rebuild(args):
               "from their keys and that blobs match plugins.js.")
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    sub = ap.add_subparsers(dest="cmd", required=True)
+app = cliutil.app(help=__doc__)
+app.command(name="extract")(cmd_extract)
+app.command(name="rebuild")(cmd_rebuild)
 
-    p = sub.add_parser("extract")
-    p.add_argument("game_dir")
-    p.add_argument("work_dir")
-    p.add_argument("--exempt", default="",
-                   help="JSON file: {\"leaf\": \"reason\"} of leaves to skip "
-                        "(functional lookups, enums, brand names)")
-    p.set_defaults(func=cmd_extract)
 
-    p = sub.add_parser("rebuild")
-    p.add_argument("game_dir")
-    p.add_argument("work_dir")
-    p.add_argument("--trans", default="translated.json",
-                   help="merged translated leaf dict (default translated.json)")
-    p.add_argument("--out", default="plugin_blobs_translated.json")
-    p.set_defaults(func=cmd_rebuild)
-
-    args = ap.parse_args()
-    args.func(args)
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="plugin_json_leaves.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

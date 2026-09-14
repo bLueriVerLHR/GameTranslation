@@ -13,10 +13,18 @@ attached and the video is replayed on the first user interaction.
 The patch is idempotent: an already-patched file is detected by the
 '_p&&_p.catch' marker and left untouched.
 """
-import argparse
 import logging
 import os
 import re
+import sys
+from typing import Annotated
+
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, appended (not inserted) so a same-named sibling module in
+# this directory still wins.
+sys.path.append(os.path.dirname(_HERE))
+from rpgmaker import cliutil  # noqa: E402
 
 log = logging.getLogger("tyrano.autoplay")
 
@@ -73,18 +81,23 @@ def patch_autoplay(work_dir, file_rel=KAG_TAG_EXT_REL):
     return n
 
 
-def main():
-    ap = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("out", help="built TyranoScript game folder")
-    ap.add_argument("-v", "--verbose", action="store_true")
-    args = ap.parse_args()
+def cmd(out: Annotated[str, cliutil.Argument(
+            help="built TyranoScript game folder")],
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Patch play() for the browser autoplay policy (idempotent)."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    patch_autoplay(out)
+    return 0
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
-    patch_autoplay(args.out)
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="autoplay.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

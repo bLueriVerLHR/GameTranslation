@@ -34,12 +34,13 @@ Usage:
     python build_translation.py <game_dir> <out_dir> [--no-plugins]
 """
 
-import argparse
 import collections
 import json
 import os
 import re
 import sys
+from typing import Annotated
+
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ctrl_codes  # noqa: E402
@@ -47,6 +48,9 @@ import plain_io  # noqa: E402
 import plugins_io  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil  # noqa: E402
 
 SPLIT = re.compile(r"\n")
 JA = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
@@ -390,19 +394,23 @@ def build_tree(data, map_id, map_name, display_name, collector, fname=""):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("game_dir")
-    ap.add_argument("out_dir")
-    ap.add_argument("--no-plugins", action="store_true",
-                    help="skip js/plugins.js parameter text extraction")
-    args = ap.parse_args()
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
+        out_dir: Annotated[str, cliutil.Argument(
+            help="work folder to write the translation package into")],
+        no_plugins: Annotated[bool, cliutil.Option(
+            "--no-plugins",
+            help="skip js/plugins.js parameter text extraction")] = False,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Extract the MZ template/context/structure/kinds/names/name macros."""
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    game_dir = os.path.abspath(args.game_dir)
-    out_dir = os.path.abspath(args.out_dir)
+    game_dir = os.path.abspath(game_dir)
+    out_dir = os.path.abspath(out_dir)
     data_dir = os.path.join(game_dir, "data")
     if not os.path.isdir(data_dir):
-        sys.exit("no data/ dir under %s" % game_dir)
+        return cliutil.fail("no data/ dir under %s" % game_dir)
     os.makedirs(out_dir, exist_ok=True)
 
     col = Collector()
@@ -450,7 +458,7 @@ def main():
         else:
             process_db(data, col, fname, fname)
 
-    if not args.no_plugins:
+    if not no_plugins:
         n = extract_plugin_text(game_dir, col)
         if n:
             log("plugin parameter text: %d strings" % n)
@@ -489,7 +497,15 @@ def main():
 
     log("template: %d keys; names: %d candidates; maps: %d; name macros: %d"
         % (len(template), len(names), len(tree), len(name_macros)))
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="build_translation.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

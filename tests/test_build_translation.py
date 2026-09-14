@@ -16,7 +16,6 @@ import json
 import os
 import sys
 
-import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
@@ -284,11 +283,18 @@ class TestMainTemplate:
         assert keys[0] == "よくでる"
         assert "たまに" in keys
 
-    def test_missing_data_dir_exits(self, tmp_path, monkeypatch):
+    def test_missing_data_dir_exits(self, tmp_path, monkeypatch, capsys):
+        """A missing data/ dir is a failure: the tool returns 1 and reports it
+        on stderr (tools return their exit code instead of raising)."""
         root = str(tmp_path / "game")
         out = str(tmp_path / "work")
         os.makedirs(root)
         monkeypatch.setattr("sys.argv", ["build_translation.py", root, out])
-        with pytest.raises(SystemExit) as exc:
-            bt.main()
-        assert "no data/" in str(exc.value)
+        assert bt.main() == 1
+        assert "no data/" in capsys.readouterr().err
+
+    def test_missing_data_dir_through_argv(self, tmp_path):
+        """Same failure driven through the explicit-argv entry point."""
+        root = str(tmp_path / "game")
+        os.makedirs(root)
+        assert bt.main([root, str(tmp_path / "work")]) == 1

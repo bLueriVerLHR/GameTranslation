@@ -10,23 +10,29 @@ Consolidated from the long-run session audit_prefilled.py (docs/translation.md).
 Usage:
     python tools\\audit_prefilled.py <prefilled.json> [--out <fixed.json>]
 """
-import argparse
 import json
 import os
 import sys
+from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
+sys.path.insert(0, _HERE)                   # sibling tools
 import japanese_utils  # noqa: E402
+from rpgmaker import cliutil  # noqa: E402
 
 KANA = japanese_utils.KANA
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("prefilled")
-    args = ap.parse_args()
+def cmd(prefilled: Annotated[str, cliutil.Argument(
+            help="prefilled MTool-exact-hit JSON to audit")],
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    cliutil.setup_logging(verbose, quiet, log_file)
 
-    p = json.load(open(args.prefilled, encoding="utf-8"))
+    p = json.load(open(prefilled, encoding="utf-8"))
     residual = []
     for k, v in p.items():
         kl = k.split("\n")
@@ -44,7 +50,15 @@ def main():
     for k, v, why in residual[:20]:
         print("  K:", repr(k)[:70])
         print("  V:", repr(v)[:70], "|", why)
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="audit_prefilled.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

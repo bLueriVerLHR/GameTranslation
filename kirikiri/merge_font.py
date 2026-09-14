@@ -15,11 +15,22 @@ Usage:
     python3 kirikiri/merge_font.py <cn_font> <jp_font> <out.ttf> [--upm 2048]
 """
 
-import argparse
 import os
 import sys
+from typing import Annotated
 
-from fontTools.ttLib import TTFont, TTCollection
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# Repo root, appended (not inserted) so a same-named sibling module in
+# this directory still wins.
+sys.path.append(os.path.dirname(_HERE))
+from rpgmaker import cliutil  # noqa: E402
+
+try:
+    from fontTools.ttLib import TTFont, TTCollection
+except ImportError as exc:                     # pragma: no cover - hint path
+    raise ImportError(
+        "fontTools is required to merge the Chinese and Japanese fonts - "
+        "install the optional extra (pip install -e \".[fonts]\")") from exc
 
 
 def _open_font(path):
@@ -81,21 +92,31 @@ def merge_fonts(cn_font, jp_font, out_path, upm):
     return out_path
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cn_font", help="Chinese font first (glyph priority)")
-    ap.add_argument("jp_font", help="Japanese font (lacks GB glyphs)")
-    ap.add_argument("out_ttf")
-    ap.add_argument("--upm", type=int, default=2048)
-    args = ap.parse_args()
+def cmd(cn_font: Annotated[str, cliutil.Argument(
+            help="Chinese font first (glyph priority)")],
+        jp_font: Annotated[str, cliutil.Argument(
+            help="Japanese font (lacks GB glyphs)")],
+        out_ttf: Annotated[str, cliutil.Argument(help="merged TTF to write")],
+        upm: Annotated[int, cliutil.Option(
+            "--upm", help="units per em used for both inputs")] = 2048,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Merge a Chinese and a Japanese font into one CJK TTF."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    if not os.path.exists(cn_font) or not os.path.exists(jp_font):
+        return cliutil.fail("input font not found")
+    merge_fonts(cn_font, jp_font, out_ttf, upm)
+    print("merged size:", os.path.getsize(out_ttf), out_ttf)
+    return 0
 
-    if not os.path.exists(args.cn_font) or not os.path.exists(args.jp_font):
-        print("error: input font not found", file=sys.stderr)
-        raise SystemExit(1)
-    merge_fonts(args.cn_font, args.jp_font, args.out_ttf, args.upm)
-    print("merged size:", os.path.getsize(args.out_ttf), args.out_ttf)
+
+app = cliutil.command_app(cmd, help=__doc__)
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="merge_font.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

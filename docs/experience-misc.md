@@ -143,3 +143,60 @@ FOSSIL/fix-load-failed 的 `process` 路径是 NW.js-only 死分支，不动。
   修复：解析失败回退默认路径。
 - 两个 bug 都让 `deliver` 直接崩 — 集成测试 `test_integration.py` 在
   修复前是红着的（Python 3.14 下同样复现），修完 375 测试全绿。
+
+## 9. 工具链改用现成包（2026-09 重构）
+
+原则：同一个能力只留一个封装层，且优先用维护中的包（AGENTS.md
+「功能优先用现成包」规则表）。
+
+### 9.1 打包：py7zr（唯一入口 `rpgmaker/archive.py`）
+
+create / verify / names / extract 四个函数，同侧工作全部在进程内完成；
+`extract()` 直接拒绝 Windows 侧目标（跨系统 CRITICAL 规则，交给
+`deliver` 的 7z.exe 桥）。**实测**（265 MB / 3009 文件，zstd level 15）：
+
+| 引擎 | 耗时 | 体积 | 互读 |
+|---|---|---|---|
+| `7z.exe a -t7z -m0=zstd -mmt=on` | 5.3 s | 251.7 MB | — |
+| py7zr（`FILTER_ZSTD`） | **3.1 s** | 251.7 MB | `7z.exe t` 通过（`Method = ZSTD`） |
+
+坑：
+
+- py7zr 把方法名报作 **`ZStandard`**（7z.exe 显示 `ZSTD`）—— 断言时
+  必须两种都接受，否则测试假失败。
+- py7zr 没有 `-mmt` 对应物（`mp=True` 只影响解包）；实测单进程已快过
+  `-mmt=on`，所以 `threads` 参数现在只做兼容。
+- 完整性校验用 `testzip()`（逐成员 CRC）：坏档案仍必须 ERROR + 非零退出码
+  （曾经只是 INFO 且返回值被丢弃 → 坏档案 exit 0）。
+
+### 9.2 媒体：PyAV（唯一入口 `rpgmaker/media.py`）
+
+`probe()` / `probe_video()` / `decode_ok()` / `has_codec()`，**不再需要
+ffprobe**。实测（2 s/44.1 kHz 立体声，libvorbis）：duration 2.002902
+(ffprobe) vs 2.0 (PyAV，末包取整)，size/codec/channels/sample_rate 完全一致。
+
+- **真 bug**：旧探测只让 ffprobe 报 `format=...tags`，而
+  `LOOPSTART/LOOPLENGTH` 通常是 **stream 级** Vorbis comment（本流水线自己
+  的 `-metadata:s:a:0` 就写在那里）→ **重新编码会丢循环点**。PyAV 同时读
+  容器与流标签，回归用真 Ogg 固件（`tests/fixtures/sine_loop.ogg`）。
+- PyAV 的 wheel **不含 libvorbis**（只有实验性原生 `vorbis` 编码器），
+  所以 **Vorbis 编码仍用 ffmpeg CLI**；VP9/Opus 视频编码同理（已验证的
+  移动端配方）。这两处保留 CLI 的理由写在模块文档串里。
+- 测试不再用假 ffprobe：需要真容器的地方用固件，策略测试直接注入探测结果。
+
+### 9.3 CLI / 进程 / 日志 / 测试
+
+- `rpgmaker/cli.py`：Typer 定义两个应用（RPG Maker / Tyrano），
+  `pipeline.py`、`tyrano/pipeline.py` 退化成包装；入口 `gt` / `gt-tyrano`。
+  两个入口曾各自抄一遍 serve/compress/deliver 与 `smoke_test`，现已共用。
+- `rpgmaker/proctools.py`：外部进程唯一入口（默认 900 s 超时、UTF-8
+  `replace`、失败信息带程序名/退出码/输出尾部）；缺程序仍抛
+  `FileNotFoundError`（保留 resolver 的安装提示）。
+- `rpgmaker/logsetup.py`：唯一日志配置（时间戳 + 等级 + logger 名）；
+  **禁止 import 期配置**（会改写整个进程 root logger 并让后续配置静默失效）。
+- 测试：`pytest-xdist` 默认并行（1163 用例 27.8 s → 11.2 s）；
+  `-p no:xdist` 会与 `addopts = "-n auto"` 冲突，串行请用 `-n 0`。
+- Typer 的退出约定：**成功也会走 `SystemExit(0)`**，所以包装函数
+  （`cli._run`）把 0 吞掉、非零上抛——测试才能断言「成功返回 / 失败 SystemExit」。
+- `pip install -e ".[unity]"` 会顺带装 `attrs`（UnityPy 的依赖）；
+  我们自己的代码仍然不用 attrs/pydantic（数据不可信的降级设计）。

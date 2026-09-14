@@ -30,11 +30,26 @@ docs、README、commit message、文件名）都不允许出现以下内容；�
   作者名豁免、语气段、预填字典）一律走命令行参数/外部 JSON/`--exempt`
   注入；不得把某款游戏的数据写死在脚本里（污染类 bug，见
   `docs/translation.md` §3）。
-- **提交前自查 (mandatory)**: 改动后必须跑
-  `rg -n -i "<游戏名|密码|C:\\Users\\|露骨词>" --glob "!*.pyc" --glob "!docs/table/**" .`
-  确认零命中再 commit（具体广告文件名/推广关键词见本地
-  `docs/table/ad_keywords.md`，同样排除）；commit message 同样不含游戏名/
-  敏感词。
+- **提交前自查 (mandatory)**: 分两部分。
+
+  **(1) 机器路径/用户名——自动化门禁**（可真正跑到零命中）:
+
+  ```bash
+  <venv-python> -m pytest tests/test_repo_hygiene.py -q
+  ```
+
+  该测试只扫 git 认可的文件（`docs/table/**` 已排除），允许 AGENTS.md
+  规定的占位符形式（`C:\Users\<用户名>\`、`/mnt/c/Users/<user>/`），
+  并维护一份**显式的**测试合成用户名白名单；真实用户名/机器路径一律
+  失败。若需人工确认，可直接跑
+  `rg -nP 'C:\\Users\\(?![<「])|/mnt/[a-z]/Users/(?![<「])' --glob '!docs/table/**' .`，
+  但请注意**规则文本与测试固件自身就会命中**，所以真正的门禁是上面那个
+  测试。
+
+  **(2) 游戏名 / 成人词 / 推广词——词表对照**：用本地词表
+  `docs/table/ad_keywords.md`（gitignored，每行一个关键词）：
+  `rg -n -f docs/table/ad_keywords.md --glob '!docs/table/**' .`；
+  词表不存在时按「引擎 + 特征描述」原则人工复核。commit message 同样自查。
 
 ## 跨系统文件处理 — CRITICAL（MUST，2026-08 定案）
 
@@ -63,8 +78,9 @@ Windows 侧文件（解压、脚本读写），造成电脑**花屏**的严重�
 Windows 原生工具（路径用 Windows 格式），例如：
 
 ```bash
+# <win7z> = 用 `python pipeline.py doctor` 查到的 Windows 7z.exe 路径
 powershell.exe -NoProfile -Command \
-  "& 'C:\Program Files\7-Zip-Zstandard\7z.exe' x -y '-o<games_dir>' '<archives_dir>\game.7z'"
+  "& '<win7z>' x -y '-o<games_dir>' '<archives_dir>\game.7z'"
 ```
 
 `rpgmaker/deliver.py` 已内置**自动桥接**：WSL 下对 Windows 侧（`/mnt/*`）
@@ -84,7 +100,11 @@ docs/table/
 ├── README.md           # 目录说明与维护约定
 ├── ad_keywords.md      # 广告/推广关键词与文件名清单（打包前清理对照）
 ├── passwords.md        # 常用压缩包密码表（解压 `7z x -p<pass>` 用）
-├── adult_noun_table.md   # 通用名词词表（成人词表，仅本地）
+├── <通用名词词表>.md   # 通用名词词表（成人词表，仅本地；实际文件名以本
+│                       #   目录 README.md 为准，不要在仓库里写死名称）
+├── env_config.json     # 本机环境覆盖（可选，缺失时靠探测 + 默认值）
+├── font_rollback.md    # 统一字体策略的字体名与各引擎改动点（可选）
+├── fonts/              # 打包字体（自动发现，不写绝对路径）
 └── <Game>/             # 每款游戏一个子目录（<Game> 用本地代号，如工作目录名）
     ├── glossary.json   # 术语/人名 KV
     ├── tone.md         # 语气/风格要求
@@ -102,8 +122,13 @@ docs/table/
   匹配密码）。
 - **打包/压缩前清理广告文件时**: 对照 `docs/table/ad_keywords.md` 的关键词
   与文件名清单扫描并删除（仓库文档里不写具体文件名，以本表为准）。
-- **翻译风格定案时**: `adult_noun_table.md` 是通用名词词表的唯一权威来源
-  （见 `docs/translation.md` §6）。
+- **翻译风格定案时**: `docs/table/` 下的**通用名词词表**（成人词表）是通用
+  名词词表的唯一权威来源（具体文件名以 `docs/table/README.md` 为准，
+  **不在仓库里写死**——写死过的文件名曾与实际本地文件名不一致，
+  见 `docs/translation.md` §6）。
+- **依赖本地数据却找不到时**: 任何 mandatory 步骤若只有 gitignored 数据
+  才能完成（词表/字体/env_config），**必须 WARN 并说明缺失了什么**，
+  不得静默降级成空操作。
 
 维护与边界:
 
@@ -123,16 +148,18 @@ docs/table/
   成单一提交；每个功能/修复一个提交，按逻辑拆分即可。
 - **推送必须显式获准（mandatory）**：**绝不主动 push 到 GitHub** —
   只有 owner 明确说"推送/push"时才推送，且只推主分支（main）；推送前
-  必须先通过下方检查。提交者身份用 opencode（不用 owner 的 git 身份）。
+  必须先通过下方检查。提交者身份用本工具库的固定身份（与历史提交一致，
+  见 `git log` 的 author），不用 owner 的个人 git 身份。
 - **合并前必须通过检查（mandatory）**：
-  1. 敏感词扫描：
-     `rg -n -i "<游戏名|密码|C:\\Users\\|露骨词>" --glob "!*.pyc" --glob "!docs/table/**" .`
-     零命中；
+  1. 卫生门禁（见上节第一条）：`tests/test_repo_hygiene.py` 全绿；
   2. `python -m py_compile` 所有改动的 `.py`（工具可运行）；
-  3. 文档一致性：README 目录树与新增文件同步、文档语言为中文；
+  3. 文档一致性：`python tools/check_docs.py`（README 目录树与仓库文件
+     同步）、文档语言为中文；
   4. **单元测试（mandatory，2026-08 定案）**：新功能/新工具必须写单元
      测试（`tests/`，pytest），**正例、反例、边缘情况都要覆盖**，提交前
-     `.venv/bin/python -m pytest tests/` 全绿。
+     全绿——venv 解释器按平台取 `.venv/bin/python`（POSIX）或
+     `.venv\Scripts\python.exe`（Windows），命令形如
+     `<venv-python> -m pytest tests/`。
 - 提交信息主要用中文描述，但不得含游戏名与敏感词。
 
 ## 语言规则（mandatory）
@@ -173,10 +200,10 @@ docs/table/
    全量跑。
 2. **新功能必须带单元测试（mandatory）**：新工具/新功能写
    `tests/`（pytest），**正例、反例、边缘情况都要覆盖**，提交前
-   `.venv/bin/python -m pytest tests/` 全绿。
+   `<venv-python> -m pytest tests/` 全绿（venv 解释器按平台取，见上）。
 3. **排查问题用只读子代理并行（mandatory）**：多个独立疑点时，开多个
-   只读子代理（explore/general 只读模式）并行排查，缩短排查时间；
-   各自结论汇总后交叉验证，不要串行逐个试。
+   **只读子代理**（各 harness 的叫法不同：只读/审阅型 agent）并行排查，
+   缩短排查时间；各自结论汇总后交叉验证，不要串行逐个试。
 4. **随机采样代替定点抽查（mandatory）**：检查文件质量（解码正确性、
    残留、格式异常等）时用**随机采样**（`random.sample`/`shuf`），
    绝不反复检查同一个已知正确的文件，也不在特例中挑文件——否则会
@@ -198,8 +225,10 @@ docs/table/
 **操作步骤（点击/推进/输入）由 WSL 内脚本控制外部应用执行**（如
 PowerShell `AppActivate` + SendKeys、浏览器 CDP/命令行参数），操作后
 再截图；无法自动化的步骤停下请 owner 手动完成并告知。
-完整流程/前提/排查见 `docs/screenshot.md`；截图后交给 vision-analyzer
-子代理分析（主模型不支持图片输入）。互操作失效（`WSLInterop` binfmt
+完整流程/前提/排查见 `docs/screenshot.md`；截图后**用当前 harness 可用的
+视觉路径读图**（本工具库的主模型支持图片输入，可直接把 PNG 交给 `read`
+工具；若某次运行的模型确实没有视觉能力，就把路径交给 owner 并明确说明
+「未能完成视觉验证」，绝不得假装完成）。互操作失效（`WSLInterop` binfmt
 条目缺失）时的修复命令也写在 docs/screenshot.md。
 
 
@@ -307,7 +336,11 @@ bundle，见下方 FAILURE 记录）——正确路线是 **MelonLoader 运行�
 
 分片：分批追加契约下 **~250 键 / ~9k 字符** 的大块完全可行，QC 保证不丢行。
 
-### 2. 运行时注入（MelonLoader 0.7.3 + Harmony）
+### 2. 运行时注入（MelonLoader 0.7.3 + Harmony — 先 `doctor`/自检版本）
+
+> 下文的版本号（MelonLoader / Unity / BepInEx / metadata）是**当时跑通的
+> 组合**，不是永久保证；换新版本前先确认本机实际版本，失败按本文末尾
+> “失败模式”入口记入 `docs/experience-*.md`。
 
 1. 把 `MelonLoader.x64.zip` 解压到游戏根目录，首次启动自动生成
    `MelonLoader\Il2CppAssemblies`（内含 Cpp2IL 处理 metadata v39 的能力）。
@@ -341,7 +374,7 @@ bundle，见下方 FAILURE 记录）——正确路线是 **MelonLoader 运行�
   必须用字符串路径重载**（FontEngine 直接从文件加载）：
   ```csharp
   var cjk = TMP_FontAsset.CreateFontAsset(
-      "C:\\Windows\\Fonts\\simsun.ttc", 0, 36, 6,
+      "<path-to-cjk-font>.ttc", 0, 36, 6,
       UnityEngine.TextCore.LowLevel.GlyphRenderMode.SDFAA, 1024, 1024,
       Il2CppTMPro.AtlasPopulationMode.Dynamic, true);
   ```
@@ -527,13 +560,17 @@ RPG Maker 流水线。下述为桌面翻译路线；手机转换另见
   `translation_kv.json`** (out_dir 根目录,`--no-kv` 关闭) — 无需手工改名;
   未翻译的游戏不打此文件。
 - **打包前必架服务器供 owner 试玩 (mandatory, 2026-08 定案)**: 收尾
-  `deliver` 之前,必须用 `serve` 起 HTTP 服务器(绑 `0.0.0.0` 以便 owner
-  从本机/手机访问,端口避开近期用过的),让 owner 实际试玩确认(翻译、
-  字体、运行无报错)。owner 确认后才能 `compress`/`deliver`。
+  `deliver` 之前,必须用 `serve` 起 HTTP 服务器,让 owner 实际试玩确认
+  (翻译、字体、运行无报错)。owner 确认后才能 `compress`/`deliver`。
+  命令必须**显式带 `--host 0.0.0.0`**（默认是回环 `127.0.0.1`，不带就
+  只有本机能访问、手机连不上）：
+  `python pipeline.py serve <dir> --host 0.0.0.0 -p <port>`
+  （Tyrano 构建用 `tyrano/pipeline.py serve`；端口避开近期用过的）。
 - **统一字体 (mandatory, 2026-08 定案)**: 汉化构建必须应用统一字体
   策略——中文/拉丁/日文假名统一走项目标准中文字体,避免中文回退系统
   字体导致字形不统一。具体字体名与各引擎改动点见本地
-  `docs/table/font_rollback.md`(不入库);MZ/MV 走 `bake_translation.py`
+  `docs/table/font_rollback.md`(不入库,缺失时**按 WARN 报出并跳过**,
+  不得静默当成已应用);MZ/MV 走 `bake_translation.py`
   标准字体策略,Tyrano 按 `font_rollback.md` 的 Tyrano 改动点
   (font.css @font-face + Config.tjs `;userFace=`)。
 - **bake 低覆盖率闸门 (mandatory, 2026-08 定案)**: bake 前先做一次只读
@@ -576,16 +613,21 @@ Android WebView/PixiJS 把 WebGL 贴图限制在**每边 4096 像素**；PNG 超
   （`chars / 11000`，auto 分片会最终确认）。
 - 估算约 10+ 块属于大任务：**先问用户是否翻译**（范围：全部 / 子集 /
   跳过）再启动任何 subagent。绝不自动开始超大翻译任务。
-- **>30 块 → 不要开始。** 块数超过 30 时，任何情况下都不要启动
-  subagent：**等用户明确指示再翻译**。该任务留作批处理项目。
+- **>30 块 → 不要自行开始。** 块数超过 30 时，任何情况下都不要自行启动
+  subagent：**等用户明确指示再翻译**（历史上 50～130 块的全量任务都是
+  owner 明确授权后才跑的——授权是逐次的，不是一次性的常设豁免）。
+  该任务留作批处理项目，并准备 work 目录的 `TRANSLATION_PROJECT.md`
+  状态文件（已完成步骤、剩余任务、下一步、并行策略）。
 - 小任务（少量块）一行确认即可。
 
 ## 翻译并行度 (mandatory — 统一，2026-08 验证)
 
-**每轮 10 个并行 subagent 是基线。** 已验证稳定（9-11 都稳定；首轮成功
-率 ~90%+ 是 prompt 的属性，与并行度无关）。策略：
+**默认每轮 10 个并行 subagent**（历史标定值：9-11 都稳定；首轮成功率
+主要取决于 prompt 质量而非并行度）。并行度上限受当前 harness 限制，
+当 harness 装不下 10 个时就按实际上限降低并保持其余策略不变。策略：
 
-- **默认：每轮 10 个 agent。** 轮次不超过 ~11。
+- **默认：每轮 10 个 agent**（受 harness 并发上限限制，取小者）；
+  轮次数量由实际块数 ÷ 并行度决定，不固定。
 - **一次失败** → 先在**同一个 subagent 会话**里重试（"立即写文件"）；
   ~90% 可恢复。同一会话失败两次后，新开会话试一次。
 - **三次重试仍失败 → 编排者亲自翻译（mandatory）**：同一块累计三次
@@ -627,10 +669,13 @@ prefilled 命中与 sweep 规则出最终 `translated.json`。
 `gen_translation_shards.py <work> [--target-chunks N] [--context-budget-kb 90]`:
 脚本按每键的 context 行实际长度(含控制码行/窗口行)估算各 chunk 的
 context.md 体积,**二分搜索最大的 --max-chars**,使 chunk 数 ≤ N 且最大
-context.md ≤ 预算(90KB+ 的 context 是 no-file 失败温床;估算与实际误差
-<3%)。默认(不传 --max-chars/--per-chunk)即走 auto:**90KB 预算下的最大
-chunk (~11,000 字符)**。`gen_completion_shards.py` 同款默认
-(--max-chars 11000)。用法示例: `gen_translation_shards.py <work>
+context.md ≤ 预算(90KB+ 的 context 是 no-file 失败温床;该估算只在短键
+游戏上接近实际,长日文/大量控制码的游戏实测可达估算的 2 倍以上——见
+`docs/experience-translation.md`,所以以生成器**打印的实际 context 大小**
+为准,不要相信估算百分比)。默认(不传 --max-chars/--per-chunk)即走 auto:
+**90KB 预算下的最大 chunk (~11,000 字符,历史标定值)**。
+`gen_completion_shards.py` 同款默认(--max-chars 11000,且同样注入
+`<work>/tone.md`)。用法示例: `gen_translation_shards.py <work>
 --target-chunks 55 --context-budget-kb 90 --window 1`。
 
 ### 术语/人名词表 = 单文件,只读
@@ -665,7 +710,7 @@ context.md 场景时间线;上下文本身不参与翻译,只为 agent 提供语
    叙事依赖的 chunk(不同地图/DB);乱序并行会把场景译得前后不连贯。
 5. 分片生成后抽查: 相邻 chunk 的 context.md 应能对上(前一个的尾部 ≈
    后一个的 Carry-over 段),对不上就是分片 bug。
-6. 术语/人名一致性: 靠 `glossary.json` 单文件(edit 工具维护)+ 每 chunk
+6. 术语/人名一致性: 靠 `glossary.json` 单文件(只用编辑工具改)+ 每 chunk
    词表快照;新名词在翻译中首次出现时,编排者必须把它补进词表并通知后续
    chunk。
 
@@ -695,22 +740,25 @@ context.md 场景时间线;上下文本身不参与翻译,只为 agent 提供语
 旧 Write-first 契约("先写,后思考,再改"、一次性 Write 全文件)在
 700+ 行的大 chunk 上失败率高(一轮 10 个 agent 常 3-5 个死于无文件;
 同会话重试基本全恢复)。**2026-08 定案: 分批追加 + 分步自检**,
-一轮 10 个 agent 首轮成功率实测 ~100%(连续 3 轮 0 失败)。
+一轮 10 个 agent 首轮成功率实测 ~100%(连续 3 轮 0 失败;该数字是"prompt +
+工具链 + 分批追加契约均正常"时的上限,不是任何情况的保证——同一流程也
+出现过 ~90% 的首轮成功率,差异在 prompt, 不在并行度)。
 
 **执行顺序必须明写为"先写,后思考,再改",且整块拆成小批** —
-每个 agent prompt 原样包含:
+每个 agent prompt 原样包含(用**意图**描述而不是某个 harness 的工具名:
+"创建文件" / "在文件末尾追加";换 harness 时工具名不同,但契约不变):
 
 1. Read rules once, read chunk_NN.ja.txt keys once.
 2. **分批翻译**: 每批约 100-130 行(键数更少的 chunk 可一批全译)。
-   第一批用 Write 创建 `chunk_NN.zh.txt`; 后续每批用 edit 把新译文
-   追加到文件末尾(oldString = 当前最后一行, newString = 最后一行 +
-   新批译文)。每批译文行数必须与该批 ja 行数一致。
+   第一批创建 `chunk_NN.zh.txt`(写文件工具); 后续每批把新译文追加到
+   文件末尾(编辑工具: 以当前最后一行作为匹配串,替换为"最后一行 +
+   新批译文")。每批译文行数必须与该批 ja 行数一致。
 3. **分步自检 (per-batch)**: 每追加一批后读回 zh.txt 对应段, 核对:
    ① 行数与 ja 对应段一致 ② 字面 `\n` 数量一致 ③ 控制码原样保留且
    数量一致 ④ 无假名残留。发现错误立即在批内修正再继续下一批。
 4. 全部批次完成后最终读回全文核对行数 = ja.txt 行数。
 5. Final reply = file path + entry count only.
-Plus: "Never end before the file exists. Write first, polish later."
+Plus: "Never end before the file exists. 先写文件, 再推敲内容。"
 prompt 里再加三条明令:
 值必须是译文(不得把日文原文写进值)、zh.txt 每行一个译文且行数与 ja.txt
 一致(键内嵌真实换行在文件里以字面 `\n` 表示,勿写真实换行)、

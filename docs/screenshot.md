@@ -67,7 +67,9 @@ python tools/wsl_capture.py --full --dir /mnt/c/Users/<user>/Pictures
    `CopyFromScreen`。
    **注意（已实测）**：PrintWindow 对遮挡的 Chromium 窗口能拿到正确
    画面（含窗口边框），但对**已最小化/从未合成**的窗口无能为力；
-   Chromium 网页内容的可靠路径是 CDP 截图（见 `visual-check` 技能），
+   Chromium 网页内容的可靠路径是 CDP 截图（`visual-check` 技能，或等价的
+   CDP 脚本；**该技能不在本仓库内，未安装时用本工具或
+   `tools/check_tyrano_build.py` 并自行提供 CDP 客户端），
    且被遮挡时需先发一个真实点击唤醒合成器。
 6. **输出**：UTF-8 输出绝对路径（非 ASCII 目录名可存活 WSL 往返），
    包装器转回 WSL 路径并校验文件存在。

@@ -63,6 +63,8 @@ GameTranslation/
 │   ├── clean.py         #   安全清理：img 垃圾、未用字体、未用图块（语料并行读取）
 │   ├── verify.py        #   PNG/JSON/标志位/音频引用/解码检查（--source 感知，PNG 并行）
 │   ├── compress.py      #   7z-zstd 打包（替换旧包，-mmt 自动线程）+ 完整性测试
+│   ├── proctools.py     #   外部程序执行的唯一入口：超时 + UTF-8 解码 + 失败信息
+│   ├── logsetup.py      #   唯一的日志配置：格式/等级/--verbose（禁止 import 期配置）
 │   ├── doctor.py        #   环境自检：工具可用性 + env_config + deliverables
 │   ├── deliver.py       #   写回存储侧：本地压缩 → 复制压缩包到压缩包目录
 │   │                    #   （覆盖旧包）→ 删成品目录旧文件夹 → 解压到成品目录
@@ -85,10 +87,9 @@ GameTranslation/
 │   │                          #   （单一构建策略，替代旧 LowRes 变体；自动并行）
 │   ├── gen_translation_shards.py # 切成双文件块：ja.txt + zh.txt + context.md
 │   │                             #   （自动选档：90KB 上下文预算，约 11k 字符/块）
-│   ├── gen_completion_shards.py  # 补翻流程分块（同布局、同尺寸）
+│   ├── gen_completion_shards.py  # 补翻流程分块（同布局、同尺寸；注入 tone.md）
 │   ├── merge_plain_chunks.py     # 合并 ja/zh 对 -> chunks_translated.json + QC
 │   ├── merge_translation.py      # 最终合并：chunks + prefilled + sweep 规则 -> translated.json
-│   ├── patch_contexts.py         # 向 context.md 注入语气段 + 分批追加规则
 │   ├── bake_translation.py       # 精确匹配静态烘焙（data + 插件参数 + 字体策略）
 │   ├── plugin_json_leaves.py     # 插件参数内嵌 JSON 的叶子级翻译：extract 收集
 │   │                             #   显示叶子（含深层 JSON 递归），rebuild 按叶子
@@ -131,8 +132,8 @@ GameTranslation/
     ├── experience-tyrano.md   # 经验：TyranoScript 构建/移植
     ├── experience-misc.md     # 经验：其他/杂项（服务卫生/CG解锁/运行兼容）
     ├── CONTRIBUTING.md  # 贡献指南（分支/提交/自查/测试/语言/合并推送）
-    ├── screenshot.md    # 截图验证流程（窗口级：指定 app 精确截图，配合
-    │                    #   vision-analyzer 分析运行画面）
+    ├── screenshot.md    # 截图验证流程（窗口级：指定 app 精确截图，交给
+    │                    #   当前 harness 的视觉路径读图）
     └── table/           # 本地名词表/翻译资料库/游戏特定特征记录（glossary/
                          #   tone/notes + 词表）— LOCAL ONLY, gitignored,
                          #   绝不推送（游戏名 + 成人词表留本地）
@@ -209,11 +210,13 @@ subagent 翻译 → `translated.json` → 注入。
 
 ## 测试
 
-单元测试 + 综合测试位于 `tests/`（pytest，运行在项目 venv 里）：
+单元测试 + 综合测试位于 `tests/`（pytest，运行在项目 venv 里；
+venv 解释器按平台取：POSIX `.venv/bin/python`，Windows
+`.venv\Scripts\python.exe`）：
 
 ```bash
-.venv/bin/python -m pytest tests/          # 全部测试
-.venv/bin/python -m pytest tests/ -q       # 静默模式
+<venv-python> -m pytest tests/          # 全部测试
+<venv-python> -m pytest tests/ -q       # 静默模式
 ```
 
 - **单元测试**：config/runtime（自动并行度）、detect、decrypt（RPGMV 头
@@ -235,7 +238,8 @@ subagent 翻译 → `translated.json` → 注入。
   `npx @electron/asar`，见 `docs/tyrano.md`）
 - ffmpeg/ffprobe（含 libvorbis）— 仅 **audio** 步骤使用
 - 7-Zip-Zstandard（压缩包用 `-m0=zstd`）
-- ripgrep（`rg`）用于构建内的快速内容搜索
+- ripgrep（`rg`）— **可选**，仅人工/agent 手动检索用（工具库代码里不调用
+  `rg`：内容搜索是纯 Python 实现）
 
 外部程序的实际路径不需要手工维护：`python pipeline.py doctor` 列出每个
 程序的解析结果与来源（`env`/`config`/`probe`/`path`）与交付目录；

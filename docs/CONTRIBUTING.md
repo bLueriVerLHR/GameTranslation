@@ -33,22 +33,33 @@
 "Unity 6 IL2CPP + Addressables 视觉小说"、"MV `www/` 部署 +
 ExternMessage.csv"）。
 
-提交前跑（用占位符替换 `<游戏名>` 与 `<敏感词>`，本地词表在
-`docs/table/ad_keywords.md`，提交时排除该目录）：
+卫生门禁分两部分。
+
+**(1) 机器路径 / 用户名——自动化**（`tests/test_repo_hygiene.py`，只扫 git
+认可的文件、`docs/table/**` 除外、允许占位符形式，维护显式的测试用户名
+白名单）：
 
 ```bash
-rg -n -i "<游戏名|密码|C:\\Users\\|<敏感词>" \
-    --glob "!*.pyc" --glob "!docs/table/**" .
+<venv-python> -m pytest tests/test_repo_hygiene.py -q
 ```
 
-**零命中才允许 commit**；commit message 同样自查。
+**(2) 游戏名 / 成人词 / 推广词——本地词表对照**（`docs/table/ad_keywords.md`，
+gitignored，每行一个关键词）：
+
+```bash
+rg -n -f docs/table/ad_keywords.md --glob '!docs/table/**' .
+```
+
+commit message 同样自查。注：不要用「裸 `rg` 扫规则文本自身」当门禁——
+规则与测试固件里就写着这些字面量，那种扫永远不通过，真泄漏反而被淹没。
 
 ## 测试要求
 
 - **新功能 / 新工具必须写单元测试**（`tests/`，pytest），**正例、反例、
-  边缘情况都要覆盖**；提交前全量跑：
+  边缘情况都要覆盖**；提交前全量跑（venv 解释器按平台取，POSIX 为
+  `.venv/bin/python`，Windows 为 `.venv\Scripts\python.exe`）：
   ```bash
-  .venv/bin/python -m pytest tests/
+  <venv-python> -m pytest tests/
   ```
 - 集成测试在合成游戏上跑完整流水线（build → decrypt → clean → verify →
   serve → compress → deliver），全流程无外部依赖（`tests/fake_tools/`
@@ -74,7 +85,8 @@ rg -n -i "<游戏名|密码|C:\\Users\\|<敏感词>" \
   ```
 - **绝不主动 push 到 GitHub** — 只有 owner 明确说"推送/push"时才推送，
   且只推主分支（main）；推送前必须通过上方检查。
-- 提交者身份用 opencode（不用 owner 的 git 身份）。
+- 提交者身份用本工具库的固定身份（与历史提交一致，见 `git log` 的 author），
+  不用 owner 的个人 git 身份；仓库已配好时直接用仓库配置。
 
 ## 文档贡献
 

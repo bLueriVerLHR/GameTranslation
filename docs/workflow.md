@@ -10,10 +10,12 @@
 
 ## 1. 环境要求
 
-- Python 3.10+（命令里直接用 `python`）。
+- Python 3.10+（命令里直接用 `python`；WSL 下为 `python3`）。
 - ffmpeg / ffprobe（含 libvorbis）用于音频探测与重编码。
 - 7-Zip-Zstandard 用于 `-m0=zstd` 压缩包（普通 7-Zip 不支持 zstd）。
-- ripgrep（`rg`）用于快速内容搜索（如预扫插件）。
+- **ripgrep（`rg`）是可选的**：工具库代码里**不调用** `rg`（内容搜索已改成
+  纯 Python 实现，`rpgmaker/clean.py`）；它只在人工/agent 手动检索时方便
+  （如预扫插件）。装了会出现在 `doctor` 报告里，没装也不影响任何步骤。
 - PowerShell 5.1（无 `?.`、无 `&&`；用 `;` / `if ($?)`）。
 - **工具解析（2026-08 重设，无需手工配置）**：所有外部程序由
   `rpgmaker/config.py` 的 `TOOLS` 表 + `resolve_tool()` 统一解析，顺序为
@@ -53,10 +55,13 @@
      再把压缩包**单个文件复制**到压缩包目录（`deliverables.archives`，
      覆盖旧包——通常就是源压缩包）；
   5. 删除成品目录（`deliverables.games`，Windows 侧）同名旧文件夹 + 从
-     压缩包解压到成品目录：**必须用 Windows 侧工具完成**（经
-     `powershell.exe` 调 Windows `7z.exe` / `Remove-Item`）；WSL 下
-     `deliver` 的最后解压会用 WSL 内 7z 处理 Windows 侧文件（被禁），
-     该步改由 Windows 侧命令执行。跨系统只搬运单个压缩包，避免大量
+     压缩包解压到成品目录：**`deliver` 已内置自动桥接**——WSL 下对
+     Windows 侧（`/mnt/*`）路径的删除/解压自动改用 Windows 7z.exe /
+     PowerShell `Remove-Item`（经 `powershell.exe` 调用，路径自动转
+     Windows 格式），**无需手工介入**；仅当 Windows 7z（`SEVENZ_WIN`
+     环境变量 → 本地配置 `tools.win32.7z` → 探测 `Program Files`/
+     `Programs` 下的 `7-Zip*`）缺失、或同一命令的输入跨两侧混用时才
+     拒绝（报错并说明怎么改）。跨系统只搬运单个压缩包，避免大量
      小文件走 9P。
 
 ## 2. 一键流水线

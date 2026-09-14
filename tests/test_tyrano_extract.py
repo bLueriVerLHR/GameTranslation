@@ -6,7 +6,7 @@ from tyrano import tyrano_extract as te
 SAMPLE_BLOCK = """[tb_start_text mode=2 ]
 #たろう
 [font color=lightpink]はい。今日の報告です。[l][r]
-他の男に裸を見せて来ました…。[l][r]
+明日の予定も確認します…。[l][r]
 [_tb_end_text]
 """
 

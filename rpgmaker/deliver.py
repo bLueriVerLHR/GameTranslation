@@ -22,12 +22,11 @@ import os
 import shutil
 from pathlib import Path
 
+from . import archive as archive_mod
 from . import compress as compress_mod
-from . import config, proctools
+from . import config
 
 log = logging.getLogger("rpgmaker.deliver")
-
-EXTRACT_TIMEOUT = 3600
 
 
 def ps_quote(value):
@@ -118,9 +117,11 @@ def _remove_windows_side(target):
 def _extract(archive, dest, name):
     """Extract only the `name/` entry of `archive` into `dest`.
 
-    The 7z binary and its input files must be on the same platform: WSL-side
-    files use the WSL 7zz; Windows-side (/mnt/*) files are handed to the
-    Windows 7z.exe via powershell.exe.
+    Platform routing is the ARCHIVE's format plus the DESTINATION's platform:
+    a WSL-side destination is handled in-process by py7zr (no binary), while
+    a Windows-side (/mnt/*) destination is handed to Windows 7z.exe through
+    powershell.exe - a WSL-native process must never write that tree
+    (AGENTS.md CRITICAL cross-system rule).
     """
     archive_win = config.is_windows_side(archive)
     dest_win = config.is_windows_side(dest)
@@ -135,18 +136,12 @@ def _extract(archive, dest, name):
 
 
 def _extract_wsl_side(archive, dest, name):
-    sevenz = config.find_7z()
-    if not sevenz:
-        raise FileNotFoundError(
-            "7-Zip not found - install 7-Zip-Zstandard or set the SEVENZ env var")
-    if config.is_windows_side(sevenz):
-        _refuse_cross_side(
-            "extract", archive,
-            "SEVENZ points at the Windows 7z but the inputs are WSL-side; "
-            "unset SEVENZ to use the WSL 7zz for WSL-side files.")
-    cmd = [sevenz, "x", "-y", str(archive), "-o%s" % dest, name]
-    log.info("running: %s", " ".join(cmd))
-    proctools.run(cmd, timeout=EXTRACT_TIMEOUT, label="7z extract")
+    """WSL-side destination: py7zr extracts in-process (no 7-Zip needed)."""
+    targets = [n for n in archive_mod.names(str(archive))
+               if n == name or n.startswith(name + "/")]
+    if not targets:
+        raise RuntimeError("archive %s has no %s/ entry" % (archive, name))
+    archive_mod.extract(str(archive), str(dest), targets=targets)
     return _check_extracted(dest, name)
 
 

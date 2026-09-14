@@ -58,65 +58,57 @@ def _make_archive_and_dest(tmp_path):
     return archive, dest
 
 
-class TestWslSide:
-    """is_windows_side == False -> local 7zz with plain POSIX paths."""
+def _make_real_archive(tmp_path, name="game"):
+    """A real py7zr archive containing `name/index.html` - the WSL-side
+    extraction is in-process now, so these tests use a real container."""
+    import py7zr
+    src = tmp_path / "src" / name
+    src.mkdir(parents=True)
+    (src / "index.html").write_text("<!DOCTYPE html>\n", encoding="utf-8")
+    (src / "data").mkdir()
+    (src / "data" / "System.json").write_text("{}\n", encoding="utf-8")
+    path = str(tmp_path / (name + ".7z"))
+    with py7zr.SevenZipFile(path, "w",
+                            filters=[{"id": py7zr.FILTER_ZSTD,
+                                      "level": 1}]) as a:
+        a.writeall(str(src), name)
+    return path, str(tmp_path / "games")
 
-    def test_wsl_side_local_7z_command(self, tmp_path, monkeypatch):
-        archive, dest = _make_archive_and_dest(tmp_path)
-        sevenz = str(tmp_path / "7zz")
-        with open(sevenz, "wb") as f:
-            f.write(b"x")
-        monkeypatch.setattr(config, "find_7z", lambda: sevenz)
+
+class TestWslSide:
+    """is_windows_side == False -> py7zr in-process, no external binary."""
+
+    def test_wsl_side_extracts_with_py7zr(self, tmp_path, monkeypatch):
+        archive, dest = _make_real_archive(tmp_path)
         monkeypatch.setattr(config, "is_windows_side", lambda p: False)
         calls = []
         _recorder(monkeypatch, calls)
 
-        target = str(tmp_path / "games" / "game")
-        os.makedirs(target)
+        target = os.path.join(dest, "game")
         out = deliver._extract_wsl_side(archive, dest, "game")
         assert out == target
-        assert len(calls) == 1
-        cmd, _kw = calls[0]
-        assert cmd[0] == sevenz
-        assert cmd[1:3] == ["x", "-y"]
-        assert archive in cmd
-        assert "-o%s" % dest in cmd
-        assert "game" in cmd
-        # PowerShell must never run on the WSL side
-        assert not any("powershell.exe" in c for c, _ in calls)
-
-    def test_wsl_side_missing_7z_raises(self, monkeypatch):
-        monkeypatch.setattr(config, "find_7z", lambda: None)
-        monkeypatch.setattr(config, "is_windows_side", lambda p: False)
-        with pytest.raises(FileNotFoundError):
-            deliver._extract_wsl_side("a.7z", "dest", "name")
-
-    def test_wsl_side_refuses_windows_7z(self, tmp_path, monkeypatch):
-        # SEVENZ pointing at the Windows 7z while inputs are WSL-side is a
-        # cross-side violation: refuse instead of mixing tools
-        archive, dest = _make_archive_and_dest(tmp_path)
-        win7z = r"C:\Program Files\7-Zip-Zstandard\7z.exe"
-        monkeypatch.setattr(config, "find_7z", lambda: win7z)
-        # inputs are WSL-side, but the configured 7z itself is Windows-side
-        monkeypatch.setattr(config, "is_windows_side",
-                            lambda p: p == win7z)
-        calls = []
-        _recorder(monkeypatch, calls)
-        with pytest.raises(RuntimeError) as ei:
-            deliver._extract_wsl_side(archive, dest, "game")
-        assert "refusing" in str(ei.value).lower()
+        assert os.path.isfile(os.path.join(target, "index.html"))
+        # no subprocess at all: neither 7z.exe nor PowerShell
         assert calls == []
 
-    def test_wsl_extract_7z_failure_raises(self, tmp_path, monkeypatch):
-        archive, dest = _make_archive_and_dest(tmp_path)
-        sevenz = str(tmp_path / "7zz")
-        with open(sevenz, "wb") as f:
-            f.write(b"x")
-        monkeypatch.setattr(config, "find_7z", lambda: sevenz)
+    def test_wsl_side_does_not_need_a_7z_binary(self, tmp_path, monkeypatch):
+        archive, dest = _make_real_archive(tmp_path)
+        monkeypatch.setattr(config, "find_7z", lambda: None)
         monkeypatch.setattr(config, "is_windows_side", lambda p: False)
-        calls = []
-        _recorder(monkeypatch, calls, returncode=1)
-        with pytest.raises(RuntimeError):
+        out = deliver._extract_wsl_side(archive, dest, "game")
+        assert os.path.isfile(os.path.join(out, "index.html"))
+
+    def test_wsl_side_absent_entry_raises(self, tmp_path, monkeypatch):
+        archive, dest = _make_real_archive(tmp_path)
+        monkeypatch.setattr(config, "is_windows_side", lambda p: False)
+        with pytest.raises(RuntimeError) as ei:
+            deliver._extract_wsl_side(archive, dest, "other")
+        assert "no other/ entry" in str(ei.value)
+
+    def test_wsl_side_corrupt_archive_raises(self, tmp_path, monkeypatch):
+        archive, dest = _make_archive_and_dest(tmp_path)   # b"FAKE" body
+        monkeypatch.setattr(config, "is_windows_side", lambda p: False)
+        with pytest.raises(Exception):
             deliver._extract_wsl_side(archive, dest, "game")
 
 
@@ -196,11 +188,18 @@ class TestExtractDispatch:
         archive = str(tmp_path / "a.7z")
         dest = str(tmp_path / "games")
         os.makedirs(dest)
-        with open(archive, "wb") as f:
-            f.write(b"FAKE")
+        if not archive_win:
+            # WSL-side extraction is in-process: it needs a real container
+            import py7zr
+            src = tmp_path / "build"
+            src.mkdir()
+            (src / "index.html").write_text("x", encoding="utf-8")
+            with py7zr.SevenZipFile(archive, "w") as a:
+                a.writeall(str(src), "game")
+        else:
+            with open(archive, "wb") as f:
+                f.write(b"FAKE")
         _patch_powershell(monkeypatch)
-        monkeypatch.setattr(config, "find_7z",
-                            lambda: str(tmp_path / "7zz"))
         monkeypatch.setattr(config, "win_7z", lambda: "C:/7z.exe")
         monkeypatch.setattr(config, "is_windows_side",
                             lambda p: archive_win if p == archive else dest_win)
@@ -211,11 +210,10 @@ class TestExtractDispatch:
         calls = []
         archive, dest = self._dispatch(tmp_path, monkeypatch, calls,
                                        False, False)
-        target = str(tmp_path / "games" / "game")
-        os.makedirs(target)
         deliver._extract(archive, dest, "game")
-        cmd, _kw = calls[0]
-        assert cmd[0] != "powershell.exe"
+        # in-process py7zr: no external tool is spawned at all
+        assert calls == []
+        assert os.path.isfile(os.path.join(dest, "game", "index.html"))
 
     def test_both_windows_powershell_tool(self, tmp_path, monkeypatch):
         calls = []
@@ -240,10 +238,9 @@ class TestExtractDispatch:
 class TestDeliverBranchSelection:
     def test_wsl_deliver_uses_local_compress_and_extract(
             self, tmp_path, monkeypatch):
-        # full deliver() with everything on the WSL side: compress + copy
-        # + local extract.  Subprocess and cross-side flags are mocked so the
-        # branch logic is what is under test.
-        from rpgmaker import compress as compress_mod
+        # full deliver() with everything on the WSL side: py7zr compresses,
+        # the archive is copied, py7zr extracts.  Cross-side flags are mocked
+        # so the branch logic is what is under test.
         root = str(tmp_path / "src")
         os.makedirs(os.path.join(root, "data"))
         with open(os.path.join(root, "index.html"), "w") as f:
@@ -252,33 +249,10 @@ class TestDeliverBranchSelection:
         archives = str(tmp_path / "archives")
 
         calls = []
-
-        def fake_run(cmd, **kw):
-            calls.append(cmd)
-            # the fake 7z "creates" the archive on compress and the extracted
-            # target folder on extract
-            if len(cmd) > 2 and cmd[1] in ("a", "t", "x"):
-                if cmd[1] == "a":
-                    with open(cmd[-2], "wb") as f:
-                        f.write(b"FAKE-7Z\n")
-                elif cmd[1] == "x":
-                    # cmd: [7z, x, -y, archive, -o<dest>, name]
-                    dname = next(a for a in cmd if a.startswith("-o"))[2:]
-                    os.makedirs(os.path.join(dname, cmd[-1]), exist_ok=True)
-            class _R:
-                returncode = 0
-                stdout = "Everything is Ok"
-                stderr = ""
-            return _R()
-        monkeypatch.setattr(proctools.subprocess, "run", fake_run)
-        monkeypatch.setattr(config, "find_7z",
-                            lambda: str(tmp_path / "7zz"))
+        monkeypatch.setattr(proctools.subprocess, "run",
+                            lambda cmd, **kw: calls.append(cmd))
         monkeypatch.setattr(config, "is_windows_side", lambda p: False)
         monkeypatch.setattr(config, "temp_dir", lambda: str(tmp_path))
-
-        sevenz = str(tmp_path / "7zz")
-        with open(sevenz, "wb") as f:
-            f.write(b"x")
 
         out = str(tmp_path / "build")
         os.makedirs(os.path.join(out, "data"))
@@ -287,6 +261,6 @@ class TestDeliverBranchSelection:
 
         arch = deliver.deliver(out, games=games, archives=archives)
         assert os.path.isfile(arch)
-        assert os.path.isdir(os.path.join(games, "build"))
-        # no PowerShell anywhere on the WSL side
-        assert not any("powershell.exe" in c for c in calls)
+        assert os.path.isfile(os.path.join(games, "build", "index.html"))
+        # neither 7z.exe nor PowerShell may run for a WSL-side delivery
+        assert calls == []

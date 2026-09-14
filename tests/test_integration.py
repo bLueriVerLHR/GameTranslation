@@ -55,18 +55,21 @@ class TestFullPipeline:
         build.build_joiplay(web, out, workers=2)
         archive = str(tmp_path / "g.7z")
         compress.compress(out, archive, threads=2)
-        with open(archive, "rb") as f:
-            assert b"FAKE-7Z-ARCHIVE" in f.read()
+        assert compress.test_archive(archive) is True
+        # the build folder is stored under its own basename
+        from rpgmaker import archive as archive_mod
+        assert "out/index.html" in archive_mod.names(archive)
 
-    def test_compress_raises_when_7z_missing(self, tmp_path, monkeypatch):
+    def test_compress_needs_no_7z_binary(self, tmp_path, monkeypatch):
+        """The packaged backend is in-process: no 7-Zip required to package."""
         from rpgmaker import config
         root = str(tmp_path / "src")
         web = make_game(root)
         out = str(tmp_path / "out")
         build.build_joiplay(web, out, workers=2)
         monkeypatch.setattr(config, "find_7z", lambda: None)
-        with pytest.raises(FileNotFoundError):
-            compress.compress(out, str(tmp_path / "g.7z"))
+        archive = compress.compress(out, str(tmp_path / "g.7z"))
+        assert compress.test_archive(archive) is True
 
 
 class TestDeliver:

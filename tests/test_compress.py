@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for rpgmaker/compress.py 7z-zstd packaging.
+"""Unit tests for rpgmaker/compress.py + rpgmaker/archive.py (7z + zstd).
 
-The 7z binary is a fake injected via the SEVENZ env var (conftest
-fake_tools), so the archive content and integrity checks run hermetic.
-Command-argument construction is verified by capturing subprocess.run;
-error paths (missing folder, missing/failing 7z) are covered separately.
+The archive work is done in-process by py7zr (a declared dependency), so
+these tests exercise the real container: no fake 7-Zip, no argv assertions.
+The 7-Zip CLI is only involved in the Windows-side bridge, which is covered
+by tests/test_deliver_bridge.py.
+
+Still verified here: the delivery format really is ZStandard, a stale
+archive is replaced (never appended to), integrity passes for good archives
+and fails loudly for corrupt ones, and no external 7-Zip binary is needed at
+all for the same-side path.
 """
 import os
-import re
-import subprocess
 
 import pytest
+import py7zr
 
-from rpgmaker import compress, config
+from rpgmaker import archive, compress, config
 
 
 def _make_folder(tmp_path, name="game"):
@@ -21,174 +25,159 @@ def _make_folder(tmp_path, name="game"):
     os.makedirs(os.path.join(folder, "data"), exist_ok=True)
     with open(os.path.join(folder, "index.html"), "w") as f:
         f.write("<!DOCTYPE html>\n")
+    with open(os.path.join(folder, "data", "System.json"), "w") as f:
+        f.write('{"gameTitle": "テスト"}\n')
     return folder
 
 
-def _failing_7z(tmp_path, launcher_factory, msg="boom"):
-    """A fake 7z that always fails (exit 1, stderr=msg).
+def _methods(archive_path):
+    """Compression methods recorded in the archive (py7zr's own names)."""
+    with py7zr.SevenZipFile(archive_path, "r") as a:
+        return tuple(a.archiveinfo().method_names)
 
-    Built from a Python stub wrapped in a platform-appropriate launcher, so
-    the same test exercises the failure path on POSIX and on Windows."""
-    script = tmp_path / "failing_7z.py"
-    script.write_text(
-        "import sys\n"
-        "print(%r, file=sys.stderr)\n" % msg +
-        "sys.exit(1)\n", encoding="utf-8")
-    return launcher_factory(script)
+
+def _is_zstd(archive_path):
+    # py7zr names it "ZStandard"; 7z.exe prints "ZSTD" for the same container
+    return any(m.lower() in ("zstd", "zstandard") for m in _methods(archive_path))
 
 
 class TestCompressArchive:
-    def test_creates_archive(self, tmp_path, fake_tools):
+    def test_creates_archive(self, tmp_path):
         folder = _make_folder(tmp_path)
-        archive = compress.compress(folder, str(tmp_path / "game.7z"))
-        assert archive == str(tmp_path / "game.7z")
-        assert os.path.isfile(archive)
-        with open(archive) as f:
-            assert f.read() == "FAKE-7Z-ARCHIVE\n"
+        path = compress.compress(folder, str(tmp_path / "game.7z"))
+        assert path == str(tmp_path / "game.7z")
+        assert os.path.isfile(path)
+        assert compress.test_archive(path) is True
 
-    def test_relative_archive_gets_extension(self, tmp_path, fake_tools,
-                                             monkeypatch):
+    def test_archive_is_zstandard_and_stores_the_basename(self, tmp_path):
+        folder = _make_folder(tmp_path)
+        path = compress.compress(folder, str(tmp_path / "game.7z"))
+        assert _is_zstd(path)
+        names = archive.names(path)
+        assert "game/index.html" in names
+        assert "game/data/System.json" in names
+
+    def test_relative_archive_gets_extension(self, tmp_path, monkeypatch):
         folder = _make_folder(tmp_path)
         monkeypatch.chdir(tmp_path)
-        archive = compress.compress(folder, "rel")
-        assert archive == "rel.7z"
-        assert os.path.isfile(archive)
+        path = compress.compress(folder, "rel")
+        assert path == "rel.7z"
+        assert os.path.isfile(path)
 
-    def test_absolute_non_7z_kept_untouched(self, tmp_path, fake_tools):
+    def test_absolute_non_7z_kept_untouched(self, tmp_path):
         # current behavior: an absolute path without .7z is not mangled
         folder = _make_folder(tmp_path)
-        archive = compress.compress(folder, str(tmp_path / "archive"))
-        assert archive == str(tmp_path / "archive")
+        path = compress.compress(folder, str(tmp_path / "archive"))
+        assert path == str(tmp_path / "archive")
 
-    def test_stale_archive_replaced_not_appended(self, tmp_path, fake_tools):
-        # `7z a` APPENDS to an existing archive, so compress() deletes a
-        # stale .7z first (old entries must not be kept + new ones added).
+    def test_stale_archive_replaced_not_appended(self, tmp_path):
+        # `7z a` APPENDS to an existing archive, so a stale .7z must not be
+        # kept: the new archive contains only the current tree.
         folder = _make_folder(tmp_path)
-        archive = str(tmp_path / "game.7z")
-        with open(archive, "wb") as f:
+        path = str(tmp_path / "game.7z")
+        with open(path, "wb") as f:
             f.write(b"STALE-OLD-BYTES")
-        compress.compress(folder, archive)
-        with open(archive) as f:
-            assert f.read() == "FAKE-7Z-ARCHIVE\n"
+        compress.compress(folder, path)
+        assert compress.test_archive(path) is True
+        assert "game/index.html" in archive.names(path)
 
-    def test_missing_folder_raises(self, tmp_path, fake_tools):
+    def test_missing_folder_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError):
             compress.compress(str(tmp_path / "nope"),
                               str(tmp_path / "game.7z"))
 
-
-class TestCommandArgs:
-    """Capture the 7z argv to verify -m0=zstd / -mx / -mmt construction."""
-
-    def _capture(self, monkeypatch, folder, archive, **kw):
-        calls = []
-        existed_at_run = []
-
-        def fake_run(cmd, **kwargs):
-            # mimic the fake 7z: create the archive so compress()'s size
-            # logging works; record whether the path existed at call time.
-            calls.append(cmd)
-            existed_at_run.append(os.path.exists(cmd[-2]))
-            with open(cmd[-2], "wb") as f:
-                f.write(b"FAKE-7Z-ARCHIVE\n")
-            return subprocess.CompletedProcess(cmd, 0,
-                                               stdout="Everything is Ok",
-                                               stderr="")
-
-        monkeypatch.setattr("rpgmaker.proctools.subprocess.run", fake_run)
-        compress.compress(folder, archive, **kw)
-        return calls[0], existed_at_run[0]
-
-    def test_zstd_level_and_explicit_threads(self, tmp_path, fake_tools,
-                                             monkeypatch):
+    def test_no_sevenz_binary_is_needed(self, tmp_path, monkeypatch):
+        """The whole point of the py7zr backend: packaging no longer depends
+        on an installed 7-Zip (only the Windows-side bridge does)."""
+        monkeypatch.setattr(config, "find_7z", lambda: None)
+        monkeypatch.setattr(config, "win_7z", lambda: None)
         folder = _make_folder(tmp_path)
-        archive = str(tmp_path / "game.7z")
-        cmd, _existed = self._capture(monkeypatch, folder, archive,
-                                      level=15, threads=2)
-        assert cmd[0] == config.find_7z()
-        assert cmd[1:5] == ["a", "-t7z", "-m0=zstd", "-mx=15"]
-        assert "-mmt=2" in cmd
-        assert cmd[-2:] == [archive, folder]
+        path = compress.compress(folder, str(tmp_path / "game.7z"))
+        assert compress.test_archive(path) is True
 
-    def test_threads_true_maps_to_on(self, tmp_path, fake_tools, monkeypatch):
+    @pytest.mark.parametrize("level", [1, 15])
+    def test_level_is_passed_to_zstd(self, tmp_path, level):
         folder = _make_folder(tmp_path)
-        cmd, _e = self._capture(monkeypatch, folder, str(tmp_path / "g.7z"),
-                                threads=True)
-        assert "-mmt=on" in cmd
+        path = compress.compress(folder, str(tmp_path / "g.7z"), level=level)
+        assert _is_zstd(path)
+        assert compress.test_archive(path) is True
 
-    def test_threads_false_disables_mmt(self, tmp_path, fake_tools,
-                                        monkeypatch):
+    def test_threads_argument_is_accepted(self, tmp_path):
+        # py7zr has no -mmt equivalent; the parameter stays for compatibility
         folder = _make_folder(tmp_path)
-        cmd, _e = self._capture(monkeypatch, folder, str(tmp_path / "g.7z"),
-                                threads=False)
-        assert not any(a.startswith("-mmt") for a in cmd)
-
-    def test_threads_zero_disables_mmt(self, tmp_path, fake_tools,
-                                       monkeypatch):
-        folder = _make_folder(tmp_path)
-        cmd, _e = self._capture(monkeypatch, folder, str(tmp_path / "g.7z"),
-                                threads=0)
-        assert not any(a.startswith("-mmt") for a in cmd)
-
-    def test_threads_none_auto_tunes(self, tmp_path, fake_tools, monkeypatch):
-        folder = _make_folder(tmp_path)
-        cmd, _e = self._capture(monkeypatch, folder, str(tmp_path / "g.7z"),
-                                threads=None)
-        mmt = [a for a in cmd if a.startswith("-mmt=")]
-        assert len(mmt) == 1
-        assert re.fullmatch(r"-mmt=\d+", mmt[0])
-
-    def test_stale_archive_removed_before_run(self, tmp_path, fake_tools,
-                                              monkeypatch):
-        folder = _make_folder(tmp_path)
-        archive = str(tmp_path / "game.7z")
-        with open(archive, "wb") as f:
-            f.write(b"STALE")
-        _cmd, existed = self._capture(monkeypatch, folder, archive)
-        assert existed is False  # stale archive was removed before 7z ran
+        for threads in (None, True, False, 0, 4):
+            path = compress.compress(folder, str(tmp_path / ("g%s.7z" % threads)),
+                                     threads=threads)
+            assert compress.test_archive(path) is True
 
 
 class TestArchiveIntegrity:
-    def test_ok_archive(self, tmp_path, fake_tools):
-        archive = str(tmp_path / "game.7z")
-        with open(archive, "wb") as f:
-            f.write(b"stub")
-        assert compress.test_archive(archive) is True
-
-    def test_failing_7z_returns_false(self, tmp_path, monkeypatch,
-                                      launcher_factory):
-        archive = str(tmp_path / "game.7z")
-        with open(archive, "wb") as f:
-            f.write(b"stub")
-        monkeypatch.setenv("SEVENZ", _failing_7z(tmp_path, launcher_factory))
-        assert compress.test_archive(archive) is False
-
-
-class TestErrorPaths:
-    def test_7z_missing_raises(self, tmp_path, monkeypatch):
-        # find_7z() resolves to a binary that does not exist -> the subprocess
-        # fails loudly instead of silently producing a broken archive.
+    def test_ok_archive(self, tmp_path):
         folder = _make_folder(tmp_path)
-        monkeypatch.setattr("rpgmaker.config.find_7z",
-                            lambda: str(tmp_path / "no_such_7z"))
-        with pytest.raises(FileNotFoundError):
-            compress.compress(folder, str(tmp_path / "game.7z"))
+        path = compress.compress(folder, str(tmp_path / "game.7z"))
+        assert compress.test_archive(path) is True
 
-    def test_7z_failure_raises_with_stderr(self, tmp_path, monkeypatch,
-                                           launcher_factory):
+    def test_corrupt_archive_returns_false(self, tmp_path):
+        path = str(tmp_path / "game.7z")
+        with open(path, "wb") as f:
+            f.write(b"not a 7z file at all")
+        assert compress.test_archive(path) is False
+
+    def test_truncated_archive_returns_false(self, tmp_path):
         folder = _make_folder(tmp_path)
-        monkeypatch.setenv("SEVENZ", _failing_7z(tmp_path, launcher_factory))
+        path = compress.compress(folder, str(tmp_path / "game.7z"))
+        raw = open(path, "rb").read()
+        with open(path, "wb") as f:
+            f.write(raw[:len(raw) // 2])
+        assert compress.test_archive(path) is False
+
+    def test_missing_archive_returns_false(self, tmp_path):
+        assert compress.test_archive(str(tmp_path / "nope.7z")) is False
+
+    def test_flipped_payload_byte_is_detected(self, tmp_path):
+        """CRC pass must notice damaged member data, not just a bad header."""
+        folder = _make_folder(tmp_path)
+        path = compress.compress(folder, str(tmp_path / "game.7z"))
+        raw = bytearray(open(path, "rb").read())
+        # the last 64 bytes belong to the (uncompressed-stored) footer area of
+        # the packed data; flipping them must make verify() fail
+        raw[-40] ^= 0xFF
+        with open(path, "wb") as f:
+            f.write(bytes(raw))
+        try:
+            ok = compress.test_archive(path)
+        except Exception:                      # noqa: BLE001 - also a failure
+            ok = False
+        assert ok is False
+
+
+class TestArchiveModule:
+    def test_extract_targets_one_subtree(self, tmp_path):
+        folder = _make_folder(tmp_path)
+        path = compress.compress(folder, str(tmp_path / "game.7z"))
+        dest = tmp_path / "out"
+        targets = [n for n in archive.names(path) if n.startswith("game/")]
+        archive.extract(path, str(dest), targets=targets)
+        assert (dest / "game" / "index.html").is_file()
+
+    def test_extract_refuses_a_windows_side_destination(self, tmp_path,
+                                                        monkeypatch):
+        """AGENTS.md CRITICAL rule: a WSL-native process must not write a
+        /mnt/* tree, so extract() refuses that destination outright."""
+        folder = _make_folder(tmp_path)
+        path = compress.compress(folder, str(tmp_path / "game.7z"))
+        monkeypatch.setattr(config, "is_windows_side", lambda p: True)
         with pytest.raises(RuntimeError) as ei:
-            compress.compress(folder, str(tmp_path / "game.7z"))
-        assert "boom" in str(ei.value)
+            archive.extract(path, "/mnt/c/games/game")
+        assert "cross-system" in str(ei.value).lower()
+
+    def test_filters_use_zstd_at_the_requested_level(self):
+        py7zr_filters = archive.filters_for(9)
+        assert py7zr_filters == [{"id": py7zr.FILTER_ZSTD, "level": 9}]
 
 
 class TestCorruptArchiveFailsTheRun:
-    """A 7z integrity failure must not leave a green exit code behind.
-
-    compress.test_archive() returning False used to be logged at INFO and then
-    ignored by both pipeline entry points, so a corrupt archive shipped as a
-    success."""
+    """A 7z integrity failure must not leave a green exit code behind."""
 
     def test_pipeline_compress_exits_1(self, tmp_path, monkeypatch):
         import pipeline

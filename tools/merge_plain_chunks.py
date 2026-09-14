@@ -27,6 +27,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ctrl_codes  # noqa: E402
 import japanese_utils  # noqa: E402
 import plain_io  # noqa: E402
 
@@ -36,17 +37,8 @@ import plain_io  # noqa: E402
 MAX_QC_WORKERS = 8
 
 KANA = japanese_utils.KANA
-CTRL_TOK = re.compile(r"\\[A-Za-z]+\[[^\]]*\]|:[a-z]+(?:\[[^\]]*\])?")
-CTRL_NORM = re.compile(r"\\[A-Za-z]+\[([^\]]*)\]")
 UNCERTAIN = re.compile(r"【[^】]*\?[^】]*】")
-
-
-def ctrl_signature(s):
-    """Control-code sequence as a comparable signature: ordered list of
-    (token-name, arg-count) pairs; translated args don't produce false diffs."""
-    return [("%s" % m.group(0)[1:m.group(0).find("[")],
-             m.group(1).count(",") + 1)
-            for m in CTRL_NORM.finditer(s)]
+ctrl_signature = ctrl_codes.ctrl_signature
 
 
 def kana_left_in(v):
@@ -54,7 +46,7 @@ def kana_left_in(v):
     Wolf RPG specifics: <>-tagged functional labels (status-name refs),
     BGM/asset paths, Woditor internal command lines, the kana-teaching UI
     (single kana char followed by a CJK ideograph), and the kana middle dot ・."""
-    if KANA.search(CTRL_TOK.sub("", v)) is None:
+    if KANA.search(ctrl_codes.strip_ctrl(v)) is None:
         return False
     if re.search(r"<[^>]*[\u3040-\u30ff]", v):
         return False
@@ -80,7 +72,7 @@ def kana_left_in(v):
     body = re.sub(r"<[^>]*>", "", v)
     body = re.sub(r"[\u3040-\u30ff][漢字汉字]", "", body)
     body = body.replace("・", "")
-    body = CTRL_TOK.sub("", body)
+    body = ctrl_codes.strip_ctrl(body)
     return KANA.search(body) is not None
 
 
@@ -100,8 +92,9 @@ def qc_pair(keys, vals, idx):
             newline_diff += 1
         if kana_left_in(v):
             kana_left += 1
-        if sorted(CTRL_TOK.findall(k)) != sorted(CTRL_TOK.findall(v)) and \
-                sorted(ctrl_signature(k)) != sorted(ctrl_signature(v)):
+        if (sorted(ctrl_codes.CTRL_TOKEN.findall(k))
+                != sorted(ctrl_codes.CTRL_TOKEN.findall(v))
+                and sorted(ctrl_signature(k)) != sorted(ctrl_signature(v))):
             ctrl_diff += 1
         # Wolf RPG control codes are stored with a literal double
         # backslash (\\s[9]); a value only counts as having a stray

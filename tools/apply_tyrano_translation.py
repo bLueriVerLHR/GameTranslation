@@ -15,22 +15,19 @@ Usage:
 """
 
 import argparse
-import json
 import logging
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/, tyrano/
+sys.path.insert(0, _HERE)                   # sibling tools: plain_io
+import plain_io  # noqa: E402
 from tyrano.tyrano_extract import load_ks  # noqa: E402
 
 from rpgmaker import logsetup  # noqa: E402
 
 log = logging.getLogger("apply_tyrano_translation")
-
-
-def load_json(path):
-    with open(path, encoding="utf-8-sig") as f:
-        return json.load(f)
 
 
 def patch_line(line, trans):
@@ -79,8 +76,8 @@ def apply(work_dir, scenario_dir, out_dir):
     scenario_dir = os.path.abspath(scenario_dir)
     out_dir = os.path.abspath(out_dir)
 
-    trans = load_json(os.path.join(work_dir, "translated.json"))
-    structure = load_json(os.path.join(work_dir, "structure.json"))
+    trans = plain_io.load_json(os.path.join(work_dir, "translated.json"))
+    structure = plain_io.load_json(os.path.join(work_dir, "structure.json"))
     if not os.path.isdir(scenario_dir):
         log.error("scenario dir not found: %s", scenario_dir)
         raise SystemExit(1)

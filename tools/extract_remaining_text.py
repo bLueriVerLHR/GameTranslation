@@ -31,13 +31,13 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ctrl_codes  # noqa: E402
 import japanese_utils  # noqa: E402
 import plain_io  # noqa: E402
 import plugins_io  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
 
-CTRL = re.compile(r"\\[A-Za-z]+\[[^\]]*\]|:[a-z]+(?:\[[^\]]*\])?")
 # A line that is ONLY control codes (e.g. \M[お], \V[5], \C[27]) is a lookup
 # reference or style switch, never display text - ExternMessage \M[ID] keys
 # MUST stay Japanese (the CSV bodies they reference are translated instead).
@@ -128,8 +128,9 @@ def walk_commands(cmds, col, where):
             continue
         if code in (401, 405) and params and isinstance(params[0], str) and params[0]:
             col.add(params[0], "block-line", where, window_for(idx, tl))
-            if len(params[0]) <= 14 and not CTRL.search(params[0]) \
-                    and NAME_LINE.match(params[0].strip()):
+            if (len(params[0]) <= 14
+                    and not ctrl_codes.CTRL_TOKEN.search(params[0])
+                    and NAME_LINE.match(params[0].strip())):
                 col.add_name(params[0].strip())
         elif code == 102 and params and isinstance(params[0], list):
             for x in params[0]:
@@ -233,7 +234,7 @@ class Collector(object):
             return
         if CTRL_ONLY.match(s):
             return  # pure control-code line (\M[ID] lookup / style switch)
-        if kind != "block-line" and CTRL.search(s) and len(s) < 6:
+        if kind != "block-line" and ctrl_codes.CTRL_TOKEN.search(s) and len(s) < 6:
             return
         if s not in self._seen:
             self._seen.add(s)
@@ -243,7 +244,8 @@ class Collector(object):
         self.counts[kind] += 1
 
     def add_name(self, s):
-        if s and len(s) <= 14 and not CTRL.search(s) and NAME_LINE.match(s):
+        if (s and len(s) <= 14 and not ctrl_codes.CTRL_TOKEN.search(s)
+                and NAME_LINE.match(s)):
             self.name_cands[s] += 1
 
 

@@ -21,20 +21,13 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ctrl_codes  # noqa: E402
 import japanese_utils  # noqa: E402
 
 KANA = japanese_utils.KANA
 CODE = re.compile(r"\\[A-Za-z]+(?:\[[^\]]*\])?")
 UNCERTAIN = re.compile(r"【[^】]*\?[^】]*】")
-CTRL_NORM = re.compile(r"\\[A-Za-z]+\[([^\]]*)\]")
-
-
-def ctrl_signature(s):
-    """Control-code sequence as a comparable signature: ordered list of
-    (token-name, arg-count) tuples; translated args don't diff, only structure."""
-    return [("%s" % m.group(0)[1:m.group(0).find("[")],
-             m.group(1).count(",") + 1)
-            for m in CTRL_NORM.finditer(s)]
+ctrl_signature = ctrl_codes.ctrl_signature
 
 
 def main():

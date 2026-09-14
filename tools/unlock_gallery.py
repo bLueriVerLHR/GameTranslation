@@ -29,6 +29,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import plain_io  # noqa: E402
+
 log = logging.getLogger("unlock_gallery")
 
 GALLERY_MAP_RE = re.compile(
@@ -73,14 +76,9 @@ PLUGIN_TEMPLATE = """\
 """
 
 
-def load_json(path):
-    with open(path, encoding="utf-8-sig") as f:
-        return json.load(f)
-
-
 def game_title(web_root):
     try:
-        s = load_json(os.path.join(web_root, "data", "System.json"))
+        s = plain_io.load_json(os.path.join(web_root, "data", "System.json"))
         return s.get("gameTitle") or os.path.basename(web_root)
     except (OSError, ValueError):
         # OSError: file I/O; ValueError: JSONDecodeError/UnicodeDecodeError on
@@ -90,7 +88,7 @@ def game_title(web_root):
 
 def switch_names(web_root):
     try:
-        s = load_json(os.path.join(web_root, "data", "System.json"))
+        s = plain_io.load_json(os.path.join(web_root, "data", "System.json"))
         return {i: n for i, n in enumerate(s.get("switches") or [])}
     except (OSError, ValueError):
         return {}
@@ -102,7 +100,7 @@ def find_gallery_maps(web_root):
     if not os.path.isfile(path):
         return []
     try:
-        infos = load_json(path)
+        infos = plain_io.load_json(path)
     except (OSError, ValueError):
         return []
     cands = []
@@ -125,7 +123,7 @@ def scan_page_switches(web_root, map_id):
     if not os.path.isfile(path):
         return {}, set()
     try:
-        d = load_json(path)
+        d = plain_io.load_json(path)
     except (OSError, ValueError):
         return {}, set()
     usage = {}

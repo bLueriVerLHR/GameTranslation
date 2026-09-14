@@ -17,6 +17,12 @@ import sys
 
 log = logging.getLogger("unity.rmunite.extract_game")
 
+# Deliberately NOT japanese_utils.KANA: this answers "does the string contain
+# anything a translation could touch" (kana blocks + CJK ideographs + the
+# half-width katakana range) for Unity serialized fields, where a line can be
+# kanji-only.  japanese_utils.KANA is the narrower "still Japanese" residual
+# matcher used by the QC tools; swapping them would change what gets
+# extracted, so they stay separate.
 KANA_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]")
 TARGET = {"RPGMaker.Codebase.CoreSystem.Helper.SO.EventSO", "UnityEngine.UI.Text"}
 

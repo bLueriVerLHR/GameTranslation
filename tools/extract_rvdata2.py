@@ -33,12 +33,12 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ctrl_codes  # noqa: E402
 import japanese_utils  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
 from rvdata2_io import load_rvdata2  # noqa: E402
 
-CTRL = re.compile(r"\\[A-Za-z]+\[[^\]]*\]|:[a-z]+(?:\[[^\]]*\])?")
 JA = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
 KANA = japanese_utils.KANA
 NAME_LINE = re.compile(r"^(?:[\u3040-\u30ff\u4e00-\u9fff]|・)+[さんちゃん君様先生嬢ぽ]?$")
@@ -123,7 +123,8 @@ class Collector(object):
         self.count[key] += 1
 
     def add_name(self, s):
-        if s and len(s) <= 14 and not CTRL.search(s) and NAME_LINE.match(s):
+        if (s and len(s) <= 14 and not ctrl_codes.CTRL_TOKEN.search(s)
+                and NAME_LINE.match(s)):
             self.name_cands[s] += 1
 
 
@@ -146,7 +147,7 @@ def iter_message_blocks(cmds, collector, where=""):
         key = "\n".join(lines)
         collector.add(key, "block", where, window_for(i, tl))
         yield key, lines
-        if len(lines) == 1 and key and not CTRL.search(key) \
+        if len(lines) == 1 and key and not ctrl_codes.CTRL_TOKEN.search(key) \
                 and NAME_LINE.match(key.strip()) and len(key.strip()) <= 14:
             collector.name_cands[key.strip()] += 1
         i = j

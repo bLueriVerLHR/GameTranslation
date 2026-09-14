@@ -85,8 +85,8 @@ GameTranslation/
 │   ├── qc_ks_kana.py          # KiriKiri：假名残留 QC（补丁树/字典值）
 │   ├── check_iscript_js.py    # KiriKiri：扫 [iscript] 块跑 node --check
 │   │                          #   （TJS→JS 转换错误不报错，只让脚本停摆）
-│   ├── transcode_video.py     # 影片 .wmv/.mpg → WebM(VP9+Opus)，带 ffprobe 自检
-│   │                          #   （convert_kag.py --video-dir 消费其输出）
+│   ├── transcode_video.py     # 影片 .wmv/.mpg → WebM(VP9+Opus)，编码后用 PyAV
+│   │                          #   解码自检（convert_kag.py --video-dir 消费其输出）
 │   ├── downscale_images.py    # 把超过 4096 的 PNG 就地缩放到 ≤4096
 │   │                          #   （单一构建策略，替代旧 LowRes 变体；自动并行）
 │   ├── gen_translation_shards.py # 切成双文件块：ja.txt + zh.txt + context.md
@@ -99,6 +99,8 @@ GameTranslation/
 │   │                             #   显示叶子（含深层 JSON 递归），rebuild 按叶子
 │   │                             #   重建整串参数供烘焙（大 JSON 参数专用）
 │   ├── plain_io.py               # 双文件块格式的共享转义/IO
+│   ├── ctrl_codes.py             # 控制码共享单源：签名（结构化比对）与剥离
+│   │                             #   （\N[1]/\RB[a,b]/Wolf :name[..]）
 │   ├── plugins_io.py             # 容错 js/plugins.js 解析/序列化
 │   ├── scenario_common.py        # KS/Tyrano 场景链共享胶水：场景目录发现、
 │   │                             #   存储名解析、工作包写入（最小收敛）

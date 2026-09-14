@@ -32,13 +32,13 @@ Usage:
 """
 
 import argparse
-import json
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bake_translation  # noqa: E402
 import japanese_utils  # noqa: E402
+import plain_io  # noqa: E402
 
 # ADV text-resource detection uses the coarser hiragana+katakana block range
 # (U+3040-30FF, no half-width) - keep it distinct from the canonical KANA so
@@ -51,16 +51,6 @@ DEFAULT_TWEETS = ["hiroka_tweet_list.json"]
 
 def log(msg):
     print(msg, flush=True)
-
-
-def load_json(path):
-    with open(path, encoding="utf-8-sig") as f:
-        return json.load(f)
-
-
-def save_json(path, data):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=1)
 
 
 def is_kana_str(v):
@@ -99,7 +89,7 @@ def walk_resources(game_dir, lang_dirs, tweet_files, order):
             if not os.path.isfile(path):
                 log("skip: %s (not found)" % os.path.relpath(path, game_dir))
                 continue
-            data = load_json(path)
+            data = plain_io.load_json(path)
             if not isinstance(data, dict):
                 log("skip: %s (not an object)" % os.path.relpath(path, game_dir))
                 continue
@@ -114,7 +104,7 @@ def walk_resources(game_dir, lang_dirs, tweet_files, order):
         if not os.path.isfile(path):
             log("skip: %s (not found)" % os.path.relpath(path, game_dir))
             continue
-        for s in ordered_kana_strings(load_json(path)):
+        for s in ordered_kana_strings(plain_io.load_json(path)):
             items.append(("tweets/%s" % tf, s))
     return items
 
@@ -124,10 +114,10 @@ def augment(work_dir, items, window):
     kinds_path = os.path.join(work_dir, "kinds.json")
     struct_path = os.path.join(work_dir, "structure.json")
     ctx_path = os.path.join(work_dir, "context.json")
-    tpl = load_json(tpl_path)
-    kinds = load_json(kinds_path)
-    struct = load_json(struct_path)
-    ctx = load_json(ctx_path)
+    tpl = plain_io.load_json(tpl_path)
+    kinds = plain_io.load_json(kinds_path)
+    struct = plain_io.load_json(struct_path)
+    ctx = plain_io.load_json(ctx_path)
 
     # group by where (file), preserving story order
     groups = []
@@ -157,10 +147,10 @@ def augment(work_dir, items, window):
             "id": where,
             "items": [{"kind": "story", "key": k} for k in keys],
         })
-    save_json(tpl_path, tpl)
-    save_json(kinds_path, kinds)
-    save_json(struct_path, struct)
-    save_json(ctx_path, ctx)
+    plain_io.save_json(tpl_path, tpl)
+    plain_io.save_json(kinds_path, kinds)
+    plain_io.save_json(struct_path, struct)
+    plain_io.save_json(ctx_path, ctx)
     log("augmented %d keys in %d resource groups"
         % (sum(len(ks) for _w, ks in groups), len(groups)))
 
@@ -180,7 +170,7 @@ def _window(keys, pos, radius):
 
 def bake_resources(game_dir, trs, min_coverage, force, lang_dirs,
                    tweet_files):
-    D = load_json(trs)
+    D = plain_io.load_json(trs)
     hits = misses = 0
     miss_samples = []
     targets = []
@@ -198,7 +188,7 @@ def bake_resources(game_dir, trs, min_coverage, force, lang_dirs,
             targets.append(p)
     n_changed = 0
     for path in targets:
-        data = load_json(path)
+        data = plain_io.load_json(path)
 
         def fix(v):
             nonlocal hits, misses
@@ -244,7 +234,7 @@ def bake_resources(game_dir, trs, min_coverage, force, lang_dirs,
             return obj
 
         new = walk(data)
-        save_json(path, new)
+        plain_io.save_json(path, new)
     coverage = hits / (hits + misses) if (hits + misses) else 1.0
     log("resources coverage: %d hit / %d missed = %.0f%% (changed %d values)"
         % (hits, misses, coverage * 100, n_changed))

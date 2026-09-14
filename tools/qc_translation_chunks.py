@@ -20,27 +20,20 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ctrl_codes  # noqa: E402
 import japanese_utils  # noqa: E402
 
 # Coarse block-range + half-width variant (legacy, kept for reference);
 # the actual value check uses the canonical KANA below.
 KANA = japanese_utils.KANA_BLOCKS_HW
 VALUE_KANA = japanese_utils.KANA
-CTRL_TOK = re.compile(r"\\[A-Za-z]+\[[^\]]*\]|:[a-z]+(?:\[[^\]]*\])?")
 VALID_ESC = re.compile(r"\\([^\"\\/bfnrtu])", re.S)
 UNCERTAIN = re.compile(r"【[^】]*\?[^】]*】")
 # \RB[a,b] ruby/annotation: parameter COUNT matters, content may legitimately
 # be translated (e.g. \RB[悪霊,レイス] -> \RB[evil spirit,ghost]) - never flag a diff.
-CTRL_NORM = re.compile(r"\\[A-Za-z]+\[([^\]]*)\]")
 
 
-def ctrl_signature(s):
-    """Control-code sequence as a comparable signature: the ordered list of
-    (token-name, arg-count) tuples. Translated args inside \\RB[] / \\C[..]
-    style codes don't produce false diffs; only the code structure matters."""
-    return [("%s" % m.group(0)[1:m.group(0).find("[")],
-             m.group(1).count(",") + 1)
-            for m in CTRL_NORM.finditer(s)]
+ctrl_signature = ctrl_codes.ctrl_signature
 
 
 def repair_file(path):
@@ -79,10 +72,11 @@ def validate(src, out):
         if k in src and isinstance(v, str):
             if v.count("\n") != k.count("\n"):
                 newline_diff.append(k)
-            if VALUE_KANA.search(CTRL_TOK.sub("", v)):
+            if VALUE_KANA.search(ctrl_codes.strip_ctrl(v)):
                 kana_left.append(k)
-            if sorted(CTRL_TOK.findall(k)) != sorted(CTRL_TOK.findall(v)) and \
-                    sorted(ctrl_signature(k)) != sorted(ctrl_signature(v)):
+            if (sorted(ctrl_codes.CTRL_TOKEN.findall(k))
+                    != sorted(ctrl_codes.CTRL_TOKEN.findall(v))
+                    and sorted(ctrl_signature(k)) != sorted(ctrl_signature(v))):
                 ctrl_diff.append(k)
             if "\\\\" in v:
                 dbl_backslash.append(k)

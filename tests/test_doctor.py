@@ -171,15 +171,25 @@ class TestRun:
 
 
 class TestPipelineWiring:
-    def test_pipeline_doctor_exits_with_code(self, monkeypatch, healthy):
-        import pipeline as pipeline_mod
-        calls = {}
+    """The CLI is a Typer app in rpgmaker/cli.py; pipeline.py is a wrapper.
+
+    Exit convention: a failing run raises SystemExit with its code, a
+    successful one returns normally (see rpgmaker.cli._run).
+    """
+
+    @staticmethod
+    def _patch_doctor(monkeypatch, code, calls):
+        from rpgmaker import doctor as doctor_mod
 
         def fake_run(argv=None):
             calls["argv"] = argv
-            return 1
+            return code
+        monkeypatch.setattr(doctor_mod, "run", fake_run)
 
-        monkeypatch.setattr(pipeline_mod.doctor, "run", fake_run)
+    def test_pipeline_doctor_exits_with_code(self, monkeypatch, healthy):
+        import pipeline as pipeline_mod
+        calls = {}
+        self._patch_doctor(monkeypatch, 1, calls)
         with pytest.raises(SystemExit) as e:
             pipeline_mod.main(["doctor"])
         assert e.value.code == 1
@@ -188,20 +198,17 @@ class TestPipelineWiring:
     def test_pipeline_doctor_json_flag(self, monkeypatch, healthy):
         import pipeline as pipeline_mod
         calls = {}
-
-        def fake_run(argv=None):
-            calls["argv"] = argv
-            return 0
-
-        monkeypatch.setattr(pipeline_mod.doctor, "run", fake_run)
-        with pytest.raises(SystemExit) as e:
-            pipeline_mod.main(["doctor", "--json"])
-        assert e.value.code == 0
+        self._patch_doctor(monkeypatch, 0, calls)
+        assert pipeline_mod.main(["doctor", "--json"]) is None
         assert calls["argv"] == ["--json"]
 
     def test_pipeline_help_lists_doctor(self, capsys):
         import pipeline as pipeline_mod
-        with pytest.raises(SystemExit) as e:
-            pipeline_mod.main(["--help"])
-        assert e.value.code == 0
+        assert pipeline_mod.main(["--help"]) is None
         assert "doctor" in capsys.readouterr().out
+
+    def test_tyrano_wrapper_lists_its_own_commands(self, capsys):
+        import tyrano.pipeline as tyrano_mod
+        assert tyrano_mod.tyrano_main(["--help"]) is None
+        out = capsys.readouterr().out
+        assert "fix-autoplay" in out and "deliver" in out

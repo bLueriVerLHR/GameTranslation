@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the serve command's bind host (tyrano pipeline).
+"""Tests for the serve commands' bind host (both pipelines).
 
 The owner plays from another device over the LAN (an AGENTS requirement), and
 a loopback-only server is unreachable there.  The host used to be hardcoded to
 127.0.0.1, so --host has to be plumbed all the way to the HTTP server.
+
+Both pipelines now share one implementation (`rpgmaker.cli._serve`), so the
+plumbing is asserted once, through the Typer command functions (calling a
+Typer-decorated function directly passes Python values through).
 """
-import argparse
 import sys
 from pathlib import Path
 
@@ -14,64 +17,58 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest  # noqa: E402
 
-from tyrano import pipeline as tp  # noqa: E402
-
-
-def make_args(host, test):
-    return argparse.Namespace(out="x", game="x", port=1, host=host, test=test)
+from rpgmaker import cli  # noqa: E402
 
 
 def test_smoke_test_receives_the_host(monkeypatch):
     seen = {}
-    monkeypatch.setattr(tp, "_smoke_test",
-                        lambda out, port, host: seen.setdefault("smoke", host)
-                        and True or True)
-    try:
-        tp.cmd_serve(make_args("0.0.0.0", test=True))
-    except SystemExit:
-        pass
+
+    def fake_smoke(folder, port=0, host="127.0.0.1"):
+        seen["smoke"] = host
+        return {}, True
+
+    monkeypatch.setattr(cli.serve_mod, "smoke_test", fake_smoke)
+    cli.cmd_tyrano_serve("x", 1, "0.0.0.0", True)
     assert seen["smoke"] == "0.0.0.0"
 
 
-def test_plain_serve_passes_the_host_to_the_http_server(monkeypatch):
+def _capture_serve(monkeypatch):
     seen = {}
 
-    def fake_start_server(folder, port=0, host="127.0.0.1"):
+    def fake_serve(folder, port=0, host="127.0.0.1", **kw):
         seen["start"] = host
-        return object(), object()
+        return True
 
-    monkeypatch.setattr(tp.rpg_serve, "start_server", fake_start_server)
-    # cmd_serve blocks forever after starting; stop it by raising from sleep
-    monkeypatch.setattr(tp.time, "sleep",
-                        lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
-    try:
-        tp.cmd_serve(make_args("0.0.0.0", test=False))
-    except (SystemExit, KeyboardInterrupt):
-        pass
+    monkeypatch.setattr(cli.serve_mod, "serve", fake_serve)
+    # the RPG Maker command detects a web root first; skip that here so the
+    # test is about host plumbing only
+    monkeypatch.setattr(cli, "resolve_web_root", lambda game: game)
+    return seen
+
+
+def test_plain_serve_passes_the_host_to_the_http_server(monkeypatch):
+    seen = _capture_serve(monkeypatch)
+    cli.cmd_serve("x", 1, "0.0.0.0", False)
+    assert seen["start"] == "0.0.0.0"
+
+
+def test_tyrano_serve_shares_the_implementation(monkeypatch):
+    seen = _capture_serve(monkeypatch)
+    cli.cmd_tyrano_serve("x", 1, "0.0.0.0", False)
     assert seen["start"] == "0.0.0.0"
 
 
 def test_default_host_is_loopback_so_tests_stay_local():
-    # Only an explicit --host may expose the build on the LAN.
-    src = Path(tp.__file__).read_text(encoding="utf-8")
-    assert '"--host"' in src
-    assert 'default="127.0.0.1"' in src
-    assert "args.host" in src
+    """Only an explicit --host may expose the build on the LAN."""
+    src = Path(cli.__file__).read_text(encoding="utf-8")
+    # both serve commands declare the loopback default (Typer derives
+    # `--host` from the parameter name, so the flag string is not literal)
+    assert src.count('typer.Option("127.0.0.1"') >= 2
+    assert src.count("host: str = typer.Option(") >= 2
 
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.3", "127.0.0.1"])
 def test_host_is_forwarded_verbatim(monkeypatch, host):
-    seen = {}
-
-    def fake_start_server(folder, port=0, host="127.0.0.1"):
-        seen["start"] = host
-        return object(), object()
-
-    monkeypatch.setattr(tp.rpg_serve, "start_server", fake_start_server)
-    monkeypatch.setattr(tp.time, "sleep",
-                        lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
-    try:
-        tp.cmd_serve(make_args(host, test=False))
-    except (SystemExit, KeyboardInterrupt):
-        pass
+    seen = _capture_serve(monkeypatch)
+    cli.cmd_serve("x", 1, host, False)
     assert seen["start"] == host

@@ -42,6 +42,8 @@ from kirikiri.ks_extract import (display_text, load_ks, scenario_storage_refs,
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import scenario_common  # noqa: E402
 
+from rpgmaker import logsetup  # noqa: E402
+
 log = logging.getLogger("build_ks_translation")
 
 DEFAULT_SCENARIO = "scenario"
@@ -145,13 +147,28 @@ def build(game_dir, work_dir, scenario_dir, entry):
     tpl, kinds, ctx = {}, {}, {}
     maps = []
     total_lines = 0
+    skipped = []
     for name in story_order(src, entry):
         items = []
-        n = extract_file(os.path.join(src, name), name, tpl, kinds, ctx, items)
+        try:
+            n = extract_file(os.path.join(src, name), name, tpl, kinds, ctx,
+                             items)
+        except (OSError, UnicodeDecodeError) as exc:
+            # Never drop a scenario file silently: it would ship untranslated
+            # (or half-translated) with no trace in the summary.
+            skipped.append(name)
+            log.error("%s: cannot read, file NOT extracted: %s",
+                      os.path.join(src, name), exc)
+            continue
         if items:
             maps.append({"id": name, "items": items})
         total_lines += n
         log.debug("%s: %d translatable lines", name, n)
+
+    if skipped:
+        log.warning("%d of %d scenario file(s) skipped: %s",
+                    len(skipped), len(maps) + len(skipped),
+                    ", ".join(skipped))
 
     num_keys = scenario_common.write_work_package(
         work_dir, tpl, kinds, maps, ctx, "ks_meta.json",
@@ -175,8 +192,7 @@ def main():
                          "(default: start.ks)")
     args = ap.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(levelname)s %(name)s: %(message)s")
+    logsetup.setup(verbose=args.verbose)
     build(args.game_dir, args.work_dir, args.scenario_dir, args.entry)
 
 

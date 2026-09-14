@@ -12,7 +12,10 @@ row order. Each chunk gets a context.md with the ExternMessage-specific rules:
   - keep :bg / :layout / :face commands, keep the \\n line structure
 
 Usage:
-    python gen_csv_shards.py <work_dir> [--max-chars 5000] [--start N] [--resume]
+    python gen_csv_shards.py <work_dir> [--max-chars 5000] [--start N] [--resume] [--tone FILE]
+
+Tone: injected from `<work>/tone.md` (or --tone FILE) with a neutral fallback -
+a game's tone is never hardcoded in a tool (AGENTS.md, 工具禁止硬编码游戏专属数据).
 """
 import argparse
 import glob
@@ -47,14 +50,7 @@ coherent piece.
 - Names must follow the glossary below EXACTLY (characters, places, shops).
 
 ## Tone (from the game owner)
-- Faithful to the original (忠于原文), do not invent or censor.
-- Match the game's own mood: comedy scenes keep the humor and comedic pacing;
-  story/reveal scenes keep suspense, do NOT spoil foreshadowing or twists.
-- Adult-content scenes: keep the content faithful and word it the way a
-  native Chinese speaker would - colloquial, natural. Avoid stiff
-  Japanese-style phrasing.
-- Length: keep the meaning; shorten only if a line would clearly overflow the
-  message window (4 lines max per window, 2 windows per page).
+{tone}
 
 ## Glossary (mandatory)
 {glossary}
@@ -72,6 +68,10 @@ def main():
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--out-dir", default="chunks",
                     help="chunk subdirectory (default: chunks)")
+    ap.add_argument("--tone", default="",
+                    help="tone/character block file (default: <work>/tone.md; "
+                         "when absent a neutral tone is used - a game's tone "
+                         "is never hardcoded in a tool)")
     args = ap.parse_args()
 
     work = os.path.abspath(args.work_dir)
@@ -86,6 +86,21 @@ def main():
         terms = {}
     gtxt = "\n".join("  %s -> %s" % (k, v) for k, v in glossary.items())
     ttxt = "\n".join("  %s -> %s" % (k, v) for k, v in terms.items())
+
+    # Tone policy: game-specific, therefore injected from <work>/tone.md (or
+    # --tone), never baked into this tool.
+    tone_path = args.tone or os.path.join(work, "tone.md")
+    if os.path.exists(tone_path):
+        with open(tone_path, encoding="utf-8-sig") as f:
+            tone = f.read().strip()
+    else:
+        tone = ("- Faithful to the original (忠于原文): translate the meaning "
+                "faithfully, do not invent or censor.\n"
+                "- Story/reveal scenes: keep suspense, do NOT spoil "
+                "foreshadowing or twists.\n"
+                "- Length: keep the meaning; shorten only if a line would "
+                "clearly overflow the message window.")
+        print("WARN: no tone file at %s - using the neutral tone" % tone_path)
 
     chunks_dir = os.path.join(work, args.out_dir)
     os.makedirs(chunks_dir, exist_ok=True)
@@ -120,7 +135,7 @@ def main():
         with open(base + ".json", "w", encoding="utf-8") as f:
             json.dump(chunk, f, ensure_ascii=False, indent=1)
         md = CSV_MD.format(num="%02d" % num, part=part, glossary=gtxt,
-                           terms=ttxt)
+                           terms=ttxt, tone=tone)
         with open(base + ".context.md", "w", encoding="utf-8") as f:
             f.write(md)
         print("chunk %02d: %d keys, %d chars" % (num, len(b),

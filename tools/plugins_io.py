@@ -84,8 +84,31 @@ def _scan_string(text, i):
 
 
 def _skip_ws(text, i):
-    while i < len(text) and text[i] in " \t\r\n":
-        i += 1
+    """Skip whitespace AND JavaScript comments.
+
+    The editor writes plain JSON, but a repacked/hand-edited plugins.js can
+    carry ``//`` line or ``/* */`` block comments inside the array.  The
+    module docstring promises they are tolerated, and the failure mode is
+    silent: three callers swallow the parse error as a WARN and skip all
+    plugin-parameter text (plugin UI stays untranslated).
+    """
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if c in " \t\r\n":
+            i += 1
+            continue
+        if c == "/" and i + 1 < n:
+            nxt = text[i + 1]
+            if nxt == "/":
+                j = text.find("\n", i)
+                i = n if j < 0 else j + 1
+                continue
+            if nxt == "*":
+                j = text.find("*/", i + 2)
+                i = n if j < 0 else j + 2
+                continue
+        break
     return i
 
 

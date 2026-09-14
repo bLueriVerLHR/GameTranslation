@@ -19,12 +19,19 @@ even when split across chunks.
 """
 import argparse
 import json
+import logging
 import os
 import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import plain_io  # noqa: E402
+# Single source for the game-owner tone policy (NEUTRAL_TONE + <work>/tone.md):
+# the full-flow and completion shard generators must never drift apart, and a
+# game's tone must never be hardcoded in a tool (docs/translation.md §3).
+from gen_translation_shards import load_tone  # noqa: E402
+
+log = logging.getLogger("gen_completion_shards")
 
 NAMEISH = re.compile(
     r"^[A-Za-z0-9\u3040-\u30ff\u4e00-\u9fff\u00b7・〜\- ]{1,14}$")
@@ -86,7 +93,14 @@ def main():
                          "~90 KB budget)")
     ap.add_argument("--truncate", type=int, default=45,
                     help="max chars per context transcript line (default 45)")
+    ap.add_argument("--tone", default="",
+                    help="tone/character block file (default: <work>/tone.md; "
+                         "a neutral fallback is used when absent)")
+    ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s")
 
     work = os.path.abspath(args.work_dir)
     chunks_dir = os.path.join(work, "chunks")
@@ -101,7 +115,14 @@ def main():
     if args.dict and os.path.exists(args.dict):
         D = plain_io.load_json(args.dict)
     elif args.dict:
-        print("WARN: --dict not found: %s" % args.dict)
+        log.warning("translation dict not found, glossary stays empty: %s",
+                    args.dict)
+
+    if args.tone:
+        with open(args.tone, encoding="utf-8-sig") as f:
+            tone = f.read().strip() + "\n"
+    else:
+        tone = load_tone(work)
 
     glossary = {}
     # Membership test against the whole template at once (C-level) instead of
@@ -173,6 +194,8 @@ def main():
             RULES,
             "",
         ]
+        if tone:
+            lines += [tone.rstrip(), ""]
         if carry:
             lines += ["## Carry-over: tail of the previous chunk (already translated - KEEP these translations consistent)", ""]
             lines += ["- %s" % t for t in carry]

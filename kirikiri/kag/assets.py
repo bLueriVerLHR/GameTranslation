@@ -13,9 +13,12 @@ import logging
 import os
 import re
 import shutil
+from concurrent.futures import (ProcessPoolExecutor, ThreadPoolExecutor,
+                                as_completed)
 
 from kirikiri import tlg
 from kirikiri.ks_extract import detect_encoding
+from rpgmaker import runtime
 
 log = logging.getLogger(__name__)
 
@@ -235,24 +238,7 @@ def _convert_region_image(src, dst, stats):
     region number straight from the R channel. Non-indexed sources keep their
     R channel (best effort; such images are broken maps anyway).
     """
-    try:
-        from PIL import Image
-        im = Image.open(src)
-        if im.mode == "P":
-            raw = im.tobytes()
-            out = Image.frombytes("L", im.size, raw)
-            out.save(dst, "PNG")
-        elif im.mode in ("L", "I"):
-            im.convert("L").save(dst, "PNG")
-        else:
-            im.convert("RGB").save(dst, "PNG")
-        stats["region"] += 1
-    except Exception as e:
-        # Per-image best-effort fallback: PIL open/convert/save on arbitrary
-        # game assets can raise OSError/ValueError/KeyError/DecompressionBomb-
-        # Error etc. - not enumerable, so a failure just counts and continues.
-        log.warning("region convert failed %s: %s", os.path.relpath(src), e)
-        stats["region_fail"] += 1
+    _apply_image_result(stats, src, *_image_job(src, dst, "region"))
 
 
 def _convert_videos(unpacked, out_data, video_dir, stats):
@@ -327,8 +313,19 @@ def _video_map_from_output(out_data):
     return vmap
 
 
-def _convert_assets(unpacked, out_data, stats):
-    """Copy/convert asset dirs into Tyrano data/ layout (recursive)."""
+def _collect_asset_jobs(unpacked, out_data):
+    """Walk the mapped asset dirs into a flat ``[(kind, src, dst)]`` list.
+
+    KAG3 games keep an asset in exactly one place and TyranoScript resolves
+    `storage=` per tag directory, so every asset goes to its one canonical
+    directory and nowhere else.  The old mirroring (bgimage/fgimage/image
+    copies of everything) tripled the build for no benefit - measured: ~75% of
+    the duplicated bytes survive compression, so the redundancy was real
+    delivery size.
+
+    Collecting first (instead of converting during the walk) is what makes the
+    pass parallelisable; the walk itself is cheap metadata I/O.
+    """
     mapping = [
         ("bgimage", "bgimage"),
         ("fgimage", "fgimage"),
@@ -338,35 +335,11 @@ def _convert_assets(unpacked, out_data, stats):
         ("video", "video"),
         ("rule", "fgimage"),
     ]
+    jobs = []
     for src_sub, dst_sub in mapping:
         src_dir = os.path.join(unpacked, src_sub)
         if not os.path.isdir(src_dir):
             continue
-        # One copy per asset: every asset goes to its canonical directory and
-        # nowhere else.  The runtime resolves names to `../<dir>/<file>`, and
-        # the browser normalises the dot segment, so a tag that would have
-        # looked in a different directory still finds it.  The old mirroring
-        # (bgimage/fgimage/image copies of everything) tripled the build for
-        # no benefit - measured: ~75% of the duplicated bytes survive
-        # compression, so the redundancy was real delivery size.
-
-        def _convert_one(src_path, rel, outname, fn):
-            dst_base = os.path.join(out_data, dst_sub, rel)
-            if outname != fn:
-                dst_path = os.path.join(os.path.dirname(dst_base), outname)
-            else:
-                dst_path = dst_base
-            os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-            ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
-            if ext == "tlg":
-                _convert_tlg(src_path, dst_path, stats)
-            elif ext == "bmp":
-                _convert_bmp(src_path, dst_path, stats)
-            elif _is_region_image(fn):
-                _convert_region_image(src_path, dst_path, stats)
-            else:
-                shutil.copy2(src_path, dst_path)
-                stats["copied"] += 1
 
         def _walk(cur, sub):
             for fn in sorted(os.listdir(cur)):
@@ -379,9 +352,68 @@ def _convert_assets(unpacked, out_data, stats):
                 outname = fn
                 if ext in ("tlg", "bmp"):
                     outname = fn.rsplit(".", 1)[0] + ".png"
-                _convert_one(sp, rel, outname, fn)
+                dst_base = os.path.join(out_data, dst_sub, rel)
+                if outname != fn:
+                    dst_path = os.path.join(os.path.dirname(dst_base), outname)
+                else:
+                    dst_path = dst_base
+                if ext == "tlg":
+                    kind = "tlg"
+                elif ext == "bmp":
+                    kind = "bmp"
+                elif _is_region_image(fn):
+                    kind = "region"
+                else:
+                    kind = "copy"
+                jobs.append((kind, sp, dst_path))
 
         _walk(src_dir, "")
+    return jobs
+
+
+def _convert_assets(unpacked, out_data, stats, workers=None):
+    """Copy/convert asset dirs into the Tyrano data/ layout (recursive).
+
+    The image work (TLG/BMP/region -> PNG) is CPU-bound pure Python/PIL, so it
+    runs in worker *processes* -- threads would serialise on the GIL (measured:
+    0.87 s per TLG image, 658 of them = ~10 min single-threaded).  Copies are
+    I/O-bound and go to a thread pool.  Every worker only reports its own
+    status and the parent applies `stats` + the WARN lines, so the counters and
+    the output bytes do not depend on the worker count.
+
+    `workers=None` auto-tunes from the machine (physical cores, see
+    rpgmaker/runtime.py); `workers=1` keeps the historical serial behaviour.
+    """
+    jobs = _collect_asset_jobs(unpacked, out_data)
+    image_jobs = [j for j in jobs if j[0] != "copy"]
+    copy_jobs = [j for j in jobs if j[0] == "copy"]
+
+    # Create the target directories once, in the parent: workers then only
+    # write files, and no two of them race on makedirs.
+    for _kind, _src, dst in jobs:
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+
+    workers = runtime.resolve_workers("tlg", workers, path=unpacked)
+    if workers <= 1 or len(image_jobs) <= 1:
+        for kind, src, dst in image_jobs:
+            _apply_image_result(stats, src, *_image_job(src, dst, kind))
+    else:
+        pool_size = min(workers, len(image_jobs))
+        log.debug("asset images: %d job(s) on %d worker process(es)",
+                  len(image_jobs), pool_size)
+        with ProcessPoolExecutor(max_workers=pool_size) as pool:
+            futures = {pool.submit(_image_job, src, dst, kind): (kind, src)
+                       for kind, src, dst in image_jobs}
+            for fut in as_completed(futures):
+                _kind, src = futures[fut]
+                _apply_image_result(stats, src, *fut.result())
+
+    if copy_jobs:
+        copy_workers = min(runtime.resolve_workers("copy", None, path=unpacked),
+                           len(copy_jobs))
+        with ThreadPoolExecutor(max_workers=copy_workers) as pool:
+            for _ in pool.map(lambda job: shutil.copy2(job[1], job[2]), copy_jobs):
+                stats["copied"] += 1
 
 
 def _decoder_mtime():
@@ -432,34 +464,65 @@ def _up_to_date(src, dst):
     return True
 
 
-def _convert_tlg(src, dst, stats):
+#: Image conversions are CPU-bound pure Python/PIL work (they hold the GIL),
+#: which is why they run in worker *processes* and not in threads.
+IMAGE_KINDS = ("tlg", "bmp", "region")
+
+#: WARN text per kind, kept identical to the pre-parallel implementation so a
+#: parallel run logs exactly what a serial run logged.
+_FAIL_LABEL = {"tlg": "tlg convert failed", "bmp": "bmp convert failed",
+               "region": "region convert failed"}
+
+
+def _image_job(src, dst, kind):
+    """Convert one image; returns ``(kind, status, error)``.
+
+    ``status`` is ``"ok"`` / ``"cached"`` / ``"fail"``.  Deliberately does no
+    logging and touches no shared counter: a worker process cannot log into
+    the parent's stream, and the parent owns `stats` -- so a parallel run
+    produces the same counters and the same WARN lines as ``workers=1``.
+    """
     if _up_to_date(src, dst):
-        stats["tlg_cached"] += 1
-        return
+        return kind, "cached", None
     try:
-        with open(src, "rb") as f:
-            data = f.read()
-        tlg.decode_to_png(data, dst)
-        stats["tlg"] += 1
+        if kind == "tlg":
+            with open(src, "rb") as f:
+                data = f.read()
+            tlg.decode_to_png(data, dst)
+        else:
+            from PIL import Image
+            im = Image.open(src)
+            if kind == "bmp":
+                im.convert("RGBA").save(dst, "PNG")
+            elif im.mode == "P":
+                # Province image: the palette index is the region number, and
+                # gray == index keeps it readable from the R channel.
+                Image.frombytes("L", im.size, im.tobytes()).save(dst, "PNG")
+            else:
+                im.convert("L" if im.mode in ("L", "I") else "RGB").save(dst, "PNG")
+        return kind, "ok", None
     except Exception as e:
-        # Per-image best-effort fallback: tlg.decode_to_png is a binary
-        # format parser; malformed TLG files can raise any parser error, so
-        # a failure just counts and continues the conversion.
-        log.warning("tlg convert failed %s: %s", os.path.relpath(src), e)
-        stats["tlg_fail"] += 1
+        # Per-image best-effort fallback: tlg.decode_to_png is a binary format
+        # parser, and PIL open/convert/save on arbitrary game assets can raise
+        # OSError/ValueError/KeyError/DecompressionBombError etc. - not
+        # enumerable, so a failure just counts and continues the conversion.
+        return kind, "fail", str(e)
+
+
+def _apply_image_result(stats, src, kind, status, err):
+    """Fold one `_image_job` result into `stats` and the log (parent side)."""
+    if status == "cached":
+        stats["%s_cached" % kind] += 1
+    elif status == "ok":
+        stats[kind] += 1
+    else:
+        log.warning("%s %s: %s", _FAIL_LABEL[kind], os.path.relpath(src), err)
+        stats["%s_fail" % kind] += 1
+
+
+def _convert_tlg(src, dst, stats):
+    _apply_image_result(stats, src, *_image_job(src, dst, "tlg"))
 
 
 def _convert_bmp(src, dst, stats):
-    if _up_to_date(src, dst):
-        stats["bmp_cached"] += 1
-        return
-    try:
-        from PIL import Image
-        Image.open(src).convert("RGBA").save(dst, "PNG")
-        stats["bmp"] += 1
-    except Exception as e:
-        # Per-image best-effort fallback: PIL open/convert/save on arbitrary
-        # game assets can raise OSError/ValueError/KeyError/DecompressionBomb-
-        # Error etc. - not enumerable, so a failure just counts and continues.
-        log.warning("bmp convert failed %s: %s", os.path.relpath(src), e)
-        stats["bmp_fail"] += 1
+    _apply_image_result(stats, src, *_image_job(src, dst, "bmp"))

@@ -82,12 +82,13 @@ log = logging.getLogger(__name__)
 def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
             scenario_dir="scenario", scenario_only=False, fonts=None,
             video_dir=None, fast_skip=False, state_overrides_path=None,
-            portrait=False):
+            portrait=False, workers=None):
     """Convert one unpacked KAG3 game into a TyranoScript project.
 
     Programmatic entry point; the Typer command below is its CLI wrapper.  The
-    body is the historical ``main()`` with the argparse namespace replaced by
-    these explicit arguments (behaviour unchanged).
+    body is the historical ``main()`` with its argparse namespace replaced by
+    these explicit arguments (behaviour unchanged); `workers` is the only new
+    knob (image/copy parallelism, None = auto-tuned from the machine).
     """
     args = SimpleNamespace(
         unpacked=unpacked, engine=engine, out_dir=out_dir,
@@ -162,7 +163,7 @@ def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
     # assets
     video_map = {}
     if not args.scenario_only:
-        _convert_assets(unpacked, out_data, stats)
+        _convert_assets(unpacked, out_data, stats, workers=workers)
         video_map = _convert_videos(unpacked, out_data, args.video_dir, stats)
     else:
         video_map = _video_map_from_output(out_data)
@@ -359,6 +360,10 @@ def cmd(
         "--portrait",
         help="768x1024 portrait layout: art scaled to the top, message text in "
              "the bottom black area")] = False,
+    workers: Annotated[Optional[int], typer.Option(
+        "--workers",
+        help="parallel asset workers (default: physical cores, auto-tuned; "
+             "1 = serial)")] = None,
     verbose: cliutil.Verbose = False,
     quiet: cliutil.Quiet = False,
     log_file: cliutil.LogFile = None,
@@ -369,7 +374,8 @@ def cmd(
                    keep_game_buttons=keep_game_buttons,
                    scenario_dir=scenario_dir, scenario_only=scenario_only,
                    fonts=font, video_dir=video_dir, fast_skip=fast_skip,
-                   state_overrides_path=state_overrides, portrait=portrait)
+                   state_overrides_path=state_overrides, portrait=portrait,
+                   workers=workers)
 
 
 app = cliutil.command_app(cmd, help=__doc__)

@@ -800,6 +800,25 @@ def test_graph_is_covered_too(fake_unpacked):
     assert out.startswith("[freeimage layer=5]"), out
 
 
+def test_image_opacity_is_applied_to_its_single_image_layer(fake_unpacked):
+    """Tyrano ignores opacity on [image], so preserve it through [layopt]."""
+    out = ck.convert_ks_line(
+        '[image layer=7 page=back storage="hit_surface" opacity=0]',
+        fake_unpacked,
+        (),
+    )
+    assert out.startswith(
+        "[freeimage layer=7 page=back][layopt layer=7 page=back opacity=0]"
+    ), out
+    assert '[image layer=7 page=back' in out
+
+
+def test_image_without_opacity_does_not_reset_layer_opacity(fake_unpacked):
+    """An unrelated layer-level fade must survive ordinary image replacement."""
+    out = ck.convert_ks_line('[image layer=7 storage="sprite"]', fake_unpacked, ())
+    assert "[layopt" not in out
+
+
 def test_base_layer_is_not_cleared(fake_unpacked):
     """The engine's [freeimage] refuses the base layer, so injecting a clear
     there would only add a dead tag."""
@@ -1287,6 +1306,57 @@ def test_gallery_runtime_expands_layers_and_searches_full_scenario():
     assert "this.array_tag.length - this.current_order_index" in js
     assert "if (this.nextOrderWithTag(targetTags)) return true" in js
     assert "window.Debug = window.Debug || { message: function () {} }" in js
+
+
+def test_empty_foreground_layers_do_not_block_click_waits():
+    """Full-canvas numeric layers must pass clicks through to the event layer."""
+    js = ck.RUNTIME_SHIM_IIFE
+    assert ".layer_fore{pointer-events:none !important}" in js
+    assert ".layer_fore>*{pointer-events:auto !important}" in js
+
+
+def test_map_switch_coerces_tjs_numeric_values_to_case_strings():
+    """KAG map actions commonly compare numeric state with quoted cases."""
+    js = ck.RUNTIME_SHIM_IIFE
+    assert r"source.replace(/\bswitch\s*\(([^()]*)\)/g, 'switch(String($1))')" in js
+
+
+def test_state_overrides_load_supported_namespaces(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text('{"sf":{"gallery_open":1},"tf":{"mode":"view"}}',
+                    encoding="utf-8")
+    assert ck._load_state_overrides(str(path)) == {
+        "sf": {"gallery_open": 1},
+        "tf": {"mode": "view"},
+    }
+
+
+def test_state_overrides_reject_invalid_shapes_and_namespaces(tmp_path):
+    invalid = [
+        "[]",
+        '{"global":{"open":1}}',
+        '{"sf":[1]}',
+        '{"sf":{"__proto__":{}}}',
+    ]
+    for index, source in enumerate(invalid):
+        path = tmp_path / ("bad-%d.json" % index)
+        path.write_text(source, encoding="utf-8")
+        with pytest.raises(ValueError):
+            ck._load_state_overrides(str(path))
+
+
+def test_state_overrides_runtime_targets_tyrano_variables():
+    js = ck._state_overrides_js({"sf": {"gallery_open": 1}})
+    assert 'window.__kag3_state_overrides = {"sf":{"gallery_open":1}}' in js
+    assert "f: kag.stat.f" in js
+    assert "sf: kag.variable.sf" in js
+    assert "tf: kag.variable.tf" in js
+    assert "JSON.parse(JSON.stringify" in js
+    assert "setInterval(window.__kag3_apply_state_overrides, 100)" in js
+
+
+def test_empty_state_overrides_emit_no_runtime():
+    assert ck._state_overrides_js({}) == ""
 
 
 def test_animation_plugin_asset_falls_back_to_representative_frame():

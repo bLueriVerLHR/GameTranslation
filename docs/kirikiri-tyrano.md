@@ -778,7 +778,32 @@ KAG3 把播放拆成一串共享状态的标签；Tyrano 没有等价序列，�
 - 这些标签**不能再注册成 no-op**：后来的注册会盖掉真实实现，功能静默失效。
   `_shim_js()` 会把 `VIDEO_TAGS` 从 no-op 列表里排除。
 
-### 4.5 已验证
+### 4.5 用外部状态覆盖打开 Gallery
+
+部分 KAG3 游戏用系统变量控制 CG、动画和场景回放是否出现。转换器不应写死
+某款游戏的变量名；把需要固定的默认值写进本地 JSON，再通过
+`--state-overrides` 注入：
+
+```json
+{
+  "sf": {
+    "gallery_open": 1,
+    "animation_open": 1
+  }
+}
+```
+
+```bash
+python3 kirikiri/convert_kag.py <unpacked> <engine> <out> \
+  --state-overrides <local-state.json>
+```
+
+JSON 根对象只接受 `f`、`sf`、`tf` 三个命名空间，每个命名空间的内容必须是
+对象。运行时会周期性重放这些值，因此它适合“始终开放”之类的固定策略；
+不要把页码、临时选择或播放位置放进去。游戏专属变量表保存在本地工作目录或
+`docs/table/`，不提交到公开仓库。
+
+### 4.6 已验证
 
 驱动 `[video]→[videolayer]→[openvideo]→[playvideo]` 后：
 

@@ -101,6 +101,46 @@ class TestRuntimeShimAssembly:
         assert not shims.RUNTIME_SHIM_IIFE.endswith("\n")
 
 
+class TestMacroReturnCompat:
+    """KAG3 expands macros at parse time, so a `[return]` inside a macro body is
+    a plain tag in the caller's order stream and returns from the enclosing
+    `[call]`.  Tyrano runs macros with a runtime frame stack and its own
+    `[return]` resumes the *macro's* caller, leaving the frame behind (the
+    engine documents it: "だからmacro で return は使えない").
+
+    Measured: a gallery replay ended with `[if exp="tf.now_pv == 1"][return]
+    [endif]` inside a macro, and the flow fell back into the story instead of
+    returning to the gallery.  The shim therefore stamps the macro depth on
+    every call-stack entry and truncates it before the engine's return.
+    """
+
+    def test_shim_stamps_macro_depth_on_call(self):
+        js = shims.RUNTIME_SHIM_IIFE
+        assert "kag.pushStack = function" in js
+        assert "__kag3_macro_depth" in js
+        assert "kag.stat.stack.macro || []" in js
+
+    def test_shim_wraps_the_return_tag(self):
+        js = shims.RUNTIME_SHIM_IIFE
+        assert "master_tag['return']" in js
+        assert "kag.getStack('call')" in js
+        assert "kag.__kag3_return_patched" in js, "the patch must be idempotent"
+
+    def test_frames_are_dropped_before_the_engine_return_runs(self):
+        js = shims.RUNTIME_SHIM_IIFE
+        start = js.index("master_tag['return']")
+        tail = js[start:start + 1500]
+        assert "frames.length = top[_macroDepthKey]" in tail
+        assert "_returnStart.apply(this, arguments)" in tail
+        assert tail.index("frames.length = top[_macroDepthKey]") < \
+            tail.index("_returnStart.apply(this, arguments)"), \
+            "the macro frames must be truncated before delegating to the engine"
+
+    def test_patch_lives_in_the_runtime_shim_source(self):
+        raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
+        assert "__kag3_return_patched" in raw
+
+
 class TestCompatLayer:
     """`kirikiri/convert_kag.py` is a re-export shim, not a second home."""
 

@@ -802,6 +802,52 @@ document.addEventListener('click', function (e) {
         };
       }
       kag.callExtraConductor = kag.callExtraConductor || function () { return 0; };
+      // KAG3 macros are expanded at parse time, so a `[return]` written inside a
+      // macro body is just a plain tag in the caller's order stream: it returns
+      // from the enclosing `[call]`.  Tyrano executes macros with a runtime frame
+      // stack instead, and its own `[return]` resumes the *macro's* caller while
+      // leaving that frame behind - the engine documents the limitation itself
+      // (`kag.tag_system.js`: "だからmacro で return は使えない").
+      //
+      // Measured on a gallery replay: the replay scene ends with a macro whose
+      // body is `[if exp="tf.now_pv == 1"][return][endif]`.  With the stock
+      // engine the flow fell back into the story at the macro's caller line
+      // (the gallery never returned, and the scene flag the cleanup code clears
+      // stayed set); stamping the macro depth on each call-stack entry and
+      // truncating it on `[return]` restores the KAG3 behaviour - frames opened
+      // by the callee are dropped, the caller's own frames survive.
+      if (!kag.__kag3_return_patched) {
+        kag.__kag3_return_patched = true;
+        var _macroDepthKey = '__kag3_macro_depth';
+        var _pushStack = kag.pushStack;
+        if (typeof _pushStack === 'function') {
+          kag.pushStack = function (name, flag) {
+            if (name === 'call' && flag && typeof flag === 'object') {
+              try {
+                flag[_macroDepthKey] = (kag.stat.stack.macro || []).length;
+              } catch (e) {}
+            }
+            return _pushStack.apply(this, arguments);
+          };
+        }
+        var _returnTag = kag.ftag.master_tag['return'];
+        if (_returnTag && _returnTag.start) {
+          var _returnStart = _returnTag.start;
+          _returnTag.start = function (pm) {
+            try {
+              var top = kag.getStack('call');
+              var frames = kag.stat.stack.macro;
+              if (top && typeof top[_macroDepthKey] === 'number' && frames &&
+                  frames.length > top[_macroDepthKey]) {
+                var dropped = frames.length - top[_macroDepthKey];
+                frames.length = top[_macroDepthKey];
+                __kag3_log('return: dropped ' + dropped + ' macro frame(s) opened by the callee');
+              }
+            } catch (e) {}
+            return _returnStart.apply(this, arguments);
+          };
+        }
+      }
       // debug/UX hotkeys (KAG3 port niceties):
       //   Ctrl+Enter  jump to the next [select] tag in the current
       //               scenario (skip dialogue up to the next choice)

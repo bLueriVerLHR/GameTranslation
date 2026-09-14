@@ -25,7 +25,7 @@ Unity = MelonLoader/BepInEx 运行时 hook；Wolf RPG = rewolf-trans 补丁
 
 ```
 GameTranslation/
-├── pipeline.py          # RPG Maker 命令行（build → decrypt → audio → clean → verify → serve/doctor/compress/deliver）
+├── pipeline.py          # RPG Maker CLI 包装（命令定义在 rpgmaker/cli.py，Typer）
 ├── kirikiri/            # KiriKiri（吉里吉里）工具包
 │   ├── xp3tool.py       #   XP3 解包（zlib 索引、0x80 间接块、raw/zlib 段）
 │   ├── xp3pack.py       #   XP3 打包（patch.xp3：raw 段 + zlib 索引 + 自校验）
@@ -53,7 +53,11 @@ GameTranslation/
 │       └── RMUniteTranslation_plugin.cs # BepInEx + Harmony 运行时 hook 插件
 │                        #   （IL2CPP/MelonLoader、Mono/AutoTranslator 见 AGENTS.md）
 ├── rpgmaker/            # RPG Maker MZ/MV 工具包（两者通用，见 detect.py）
-│   ├── config.py        #   工具发现（ffmpeg/ffprobe/7z）+ 阈值 + 路径/平台转换
+│   ├── cli.py           #   两个入口的 Typer 命令（serve/compress/deliver 只定义一次）
+│   ├── archive.py       #   7z 唯一入口：py7zr（zstd）create/verify/extract；
+│   │                    #   Windows 侧仍走 7z.exe 桥（跨系统规则）
+│   ├── media.py         #   媒体唯一入口：PyAV 探测/解码（不需 ffprobe）
+│   ├── config.py        #   工具发现（ffmpeg/7z/npx/git...）+ 阈值 + 路径/平台转换
 │   ├── runtime.py       #   环境感知调优：CPU/内存/磁盘类型探测 + 自动并行度
 │   ├── detect.py        #   引擎 / 网页根目录检测（MZ 根部署 vs MV www/）
 │   ├── build.py         #   拷贝网页文件，剥离 NW.js 运行时（asyncio + 并行拷贝）
@@ -226,18 +230,29 @@ venv 解释器按平台取：POSIX `.venv/bin/python`，Windows
 - **集成测试**（`test_integration.py`）：在合成游戏上跑完整流水线
   build → decrypt → clean → verify → serve 冒烟 → compress → deliver，
   以及真实 CLI 子进程调用与退出码。
-- **全流程无外部依赖**：`tests/fake_tools/` 提供假 ffmpeg/ffprobe/7z
-  （通过 `FFMPEG`/`FFPROBE`/`SEVENZ` 环境变量注入，与真实工具同协议），
+- **打包/媒体/日志已改用现成包**（不再手写 argv 与 stdout 解析）：
+  `py7zr`（7z+zstd）、`av`/PyAV（探测与解码检查）、`typer`（CLI）、
+  `pytest` + `pytest-xdist` + `pytest-cov`。详见 `pyproject.toml`。
+- **并行跑测试是默认**（`addopts = "-n auto"`，本套 1163 个用例 
+  27.8s → 11.2s）；`-p no:xdist` 可关。
+- **无外部工具也能跑**：`tests/fake_tools/` 提供假 ffmpeg/7z
+  （经 `FFMPEG`/`SEVENZ` 环境变量注入，与真工具同协议），真实媒体用
+  `tests/fixtures/sine_loop.ogg`（5.8 KB 真 Ogg Vorbis，带 LOOP 标签），
   测试不依赖系统安装的工具；服务冒烟测试用真实 HTTP 端口。
 
 ## 环境要求
 
-- Python 3.10+（`tools/downscale_images.py` 需要 Pillow；项目自带本地虚拟
-  环境 `.venv/`，gitignored — 需要新包时在 venv 里安装，不污染系统环境）
+- **Python 3.10+** 与四个运行时包：`typer`、`py7zr`、`av`（外加可选的
+  `Pillow`/`numpy`，图像相关步骤用）。项目自带本地虚拟环境 `.venv/`
+  （gitignored）：`pip install -e ".[images,dev]"` 一次装齐。
+- **ffmpeg**（含 libvorbis）— 仅 **audio** 步骤的编码用。探测/解码检查已
+  改为 PyAV 在进程内完成，**不再需要 ffprobe**（PyAV 的 wheel 不含
+  libvorbis，所以 Vorbis 编码仍用 ffmpeg CLI，质量策略与实测一致）。
 - Node.js + npx（**仅 TyranoScript 构建**：解包 `app.asar` 用
   `npx @electron/asar`，见 `docs/tyrano.md`）
-- ffmpeg/ffprobe（含 libvorbis）— 仅 **audio** 步骤使用
-- 7-Zip-Zstandard（压缩包用 `-m0=zstd`）
+- **7-Zip 只在 Windows 侧桥接时需要**：同侧打包/解包由 py7zr 在进程内
+  完成（`rpgmaker/archive.py`，实测比 `7z.exe -mmt` 快且体积相同）；
+  `deliver` 在 WSL 下写 Windows 侧目录时仍调 Windows `7z.exe`。
 - ripgrep（`rg`）— **可选**，仅人工/agent 手动检索用（工具库代码里不调用
   `rg`：内容搜索是纯 Python 实现）
 

@@ -1,10 +1,10 @@
 # GameTranslation project metadata and packaging config.
 #
-# Declarative only: nothing here is required to run the tools.  Every script
-# still resolves its own imports via the repo-local sys.path convention
-# (tools/ imports siblings as top-level modules through sys.path, and the
-# rpgmaker/kirikiri/tyrano packages are reached by inserting the repo root).
-# No `pip install -e .` is assumed anywhere in the codebase.
+# The library-level packages (rpgmaker/kirikiri/tyrano/wolfrpg/unity) are
+# importable without installation because every script inserts the repo root
+# on sys.path; the `dependencies` below are what those packages import.  No
+# `pip install -e .` is required to run a checklist, but installing the
+# declared dependencies (or the extras) is what makes the pipeline work.
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -17,15 +17,33 @@ description = "Local toolkit for JP->ZH translation and playable builds (RPG Mak
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "GPL-3.0-or-later"}
-# No install-time dependencies: tools resolve their own imports via the
-# repo-local sys.path convention (see code), so the distribution is dependency
-# free by design.  Two optional extras cover what is only needed for specific
-# engines/steps (PyPI never installs them implicitly):
-#   pip install -e ".[images]"    # PNG downscaling, TLG->PNG, KAG image ops
-#   pip install -e ".[unity]"     # RPG Maker Unite bundle extraction
+# Runtime dependencies are the packaged libraries the pipeline now uses
+# instead of hand-rolled equivalents:
+#   typer  - the CLI (rpgmaker/cli.py) for both entry points
+#   py7zr  - 7z + ZStandard create/verify/extract, in-process (see
+#            rpgmaker/archive.py: measured faster than 7z.exe -mmt, same size)
+#   av     - PyAV: FFmpeg bindings for probing and decode checks (no ffprobe)
+# Optional extras cover the engine-specific pieces (PyPI never installs an
+# extra implicitly):
+#   pip install -e ".[images]"   # PNG downscaling, TLG->PNG, KAG image ops
+#   pip install -e ".[unity]"    # RPG Maker Unite bundle extraction
+#   pip install -e ".[dev]"      # tests (pytest + xdist + coverage)
+dependencies = [
+    "typer>=0.12",
+    "py7zr>=1.0",
+    "av>=13.0",
+]
+
+[project.scripts]
+# One CLI for both pipelines: `gt build ...` (RPG Maker) and
+# `gt-tyrano build ...`; pipeline.py / tyrano/pipeline.py stay as wrappers.
+gt = "rpgmaker.cli:main"
+gt-tyrano = "rpgmaker.cli:tyrano_main"
+
 [project.optional-dependencies]
 images = ["Pillow>=10", "numpy>=1.24"]
 unity = ["UnityPy>=1.20"]
+dev = ["pytest>=8", "pytest-xdist>=3", "pytest-cov>=5"]
 
 [tool.setuptools]
 # Real packages (each has __init__.py): rpgmaker / kirikiri / tyrano / wolfrpg
@@ -48,3 +66,14 @@ packages = [
 # tests/ is the only test root: stated explicitly so a bare `pytest` cannot
 # drift into collecting from a local download dir or a nested venv.
 testpaths = ["tests"]
+# Measured with pytest-xdist on this suite: 27.8 s serial -> 11.2 s with
+# `-n auto` (1163 tests).  The suite is parallel-safe (every test builds its
+# own tmp game and binds its own free port), and `-p no:xdist` disables it.
+addopts = "-n auto"
+
+[tool.coverage.run]
+source = ["rpgmaker", "kirikiri", "tyrano", "wolfrpg", "unity", "tools"]
+omit = ["tests/*", "*/__init__.py"]
+
+[tool.coverage.report]
+skip_covered = true

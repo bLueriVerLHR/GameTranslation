@@ -10,9 +10,12 @@
 
 ## 1. 环境要求
 
-- Python 3.10+（命令里直接用 `python`；WSL 下为 `python3`）。
-- ffmpeg / ffprobe（含 libvorbis）用于音频探测与重编码。
-- 7-Zip-Zstandard 用于 `-m0=zstd` 压缩包（普通 7-Zip 不支持 zstd）。
+- **Python 3.10+** 与运行时包 `typer` / `py7zr` / `av`（图像步骤另需
+  `Pillow`；`pip install -e ".[images,dev]"` 一次装齐）。
+- ffmpeg（含 libvorbis）用于音频重编码；**探测/解码检查已改为 PyAV，
+  不需要 ffprobe**。
+- 7-Zip 仅在 Windows 侧桥接时需要；同侧打包/解包用 `py7zr`（见
+  `rpgmaker/archive.py`）。
 - **ripgrep（`rg`）是可选的**：工具库代码里**不调用** `rg`（内容搜索已改成
   纯 Python 实现，`rpgmaker/clean.py`）；它只在人工/agent 手动检索时方便
   （如预扫插件）。装了会出现在 `doctor` 报告里，没装也不影响任何步骤。

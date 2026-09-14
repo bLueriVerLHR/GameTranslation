@@ -72,7 +72,7 @@
 
 ## 2. 一键流水线
 
-整个转换是 `build → decrypt → audio → clean → verify`，然后**测** —
+整个转换是 `build → compat → decrypt → audio → clean → verify`，然后**测** —
 `serve --test` — 最后 `deliver` 写回存储侧（本地压缩 → 压缩包复制到
 压缩包目录 → 解压到成品目录）。`decrypt` 只在 RPG Maker MZ/MV
 且 **easy** 加密时是默认步骤；复杂/自定义加密游戏上它不改任何东西
@@ -84,6 +84,7 @@ $src = "C:\path\to\game"                 # 原版游戏目录 — 绝不修改
 $out = "$env:LOCALAPPDATA\Temp\opencode\game"   # Temp 工作目录（之后可删）
 
 python $tk\pipeline.py build   $src -o $out
+python $tk\pipeline.py compat  $out          # NW.js-only 插件检查定点维修 + 预扫
 python $tk\pipeline.py decrypt $out          # 仅 RPGM + easy 加密；否则跳过
 python $tk\pipeline.py audio   $out          # 探测 + 重编码；收益最大
 python $tk\pipeline.py clean   $out          # 垃圾文件 / 未用字体 / 未用图块
@@ -151,6 +152,37 @@ NW.js 运行时纯属浪费，不拷贝。编辑器/repack 垃圾（`img/` 下
 
 拷贝并行（asyncio + 线程池，默认 6 worker）：每个网页目录和根文件由自己
 的 worker 拷贝，构建速度受磁盘带宽而非单线程限制。
+
+### compat — 加载期崩的插件（NW.js-only 代码）
+
+`build` 剥掉 NW.js 运行时后，任何在**模块顶层**（列 0，即加载时就会执行）
+读 NW.js 全局（`process` / `require`）的**已启用**插件都会在浏览器/JoiPlay
+里抛异常，而且它这一行之后的顶层代码再也不会执行。游戏照常启动，所以
+`verify` 全绿、HTTP 冒烟全 200 —— 坏的是功能，不是启动，最容易一直漏到
+玩家反馈「手机上少了某个画面」。
+
+已知的连环格式：`SRD_SuperToolsEngine` 顶层读
+`process.versions['node-webkit']` 死掉 → 而它正是创建
+`DataManager._testExceptions` 的那个插件 → 另一个同样已启用的插件
+`SRD_HUDMaker` 又在 `DataManager._testExceptions.push(...)` 上死一次 →
+`MapHUD/BattleHUD/Windows/Notes.json` 全部没进
+`DataManager._databaseFiles` → **游戏内 HUD 静默消失**。
+
+```powershell
+python $tk\pipeline.py compat $out              # 定点维修 + 预扫（幂等，可重复跑）
+python $tk\pipeline.py compat $out --dry-run    # 只看会改什么
+python $tk\pipeline.py compat $out --strict     # 还有未处理项就非零退出（可当门禁）
+```
+
+- **维修**只针对已知形态（`rpgmaker/plugincompat.py` 的 `REPAIRS` 表）：
+  一行进一行出，带 `typeof process` 守卫的行不再重复改（幂等），只改
+  `js/plugins.js` 里 `status: true` 的插件；保留原文件编码
+  （UTF-8 / Shift-JIS）与行尾（CRLF），两样都不匹配的文件 WARN 跳过。
+- **预扫**（advisory）：报出已启用插件里模块顶层的 `process` / `require(`
+  引用（注释与字符串字面量不算、缩进的行不算），**绝不改未知插件代码**；
+  `verify` 会把未处理项以 WARNING 报出但不判失败。
+- 列 0 启发式是有意的：缩进的行在函数/块里，加载期不会执行。所以在函数体内
+  （如 `if(!Utils.isNwjs()) return;` 之后的 `process.mainModule`）不需要改。
 
 ### decrypt — 加密资源（easy vs complex）
 
@@ -415,7 +447,10 @@ powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<g
   `typeof process === 'undefined' → return false` 守护；补丁通常已应用，
   按钮是死重）。每个构建预扫：`rg -n "process\." js/plugins/*.js`，
   只 patch 真正执行到的路径（标题画面、加载时 IIFE），不碰 F 键背后的
-  开发工具函数。
+  开发工具函数。**已知形态交给 `pipeline.py compat`**（见 §4）——它内置
+  `SRD_SuperToolsEngine` / `SRD_HUDMaker` 那类连环崩的维修规则，并预扫
+  模块顶层的 `process` / `require(`；漏改的项 `verify` 会再 WARNING 报一次。
+  优先跑 `compat` 而不是手改：手改难以发现**第二个**依赖同一顶层变量的插件。
 - **MoviePicture 自动播放 = 新浏览器白屏：** 插件 `<video>.play()` 在
   origin 无自动播放带声音权限、播放不在用户激活窗口内时被拒
   （`NotAllowedError`）— 显示为白色视频画面。双源修复：(1)

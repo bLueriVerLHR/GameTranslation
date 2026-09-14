@@ -4,8 +4,8 @@
 
 One definition per command, two apps:
 
-  * ``app``      - RPG Maker MZ/MV: build / decrypt / audio / clean / verify /
-                   doctor / serve / compress / deliver
+  * ``app``      - RPG Maker MZ/MV: build / compat / decrypt / audio / clean /
+                   verify / doctor / serve / compress / deliver
   * ``tyrano``   - TyranoScript: build / audio / clean / fix-autoplay /
                    verify / serve / compress / deliver
 
@@ -33,7 +33,7 @@ from rpgmaker import audio as audio_mod
 from rpgmaker import build as build_mod
 from rpgmaker import clean as clean_mod
 from rpgmaker import compress as compress_mod
-from rpgmaker import decrypt, deliver, detect, doctor, logsetup
+from rpgmaker import decrypt, deliver, detect, doctor, logsetup, plugincompat
 from rpgmaker import serve as serve_mod
 from rpgmaker import verify as verify_mod
 
@@ -122,6 +122,19 @@ def cmd_audio(
         return
     counts, saved = audio_mod.reencode_all(web, infos, workers=workers)
     log.info("audio: %s, saved %.1f MB", dict(counts), saved / 1e6)
+
+
+@app.command("compat")
+def cmd_compat(
+    game: str = typer.Argument(..., help="JoiPlay folder (web root)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="report only, don't write"),
+    strict: bool = typer.Option(False, "--strict", help="exit non-zero when a load-time "
+                                                        "NW.js reference is left unhandled"),
+):
+    """Guard known NW.js-only plugin checks (load-time crash in browser/JoiPlay)."""
+    report = plugincompat.run(resolve_web_root(game), dry_run=dry_run, strict=strict)
+    if strict and report.findings:
+        raise typer.Exit(1)
 
 
 @app.command("clean")

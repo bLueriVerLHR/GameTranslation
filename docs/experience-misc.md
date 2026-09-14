@@ -69,6 +69,30 @@
 `process\.`，只 patch 可达路径（标题画面、加载时 IIFE），不碰 F 键背后的
 开发工具函数。
 
+### 3.1 模块顶层连环崩：一个插件的异常会带走另一个插件（2026-09）
+
+同一种坑的**静默版本**，也是最难靠检查发现的一种：
+
+- 一个已启用插件在**模块顶层**（列 0，加载即执行）读
+  `process.versions['node-webkit']` → 浏览器/JoiPlay 里 `ReferenceError`，
+  该行之后的顶层代码全部不执行。**游戏照常进标题、进地图**，所以
+  `verify` 全绿、HTTP 冒烟全 200、音频全解码通过 —— 只有控制台能看到。
+- 真正的损失在**第二个插件**上：第一个插件正是创建
+  `DataManager._testExceptions` 的地方，而 `SRD_HUDMaker` 在自己顶层做
+  `DataManager._testExceptions.push(...)` → 它也跟着死，于是
+  `MapHUD/BattleHUD/Windows/Notes.json` 没进 `DataManager._databaseFiles`，
+  **游戏内 HUD 静默消失**（PC 上原版 NW.js 有 `process`，所以只在转换后的
+  构建/手机上出现）。
+- 本次实测：修复前 `$dataMapHUD` 0 条，修复后 32 条；地图场景里
+  HUD 正常显示。
+- **工具化**：`pipeline.py compat`（见 [workflow.md](workflow.md) §4）
+  内置这类形态的定点维修（一行进一行出、幂等、保留原编码/行尾）并对已
+  启用插件做模块顶层 `process`/`require(` 预扫；`verify` 会把未处理项
+  WARNING 报一次。**先跑 `compat` 再手改** —— 手工只 patch「看得见的那
+  一处」，很容易漏掉依赖同一变量的第二个插件。
+- 判据仍然只是启发式（列 0 = 模块顶层）：缩进在函数体里的 `process` 用法
+  （如 `if(!Utils.isNwjs()) return;` 之后）**不需要**改，`compat` 也不会碰。
+
 ## 4. MoviePicture 新浏览器白屏 = 自动播放策略
 
 origin 无自动播放带声音权限、播放不在用户激活内时，`<video>.play()`

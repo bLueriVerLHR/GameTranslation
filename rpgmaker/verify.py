@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import audio as audio_mod
 from . import media
+from . import plugincompat
 from . import runtime
 
 log = logging.getLogger("rpgmaker.verify")
@@ -191,12 +192,22 @@ def verify_decode(web_root, workers=None, sample=None):
     log.info("decode check: %d/%d errors", len(errors), len(files))
     return errors
 
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        for p, err in ex.map(work, files):
-            if err:
-                errors.append((p, err))
-    log.info("decode check: %d/%d errors", len(errors), len(files))
-    return errors
+
+def verify_plugin_compat(web_root):
+    """Advisory: a plugin can break at LOAD time in a browser/JoiPlay (no
+    NW.js `process`/`require`) while every other check stays green, and the
+    game then boots with a feature silently missing.  Reported, never a
+    failure - untangling arbitrary plugin code needs a human."""
+    findings = plugincompat.scan(web_root)
+    if findings:
+        plugins = sorted({f.plugin for f in findings})
+        log.warning("plugin compat: %d module-scope NW.js reference(s) in enabled "
+                    "plugin(s) %s (run `pipeline.py compat %s` to repair/inspect): %s",
+                    len(findings), ", ".join(plugins), web_root,
+                    "; ".join(str(f) for f in findings[:5]))
+    else:
+        log.info("plugin compat: no module-scope NW.js references in enabled plugins")
+    return findings
 
 
 def verify_key_files(web_root):
@@ -229,6 +240,7 @@ def verify_all(web_root, decode=False, sample=None, source_dir=None, workers=Non
     res = verify_audio_refs(web_root, source_dir=source_dir)
     if res:
         issues.append(res)
+    verify_plugin_compat(web_root)
     if decode:
         errs = verify_decode(web_root, workers=workers, sample=sample)
         if errs:

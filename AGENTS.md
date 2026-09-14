@@ -829,6 +829,7 @@ prompt 里再加三条明令:
 
 ## 顺序
 
-`build` → (`decrypt` 仅 RPG Maker MZ/MV easy 加密时) → `audio` → `clean`
+`build` → `compat`(插件加载期崩溃的定点维修 + 预扫,见 `docs/workflow.md`
+§4) → (`decrypt` 仅 RPG Maker MZ/MV easy 加密时) → `audio` → `clean`
 → `verify --source` → `serve --test` → 新端口 HTTP 试玩 → `deliver` 最后
 (压缩 → 复制压缩包到压缩包目录 → 删除成品目录旧文件夹 → 解压到成品目录)。

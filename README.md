@@ -65,6 +65,8 @@ GameTranslation/
 │   ├── runtime.py       #   环境感知调优：CPU/内存/磁盘类型探测 + 自动并行度
 │   ├── detect.py        #   引擎 / 网页根目录检测（MZ 根部署 vs MV www/）
 │   ├── build.py         #   拷贝网页文件，剥离 NW.js 运行时（asyncio + 并行拷贝）
+│   ├── plugincompat.py  #   JoiPlay 兼容：已知 NW.js-only 插件检查的定点维修 +
+│   │                    #   模块顶层 process/require 预扫（命令 compat）
 │   ├── decrypt.py       #   仅 easy 解密：带 RPGMV 头的资源解密；
 │   │                    #   复杂/自定义加密文件原样保留并保持标志位
 │   ├── audio.py         #   探测 + 重编码 Vorbis（asyncio + 线程池）
@@ -160,6 +162,7 @@ $out = "$env:LOCALAPPDATA\Temp\opencode\game"   # 工作目录（Temp，可删�
 $g   = "<交付目录>"   # 成品放这里，和以往每个游戏一致
 
 python $tk\pipeline.py build   $src -o $out
+python $tk\pipeline.py compat  $out          # 插件加载期崩溃：定点维修 + 预扫（见 docs/workflow.md §4）
 python $tk\pipeline.py decrypt $out          # 仅 RPGM + easy 加密；否则跳过
 python $tk\pipeline.py audio   $out
 python $tk\pipeline.py clean   $out

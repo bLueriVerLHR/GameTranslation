@@ -279,7 +279,6 @@ def cmd_extract(args):
 
 def cmd_rebuild(args):
     work = args.work_dir
-    leaves = plain_io.load_json(os.path.join(work, "plugin_leaves.json"))
     blobs = plain_io.load_json(os.path.join(work, "plugin_blobs.json"))
     trans = plain_io.load_json(os.path.join(work, args.trans))
 
@@ -300,7 +299,6 @@ def cmd_rebuild(args):
         except ValueError:
             print("WARN: unparseable blob: %r" % orig[:60])
             continue
-        target = blobs[orig]["count"]
         new_decoded = apply_trans(decoded, trans, dead)
         new_param = encode_string_json(new_decoded)
         if isinstance(new_param, str):

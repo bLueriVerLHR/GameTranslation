@@ -6,7 +6,6 @@ import json
 import os
 import random
 
-import pytest
 
 from conftest import make_game
 

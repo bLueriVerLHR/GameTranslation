@@ -166,9 +166,11 @@ class Decoder(object):
         if c == "o":
             return self._read_object()
         if c == "e":
-            mod = self._read_raw()
+            # Extended (module wrapper): the module raw is read to keep the
+            # stream aligned, and is irrelevant for text extraction.
+            self._read_raw()
             obj = self._read_raw()
-            return obj  # module wrapper irrelevant for text extraction
+            return obj
         if c == "u":
             cls = self._read_raw()
             n = self.read_long()
@@ -218,7 +220,9 @@ class Decoder(object):
                 return obj
             return {"__ivar__": obj, "ivars": ivars}
         if c == "C":
-            sym = self._read_raw()
+            # User-defined class instance: the class symbol is read to keep the
+            # stream aligned; only the ivar payload matters here.
+            self._read_raw()
             val = self._read_raw()
             return val
         if c == "@":

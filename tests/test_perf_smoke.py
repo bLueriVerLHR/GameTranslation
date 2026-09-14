@@ -12,7 +12,6 @@ import io
 import os
 import time
 
-import pytest
 
 from conftest import make_game
 

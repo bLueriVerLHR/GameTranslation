@@ -61,7 +61,7 @@ def extract(asar_path, out_dir):
     if not os.path.isfile(asar_path):
         raise FileNotFoundError("asar archive not found: %s" % asar_path)
     os.makedirs(out_dir, exist_ok=True)
-    proc = _run(["extract", asar_path, out_dir])
+    _run(["extract", asar_path, out_dir])
     log.info("extracted %s -> %s", asar_path, out_dir)
     return out_dir
 

@@ -6,7 +6,6 @@ import random
 
 import pytest
 
-from conftest import make_game
 
 from rpgmaker import audio, config
 

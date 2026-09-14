@@ -43,16 +43,16 @@ gt-tyrano = "rpgmaker.cli:tyrano_main"
 [project.optional-dependencies]
 images = ["Pillow>=10", "numpy>=1.24"]
 unity = ["UnityPy>=1.20"]
-dev = ["pytest>=8", "pytest-xdist>=3", "pytest-cov>=5"]
+dev = ["pytest>=8", "pytest-xdist>=3", "pytest-cov>=5", "ruff>=0.5"]
 
 [tool.setuptools]
 # Real packages (each has __init__.py): rpgmaker / kirikiri / tyrano / wolfrpg
 # / unity plus the unity.rmunite subpackage.
 #
-# tools/ has NO __init__.py on purpose and is NOT declared as a package: its
+# tools/ has an __init__.py but is deliberately NOT declared as a package: its
 # scripts import each other as top-level modules via the sys.path convention
-# (e.g. `import plain_io`), so converting it to a package would change that
-# import semantics.  Treat tools/ as a script directory.
+# (e.g. `import plain_io`), and nothing outside the repo installs them (the
+# `gt` CLI does not need tools/).  Treat tools/ as a script directory.
 packages = [
     "rpgmaker",
     "kirikiri",
@@ -77,3 +77,27 @@ omit = ["tests/*", "*/__init__.py"]
 
 [tool.coverage.report]
 skip_covered = true
+
+# Lint is pinned here so a run is reproducible: without this section the result
+# depends on whatever ruff config the machine happens to have (a global
+# "select = ALL" produced 1112 findings, most of them style).
+#
+# The selected set is the bug-focused one:
+#   F  - pyflakes: undefined names, unused imports/variables, redefinitions
+#   E9 - syntax/IO errors
+# Deliberately NOT selected (they would fail on the repo's own conventions
+# rather than on defects): E402 and the rest of the E4/E7 groups (the
+# sys.path-import convention is already covered by the explicit `# noqa: E402`
+# markers), E501 line length, and the whole stylistic/unused-noqa families
+# (UP/SIM/RUF/I).  Run `ruff check --select ALL` by hand to see what those
+# would report before widening this list.
+[tool.ruff]
+target-version = "py310"          # matches requires-python
+extend-exclude = [
+    ".venv",
+    ".tmp",
+    "docs/table",                 # local, gitignored game data
+]
+
+[tool.ruff.lint]
+select = ["F", "E9"]

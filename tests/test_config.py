@@ -11,7 +11,6 @@ disabled globally by tests/conftest.py unless a test opts in.
 """
 import json
 import logging
-import os
 import shutil
 import sys
 

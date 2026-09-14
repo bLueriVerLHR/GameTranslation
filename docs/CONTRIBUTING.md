@@ -65,6 +65,15 @@ commit message 同样自查。注：不要用「裸 `rg` 扫规则文本自身�
   serve → compress → deliver），全流程无外部依赖（`tests/fake_tools/`
   提供假 ffmpeg/ffprobe/7z）。
 - 修改 `.py` 后先过 `python -m py_compile`（工具可运行）。
+- **lint 用 ruff（规则钉在 `pyproject.toml`）**：
+  ```bash
+  <venv-python> -m ruff check .
+  ```
+  只选了**定位缺陷**的规则（F 未定义名/未用导入与变量/重定义，E9 语法），
+  不选风格类规则（UP/SIM/RUF/E501 等）——否则仓库自己的书写习惯会全部
+  报错（本机全局 ruff 配置 `select = ALL` 会报出 1112 条，绝大多数是风格）。
+  `tests/test_lint.py` 会在装了 ruff 时把同一命令当作门禁跑；未装 ruff
+  （只装运行时依赖）则跳过。
 - 批量任务开工前先**采样 3-5 个代表文件测性能**并向 owner 报告预计总时长
   与瓶颈；检查文件质量用**随机采样**，不反复检查同一已知正确的文件。
 

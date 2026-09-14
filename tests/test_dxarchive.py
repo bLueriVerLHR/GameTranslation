@@ -7,7 +7,6 @@ and cross-verified empirically against the real decoder (bit layout:
 header MSB-first, payload path-bits packed LSB-first).  They build valid
 streams from scratch, so the tests run without any .wolf fixture file.
 """
-import os
 import random
 import struct
 import zlib
@@ -310,8 +309,6 @@ def make_wolf_archive(files, key_string=b"DXLIBARC", no_key=False):
     key = dx.key_create(key_string)
     name_entries = []
     fheads = []
-    dir_addr = 0
-    fh_addr = 0
     file_table = bytearray()
     name_table = bytearray()
     data_start = 0

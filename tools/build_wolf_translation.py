@@ -130,7 +130,6 @@ def collect(patch_dir, with_danger, with_extra):
 def build_structure(items):
     """Group by source file into the scene tree the shards read."""
     maps = []          # {id, items: [{key, ctx}]}
-    seen_keys = set()
     global_items = []  # non-story files
 
     def append_map(label, key, ctx, kind):

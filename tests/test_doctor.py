@@ -10,7 +10,6 @@ cases (corrupt env_config.json, absent env_config.json, deliverable folder
 that cannot be created).
 """
 import json
-import os
 
 import pytest
 

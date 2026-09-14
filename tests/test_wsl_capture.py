@@ -9,7 +9,6 @@ monkeypatched to a tmp_path so the whole flow is hermetic (positive /
 negative / edge cases).
 """
 import os
-import subprocess
 import sys
 from pathlib import Path
 

@@ -15,7 +15,6 @@ Positive / negative / edge coverage:
     payloads, many files, header / index flag layout.
 """
 
-import os
 import struct
 import sys
 import zlib

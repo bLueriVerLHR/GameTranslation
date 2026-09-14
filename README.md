@@ -235,8 +235,11 @@ venv 解释器按平台取：POSIX `.venv/bin/python`，Windows
 - **打包/媒体/日志已改用现成包**（不再手写 argv 与 stdout 解析）：
   `py7zr`（7z+zstd）、`av`/PyAV（探测与解码检查）、`typer`（CLI）、
   `pytest` + `pytest-xdist` + `pytest-cov`。详见 `pyproject.toml`。
-- **并行跑测试是默认**（`addopts = "-n auto"`，本套 1163 个用例 
-  27.8s → 11.2s）；`-n 0` 可改为串行。
+- **并行跑测试是默认**（`addopts = "-n auto"`，本套 1400+ 用例 27.8s →
+  11.2s）；`-n 0` 可改为串行。
+- **lint 门禁**：`python -m ruff check .`，规则钉在 `pyproject.toml`（只选
+  定位缺陷的 F/E9，不选风格类）；`tests/test_lint.py` 在装了 ruff 时会把
+  同一命令当门禁跑，未装则跳过。
 - **无外部工具也能跑**：`tests/fake_tools/` 提供假 ffmpeg/7z
   （经 `FFMPEG`/`SEVENZ` 环境变量注入，与真工具同协议），真实媒体用
   `tests/fixtures/sine_loop.ogg`（5.8 KB 真 Ogg Vorbis，带 LOOP 标签），
@@ -246,7 +249,8 @@ venv 解释器按平台取：POSIX `.venv/bin/python`，Windows
 
 - **Python 3.10+** 与四个运行时包：`typer`、`py7zr`、`av`（外加可选的
   `Pillow`/`numpy`，图像相关步骤用）。项目自带本地虚拟环境 `.venv/`
-  （gitignored）：`pip install -e ".[images,dev]"` 一次装齐。
+  （gitignored）：`pip install -e ".[images,dev]"` 一次装齐（dev 额外装
+  `pytest`/`pytest-xdist`/`pytest-cov`/`ruff`）。
 - **ffmpeg**（含 libvorbis）— 仅 **audio** 步骤的编码用。探测/解码检查已
   改为 PyAV 在进程内完成，**不再需要 ffprobe**（PyAV 的 wheel 不含
   libvorbis，所以 Vorbis 编码仍用 ffmpeg CLI，质量策略与实测一致）。

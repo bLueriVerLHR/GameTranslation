@@ -19,7 +19,6 @@ Positive / negative / edge coverage:
 """
 
 import logging
-import os
 import struct
 import sys
 import zlib

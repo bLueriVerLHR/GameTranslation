@@ -27,7 +27,6 @@ import os
 import struct
 import sys
 import zlib
-from pathlib import Path
 
 logger = logging.getLogger("dxarchive")
 

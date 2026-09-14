@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """Unit tests for tools/merge_plain_chunks.py chunk QC + merge."""
 import json
-import os
 import random
 
 import pytest
@@ -161,7 +160,6 @@ class TestParallelQc:
         assert lines[0].startswith("chunk_00:") and lines[-1].startswith("chunk_11:")
 
     def test_parallel_matches_serial(self, tmp_path, monkeypatch, capsys):
-        import copy
         work1 = tmp_path / "w1"
         work2 = tmp_path / "w2"
         for w in (work1, work2):

@@ -27,7 +27,6 @@ def main():
         src_path = tp.replace(".translated.json", ".json")
         if not os.path.exists(src_path):
             continue
-        src = json.load(open(src_path, encoding="utf-8"))
         out = json.load(open(tp, encoding="utf-8"))
         ch = 0
         for k, v in out.items():

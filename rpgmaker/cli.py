@@ -33,7 +33,7 @@ from rpgmaker import audio as audio_mod
 from rpgmaker import build as build_mod
 from rpgmaker import clean as clean_mod
 from rpgmaker import compress as compress_mod
-from rpgmaker import config, decrypt, deliver, detect, doctor, logsetup
+from rpgmaker import decrypt, deliver, detect, doctor, logsetup
 from rpgmaker import serve as serve_mod
 from rpgmaker import verify as verify_mod
 

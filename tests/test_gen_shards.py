@@ -10,7 +10,6 @@ import importlib.util
 import os
 import random
 
-import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 spec = importlib.util.spec_from_file_location(

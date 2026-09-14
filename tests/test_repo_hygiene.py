@@ -21,7 +21,6 @@ keyword table (docs/table/ad_keywords.md), which is not in the repo.
 import os
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest

@@ -7,7 +7,6 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 
-from . import config
 from . import audio as audio_mod
 from . import media
 from . import runtime

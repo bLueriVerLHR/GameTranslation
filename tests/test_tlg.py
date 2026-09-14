@@ -378,7 +378,6 @@ class TestGarbroFixture:
         assert self._fixtures(), "tests/fixtures/tlg missing"
 
     def test_each_fixture_matches_garbro_bmp(self):
-        from PIL import Image
         import struct as _struct
 
         for tlg_path in self._fixtures():

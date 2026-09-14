@@ -151,13 +151,14 @@ class TestCli:
 
 
 class TestTranslatedBuild:
-    def test_bake_and_verify_kv_archived(self, tmp_path, fake_tools):
-        """A translated build: KV baked into data JSON survives the pipeline."""
-        from rpgmaker import config as cfg
+    def test_translated_text_survives_build_and_verify(self, tmp_path, fake_tools):
+        """A build carrying already-translated data passes the pipeline checks.
+
+        (Writing the translation into data/ is bake_translation.py's job; this
+        test covers the build + verify half of the flow.)
+        """
         root = str(tmp_path / "src")
         web = make_game(root)
-        # write a translation KV into the game and bake it into data/Map001.json
-        kv = {"こんにちは": "你好"}
         data_path = os.path.join(web, "data", "Map001.json")
         with open(data_path, encoding="utf-8") as f:
             data = json.load(f)

@@ -22,7 +22,6 @@ import sys  # noqa: E402
 sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
 
 import merge_translation as mt  # noqa: E402
-import plain_io  # noqa: E402
 
 
 def write_json(path, data):

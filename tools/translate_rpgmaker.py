@@ -184,7 +184,6 @@ def decrypt_dir(root):
         return 0
 
     decrypted = 0
-    skipped = 0
     for dirpath, _dirs, files in os.walk(root):
         for name in files:
             path = os.path.join(dirpath, name)

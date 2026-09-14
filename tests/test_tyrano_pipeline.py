@@ -7,7 +7,6 @@ save backend), tyrano/audio.py (ogg conversion + ref rewrite), tyrano/clean.py
 The asar steps monkeypatch tyrano.asar.extract so no Node.js is needed in
 tests; the audio conversion uses the fake ffmpeg from conftest.
 """
-import json
 import os
 import sys
 from pathlib import Path
@@ -114,7 +113,7 @@ class TestBuild:
 
     def test_build_end_to_end(self, tmp_path, monkeypatch):
         root = str(tmp_path)
-        asar = make_src_game(root)
+        make_src_game(root)
         def fake_extract(src, out):
             make_asar_game(out)
         monkeypatch.setattr("tyrano.asar.extract", fake_extract)
@@ -358,7 +357,7 @@ class TestVerify:
         problems = tv.verify(root, source=source, check_png=False)
         assert any("dangling" in p or "mp3 refs left" in p for p in problems)
 
-    def test_mp3_ref_left_reported(self, tmp_path):
+    def test_mp3_ref_left_reported_with_file_also_present(self, tmp_path):
         root = make_asar_game(str(tmp_path))
         tb.fix_save_backend(root)
         with open(os.path.join(root, "data", "sound", "se1.mp3"), "wb") as f:

@@ -274,7 +274,6 @@ def main():
             map_order.append((x.get("@order", 0), x.get("@id", 0),
                               x.get("@name", "")))
     map_order.sort(key=lambda t: (t[0], t[1]))
-    map_name = {i: n for _o, i, n in map_order}
 
     # 1) maps in story order
     tree = []

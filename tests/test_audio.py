@@ -23,19 +23,29 @@ class TestBitrateCalc:
 
 
 class TestProbe:
-    def test_probe_one_ok(self, game_dir, fake_tools):
-        _root, web = game_dir
-        ffprobe = config.find_ffprobe()
-        info = audio.probe_one(ffprobe, os.path.join(web, "audio", "bgm", "bgm1.ogg"))
+    def test_probe_one_reads_a_real_ogg(self, tmp_path):
+        """Probing goes through PyAV: a real Ogg Vorbis fixture must report
+        its codec/rate/channels/duration AND its loop tags."""
+        from conftest import real_ogg
+        info = audio.probe_one(real_ogg(str(tmp_path / "bgm1.ogg")))
         assert info["codec"] == "vorbis"
-        assert info["channels"] == 2
-        assert float(info["duration"]) > 0
+        assert info["channels"] == 1
+        assert info["sample_rate"] == 22050
+        assert float(info["duration"]) > 1.9
+        # LOOPSTART/LOOPLENGTH are stream tags; the old ffprobe query
+        # (format=...tags only) missed them, so the re-encode dropped the
+        # loop points.
+        assert info["loopstart"] == "22050"
+        assert info["looplength"] == "22050"
 
-    def test_probe_one_missing_file(self, game_dir, fake_tools):
-        _root, web = game_dir
-        ffprobe = config.find_ffprobe()
-        info = audio.probe_one(ffprobe, os.path.join(web, "audio", "missing.ogg"))
+    def test_probe_one_missing_file(self, tmp_path):
+        info = audio.probe_one(str(tmp_path / "missing.ogg"))
         assert "error" in info
+
+    def test_probe_one_garbage_file_is_an_error_dict(self, tmp_path):
+        bad = tmp_path / "stub.ogg"
+        bad.write_bytes(b"O" * 5000)
+        assert "error" in audio.probe_one(str(bad))
 
     def test_probe_all_sample(self, game_dir, fake_tools):
         _root, web = game_dir
@@ -50,18 +60,40 @@ class TestProbe:
 
 
 class TestReencode:
+    """The re-encode POLICY tests inject probe results directly: probing is
+    PyAV now, and these tests are about the threshold policy + the ffmpeg
+    invocation, not about container parsing."""
+
+    @staticmethod
+    def _infos(web):
+        """Probe-shaped info for the 3 files of the synthetic game.
+
+        duration=10 s against the stub sizes (60-100 KB) puts every file
+        BELOW both bitrate thresholds (48-80 kbps), which is the "keep" case.
+        """
+        out = {}
+        for rel, channels in (("audio/bgm/bgm1.ogg", 2),
+                              ("audio/bgm/bgm_mono.ogg", 1),
+                              ("audio/se/se1.ogg", 2)):
+            size = os.path.getsize(os.path.join(web, rel))
+            out[rel] = {"duration": "10", "size": str(size),
+                        "fsize": size, "codec": "vorbis",
+                        "channels": str(channels), "sample_rate": "44100"}
+        return out
+
     def test_keep_low_bitrate(self, game_dir, fake_tools):
         _root, web = game_dir
-        infos = audio.probe_all(web, workers=2)
+        infos = self._infos(web)
         counts, saved = audio.reencode_all(web, infos, workers=1)
-        # default bit_rate == threshold -> not > -> all kept
+        # 60-100 KB over 10 s is 48-80 kbps: stereo below 112k, mono below 64k
         assert counts.get("keep", 0) == 3
         assert saved == 0
 
     def test_reencode_high_bitrate(self, game_dir, fake_tools, monkeypatch):
-        monkeypatch.setenv("FAKE_HIGH_BITRATE", "1")
         _root, web = game_dir
-        infos = audio.probe_all(web, workers=2)
+        monkeypatch.setattr(audio, "pick_strategy",
+                            lambda info: audio.StereoMusicStrategy())
+        infos = self._infos(web)
         counts, saved = audio.reencode_all(web, infos, workers=1)
         assert counts.get("keep", 0) == 0
         assert counts.get("reencoded", 0) + counts.get("no-gain", 0) == 3
@@ -85,13 +117,15 @@ class TestReencode:
 
 
 class TestToolMissing:
-    """Missing tool binaries raise FileNotFoundError with an install hint."""
+    """Probing/decoding are in-process (PyAV), so ffprobe is no longer a
+    dependency; the ffmpeg binary is only needed to ENCODE Vorbis."""
 
-    def test_probe_all_raises_when_ffprobe_missing(self, game_dir, monkeypatch):
+    def test_probe_all_works_without_ffprobe(self, game_dir, monkeypatch):
         _root, web = game_dir
         monkeypatch.setattr(config, "find_ffprobe", lambda: None)
-        with pytest.raises(FileNotFoundError):
-            audio.probe_all(web, workers=1)
+        monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
+        infos = audio.probe_all(web, workers=1, sample=1)
+        assert len(infos) == 1
 
     def test_reencode_all_raises_when_ffmpeg_missing(self, game_dir,
                                                      monkeypatch):

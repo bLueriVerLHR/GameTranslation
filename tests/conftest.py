@@ -6,9 +6,15 @@ fake-tool environment wiring.
 The fake tools live in tests/fake_tools/ and are injected via the FFMPEG /
 FFPROBE / SEVENZ env vars (config.find_* honors env vars first), so the
 whole pipeline runs hermetic - no system ffmpeg/7z needed.
+
+Media probing/decoding is in-process (PyAV), so those tests use a real
+container instead of a fake binary: `tests/fixtures/sine_loop.ogg` is a
+5.8 KB Ogg Vorbis (synthetic 440 Hz sine, 1 ch, 22.05 kHz, 2 s) carrying
+LOOPSTART/LOOPLENGTH.  Copy it with `real_ogg()`.
 """
 import json
 import os
+import shutil
 import socket
 import sys
 
@@ -19,8 +25,22 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
 import pytest  # noqa: E402
 
 FAKE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_tools")
+FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "fixtures")
+REAL_OGG = os.path.join(FIXTURE_DIR, "sine_loop.ogg")
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+def real_ogg(dest):
+    """Copy the committed real-Ogg fixture to `dest`; returns `dest`.
+
+    The source is a genuine libvorbis stream with LOOPSTART/LOOPLENGTH tags,
+    so probe/decode assertions test real container parsing rather than a
+    stub.  Generated once (see the fixture's provenance in the test docs).
+    """
+    shutil.copyfile(REAL_OGG, dest)
+    return dest
 
 
 def make_launcher(script_path, workdir):

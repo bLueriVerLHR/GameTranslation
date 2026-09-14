@@ -144,15 +144,31 @@ class TestVerifyAll:
         issues = verify.verify_all(web)
         assert issues  # PNG group reported
 
-    def test_decode_mode_with_fake_tools(self, game_dir, fake_tools):
+    def test_decode_mode_flags_undecodable_files(self, game_dir, fake_tools):
+        """The synthetic game's .ogg files are byte stubs, so an in-process
+        PyAV decode check must report them - previously the fake ffmpeg was
+        trusted and the decode pass looked clean."""
         _root, web = game_dir
+        issues = verify.verify_all(web, decode=True, workers=1)
+        assert issues
+        flat = " | ".join(str(x) for group in issues
+                          for x in (group if isinstance(group, list) else [group]))
+        assert "decode" in flat.lower()
+
+    def test_decode_mode_clean_on_a_real_ogg(self, game_dir, fake_tools):
+        from conftest import real_ogg
+        _root, web = game_dir
+        for rel in ("audio/bgm/bgm1.ogg", "audio/se/se1.ogg",
+                    "audio/bgm/bgm_mono.ogg"):
+            real_ogg(os.path.join(web, rel))
         assert verify.verify_all(web, decode=True, workers=1) == []
 
-    def test_decode_raises_when_ffmpeg_missing(self, game_dir, monkeypatch):
+    def test_decode_works_without_ffmpeg(self, game_dir, monkeypatch):
+        """Decoding is in-process (PyAV): no ffmpeg binary is needed."""
         _root, web = game_dir
         monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
-        with pytest.raises(FileNotFoundError):
-            verify.verify_all(web, decode=True, workers=1)
+        monkeypatch.setattr(config, "find_ffprobe", lambda: None)
+        verify.verify_all(web, decode=True, workers=1)   # must not raise
 
 
 class TestRandomSamplePng:

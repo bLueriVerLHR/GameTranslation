@@ -5,16 +5,14 @@ System.json flags, decode integrity, and key-file presence."""
 import json
 import logging
 import os
-import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
 from . import config
 from . import audio as audio_mod
+from . import media
 from . import runtime
 
 log = logging.getLogger("rpgmaker.verify")
-
-FFMPEG_DECODE_TIMEOUT = 600  # per-file decode-check timeout (seconds)
 
 
 def _iter_png_files(web_root):
@@ -169,30 +167,30 @@ def verify_audio_refs(web_root, source_dir=None):
 
 
 def verify_decode(web_root, workers=None, sample=None):
-    """Full ffmpeg decode of every audio file. Returns list of real errors.
+    """Decode every audio file with PyAV (in-process). Returns errors.
+
+    Replaces `ffmpeg -v error -i <f> -f null -`: PyAV raises inside the
+    decode loop on truncated/corrupt data, which is the signal the CLI's exit
+    code used to carry - and no external binary is needed.
 
     `workers=None` auto-tunes from the machine (see runtime.py).
     """
     workers = runtime.resolve_workers("decode", workers, path=web_root)
-    ffmpeg = config.find_ffmpeg()
-    if not ffmpeg:
-        raise FileNotFoundError(
-            "ffmpeg not found - install ffmpeg or set the FFMPEG env var")
     errors = []
     files = list(audio_mod.iter_audio_files(web_root))
     if sample:
         files = files[:sample]
 
     def work(p):
-        r = subprocess.run([ffmpeg, "-v", "error", "-i", p, "-map", "0:a:0",
-                            "-f", "null", "-"],
-                           capture_output=True, text=True, timeout=FFMPEG_DECODE_TIMEOUT)
-        if r.returncode != 0:
-            return p, r.stderr.strip()[:200]
-        bad = [ln for ln in r.stderr.splitlines()
-               if any(k in ln for k in ("invalid data", "error while decoding",
-                                        "Header missing", "Unable to"))]
-        return p, " | ".join(bad) if bad else ""
+        ok, reason = media.decode_ok(p)
+        return p, "" if ok else reason
+
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for p, err in ex.map(work, files):
+            if err:
+                errors.append((p, err[:200]))
+    log.info("decode check: %d/%d errors", len(errors), len(files))
+    return errors
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         for p, err in ex.map(work, files):

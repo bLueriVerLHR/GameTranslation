@@ -2,6 +2,15 @@
 # -*- coding: utf-8 -*-
 """Probe and re-encode Vorbis audio in place.
 
+Probing goes through `rpgmaker/media.py` (PyAV, in-process): no ffprobe
+subprocess, and LOOPSTART/LOOPLENGTH are read from container AND stream tags
+(the old ffprobe query asked for `format=...tags` only, so a stream-level
+loop tag - where this pipeline's own encoder writes it - was invisible).
+
+The Vorbis ENCODE still runs the ffmpeg binary: PyAV's wheels ship FFmpeg's
+experimental native encoder but not libvorbis, and the q2/q3 policy below is
+validated on device - see media.py's docstring for the measurements.
+
 Policy (music stays stereo at q3; voice/sfx become 32 kHz mono q2):
   channels != 1 and bitrate > 112000  -> libvorbis -q:a 3 (keep sr/ch)
   channels == 1 and bitrate >  64000  -> -ar 32000 -ac 1 libvorbis -q:a 2
@@ -11,7 +20,9 @@ Only replaces the original when the new file is smaller.
 The encode policy is a STRATEGY list (review §5): MonoVoiceStrategy /
 StereoMusicStrategy / KeepOriginalStrategy, selected by pick_strategy().
 Adding a new codec policy (e.g. Opus) is a new strategy class, not a new
-branch in transcode_one().
+branch in transcode_one().  A strategy returns only its encoder-specific
+args; the fixed prefix (`-map 0:a:0`), the loop-tag metadata and the temp
+file/atomic replace live in transcode_one alone.
 """
 import asyncio
 import csv
@@ -22,7 +33,7 @@ import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
-from . import config, runtime
+from . import config, media, runtime
 
 log = logging.getLogger("rpgmaker.audio")
 
@@ -33,31 +44,14 @@ FFMPEG_TIMEOUT = 900   # per-file transcode timeout (seconds)
 FFPROBE_TIMEOUT = 120  # per-file probe timeout (seconds)
 
 
-def probe_one(ffprobe, path, timeout=FFPROBE_TIMEOUT):
-    cmd = [ffprobe, "-v", "error", "-print_format", "json",
-           "-show_entries",
-           "format=duration,size,bit_rate,tags:stream=codec_name,codec_type,channels,sample_rate",
-           path]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        j = json.loads(r.stdout)
-    except (OSError, subprocess.TimeoutExpired, ValueError) as e:
-        # OSError: probe spawn/read; TimeoutExpired: slow file; ValueError:
-        # JSONDecodeError on empty/non-JSON output or UnicodeDecodeError.
-        return {"error": str(e)}
-    fmt = j.get("format", {})
-    st = next((s for s in j.get("streams", [])
-               if s.get("codec_type") == "audio"), None)
-    tags = fmt.get("tags", {}) or {}
-    return {
-        "duration": fmt.get("duration"),
-        "size": fmt.get("size"),
-        "codec": st.get("codec_name") if st else None,
-        "channels": st.get("channels") if st else None,
-        "sample_rate": st.get("sample_rate") if st else None,
-        "loopstart": tags.get("LOOPSTART"),
-        "looplength": tags.get("LOOPLENGTH"),
-    }
+def probe_one(path, timeout=FFPROBE_TIMEOUT):
+    """Probe one file through `rpgmaker/media.py` (PyAV, in-process).
+
+    No ffprobe subprocess: the packaged FFmpeg bindings expose container and
+    stream metadata directly, and they report LOOPSTART/LOOPLENGTH written at
+    stream level (which the old `format=...tags` query missed).
+    """
+    return media.probe(path)
 
 
 def bitrate_calc(fsize, duration):
@@ -196,16 +190,11 @@ def iter_audio_files(web_root):
 def probe_all(web_root, workers=None, sample=None):
     """Return {rel_path: info}. If sample is an int, probe at most that many.
 
-    Probes run on a thread pool, awaited via asyncio: ffprobe is I/O-heavy and
-    releases the GIL, so parallelism scales with worker count.
+    Probing is in-process (PyAV): the thread pool still helps because both
+    demuxing and the decode-based duration fallback release the GIL.
     `workers=None` auto-tunes from the machine (see runtime.py).
     """
     workers = runtime.resolve_workers("probe", workers, path=web_root)
-    ffprobe = config.find_ffprobe()
-    if not ffprobe:
-        raise FileNotFoundError(
-            "ffprobe not found - install ffmpeg (includes ffprobe) or set "
-            "the FFPROBE/FFMPEG env var")
     files = list(iter_audio_files(web_root))
     if sample:
         files = files[:sample]
@@ -213,7 +202,7 @@ def probe_all(web_root, workers=None, sample=None):
 
     def work(path):
         rel = os.path.relpath(path, web_root)
-        info = probe_one(ffprobe, path)
+        info = probe_one(path)
         info["fsize"] = os.path.getsize(path)
         return rel, info
 

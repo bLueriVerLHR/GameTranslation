@@ -44,6 +44,14 @@ def _make_folder(tmp_path, name="game"):
     return folder
 
 
+def _patch_powershell(monkeypatch):
+    """Make the Windows-bridge PowerShell lookup deterministic."""
+    exe = ("/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe")
+    monkeypatch.setattr(
+        "shutil.which",
+        lambda name: exe if name == "powershell.exe" else None)
+
+
 # ---------------------------------------------------------------------------
 # 1. Tool missing: every caller raises FileNotFoundError with an install hint
 # ---------------------------------------------------------------------------
@@ -52,13 +60,13 @@ class TestToolMissingMessage:
     """The error message must name the missing tool and point at the fix
     (install it or set the env var) - a silent fallback would be a trap."""
 
-    def test_audio_probe_all_hint(self, game_dir, monkeypatch):
+    def test_audio_probe_needs_no_ffprobe(self, game_dir, monkeypatch):
+        """Probing is in-process (PyAV) now: a missing ffprobe/ffmpeg must not
+        stop it."""
         _root, web = game_dir
         monkeypatch.setattr(config, "find_ffprobe", lambda: None)
-        with pytest.raises(FileNotFoundError) as ei:
-            audio.probe_all(web, workers=1)
-        assert "ffprobe" in str(ei.value)
-        assert "install" in str(ei.value).lower()
+        monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
+        assert len(audio.probe_all(web, workers=1, sample=1)) == 1
 
     def test_audio_reencode_all_hint(self, game_dir, monkeypatch):
         _root, web = game_dir
@@ -68,32 +76,28 @@ class TestToolMissingMessage:
         assert "ffmpeg" in str(ei.value)
         assert "install" in str(ei.value).lower()
 
-    def test_compress_compress_hint(self, tmp_path, monkeypatch):
+    def test_compress_needs_no_sevenz_binary(self, tmp_path, monkeypatch):
+        """Packaging moved to py7zr (in-process), so a missing 7-Zip is no
+        longer an error - only the Windows-side bridge needs the binary."""
         folder = _make_folder(tmp_path)
         monkeypatch.setattr(config, "find_7z", lambda: None)
-        with pytest.raises(FileNotFoundError) as ei:
-            compress.compress(folder, str(tmp_path / "g.7z"))
-        assert "7-Zip" in str(ei.value)
-        assert "install" in str(ei.value).lower()
+        path = compress.compress(folder, str(tmp_path / "g.7z"))
+        assert compress.test_archive(path) is True
 
-    def test_compress_test_archive_hint(self, tmp_path, monkeypatch):
-        # test_archive's own missing-7z path (independent of compress())
+    def test_test_archive_reports_a_corrupt_file_as_false(self, tmp_path):
+        """A corrupt/mistyped archive is a False verdict plus an ERROR log,
+        not an exception and not a silent pass."""
         archive = str(tmp_path / "g.7z")
         with open(archive, "wb") as f:
             f.write(b"stub")
-        monkeypatch.setattr(config, "find_7z", lambda: None)
-        with pytest.raises(FileNotFoundError) as ei:
-            compress.test_archive(archive)
-        assert "7-Zip" in str(ei.value)
-        assert "install" in str(ei.value).lower()
+        assert compress.test_archive(archive) is False
 
-    def test_verify_decode_hint(self, game_dir, monkeypatch):
+    def test_verify_decode_needs_no_ffmpeg(self, game_dir, monkeypatch):
+        """Decode verification is in-process (PyAV): no binary required."""
         _root, web = game_dir
         monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
-        with pytest.raises(FileNotFoundError) as ei:
-            verify.verify_decode(web, workers=1)
-        assert "ffmpeg" in str(ei.value)
-        assert "install" in str(ei.value).lower()
+        monkeypatch.setattr(config, "find_ffprobe", lambda: None)
+        assert isinstance(verify.verify_decode(web, workers=1), list)
 
     def test_tyrano_convert_all_hint(self, tmp_path, monkeypatch):
         root = str(tmp_path / "g")
@@ -106,12 +110,22 @@ class TestToolMissingMessage:
         assert "ffmpeg" in str(ei.value)
         assert "install" in str(ei.value).lower()
 
-    def test_deliver_wsl_extract_hint(self, monkeypatch):
-        monkeypatch.setattr(config, "find_7z", lambda: None)
-        with pytest.raises(FileNotFoundError) as ei:
-            deliver._extract_wsl_side("a.7z", "dest", "name")
-        assert "7-Zip" in str(ei.value)
-        assert "install" in str(ei.value).lower()
+    def test_deliver_windows_bridge_missing_7z_hint(self, monkeypatch):
+        """The Windows-side bridge is the only path that still needs a 7-Zip
+        binary; its refusal must name the tool and the fix."""
+        monkeypatch.setattr(config, "win_7z", lambda: None)
+        with pytest.raises(RuntimeError) as ei:
+            deliver._extract_windows_side("a.7z", "dest", "name")
+        msg = str(ei.value)
+        assert "7-Zip" in msg
+        assert "SEVENZ_WIN" in msg
+
+    def test_deliver_wsl_extract_reports_a_missing_archive(self, monkeypatch):
+        """WSL-side extraction runs in-process: a missing archive is a clean
+        error, not a tool-resolution failure."""
+        monkeypatch.setattr(config, "is_windows_side", lambda p: False)
+        with pytest.raises(OSError):
+            deliver._extract_wsl_side("no_such.7z", "dest", "name")
 
 
 # ---------------------------------------------------------------------------
@@ -234,17 +248,34 @@ class TestPermissionDenied:
 
     def test_compress_permission_error_propagates_specifically(self, tmp_path,
                                                                monkeypatch):
+        """A permission failure while packing must surface as the specific
+        OSError - archive.create() must never swallow a backend error."""
+        from rpgmaker import archive
         folder = _make_folder(tmp_path)
-        # a resolvable 7z so the subprocess spawn (which raises) is reached
-        sevenz = tmp_path / "sevenz.bin"
-        sevenz.write_bytes(b"x")
-        monkeypatch.setenv("SEVENZ", str(sevenz))
 
-        def denied(cmd, **kw):
-            raise PermissionError("7z not executable")
-        monkeypatch.setattr("rpgmaker.proctools.subprocess.run", denied)
+        class _Denied:
+            FILTER_ZSTD = 53
+
+            @staticmethod
+            def SevenZipFile(*_a, **_kw):
+                raise PermissionError("access denied")
+
+        monkeypatch.setattr(archive, "_py7zr", lambda: _Denied)
         with pytest.raises(PermissionError):
             compress.compress(folder, str(tmp_path / "g.7z"))
+
+    def test_compress_spawns_no_external_tool(self, tmp_path, monkeypatch):
+        """The packaged backend is in-process: packaging must work with no
+        7-Zip binary available anywhere (only the Windows bridge needs it)."""
+        folder = _make_folder(tmp_path)
+        monkeypatch.setattr(config, "find_7z", lambda: None)
+        monkeypatch.setattr(config, "win_7z", lambda: None)
+
+        def boom(*_a, **_kw):
+            raise AssertionError("compress() must not spawn a process")
+        monkeypatch.setattr("rpgmaker.proctools.subprocess.run", boom)
+        path = compress.compress(folder, str(tmp_path / "g.7z"))
+        assert compress.test_archive(path) is True
 
     def test_build_translation_permission_error_propagates(self, tmp_path,
                                                            monkeypatch):
@@ -287,20 +318,34 @@ class TestPermissionDenied:
 
 
 class TestUnreadableSevenzBinary:
-    def test_compress_non_executable_binary_raises_permission_error(
-            self, tmp_path):
-        # a 7z binary that exists but cannot be executed surfaces as an
-        # OS-level spawn error (PermissionError on POSIX, WinError 193 on
-        # Windows), never as a silent success
+    """The 7-Zip binary is no longer on the packaging path (py7zr is
+    in-process), so an unreadable/foreign 7z.exe cannot break compress().
+
+    The equivalent risk moved to the Windows-side bridge, where a broken
+    powershell/7z.exe still surfaces as a real error instead of a silent
+    success - covered below and in tests/test_deliver_bridge.py.
+    """
+
+    def test_broken_sevenz_binary_does_not_affect_compress(self, tmp_path,
+                                                          monkeypatch):
         folder = _make_folder(tmp_path)
         script = tmp_path / "noexec_7z.bin"
         script.write_bytes(b"not an executable")
         if os.name == "posix":
             script.chmod(0o644)  # readable, NOT executable
-        monkeypatch_placeholder = pytest.MonkeyPatch()
-        monkeypatch_placeholder.setenv("SEVENZ", str(script))
-        try:
-            with pytest.raises(OSError):
-                compress.compress(folder, str(tmp_path / "g.7z"))
-        finally:
-            monkeypatch_placeholder.undo()
+        monkeypatch.setenv("SEVENZ", str(script))
+        path = compress.compress(folder, str(tmp_path / "g.7z"))
+        assert compress.test_archive(path) is True
+
+    def test_windows_bridge_still_fails_loudly(self, tmp_path, monkeypatch):
+        """The bridge keeps its old contract: a spawn error propagates."""
+        _patch_powershell(monkeypatch)
+        monkeypatch.setattr(config, "is_windows_side", lambda p: True)
+        monkeypatch.setattr(config, "win_7z", lambda: "C:/Tools/7z.exe")
+
+        def denied(cmd, **kw):
+            raise PermissionError("7z not executable")
+        monkeypatch.setattr("rpgmaker.proctools.subprocess.run", denied)
+        with pytest.raises(PermissionError):
+            deliver._extract_windows_side(str(tmp_path / "a.7z"),
+                                          str(tmp_path / "games"), "game")

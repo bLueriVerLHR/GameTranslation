@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Tests for the KAG3 video system handling in kirikiri/convert_kag.py.
+"""Tests for the KAG3 video system handling in the KAG3 -> TyranoScript
+converter (kirikiri/kag/assets.py plus the video shim in kirikiri/kag/js/).
 
 Two things had to be right for movies to work at all:
   * KAG3 keeps .wmv/.mpg under `others/`, which the image-directory copy never

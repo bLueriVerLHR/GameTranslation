@@ -31,7 +31,23 @@ GameTranslation/
 │   ├── xp3pack.py       #   XP3 打包（patch.xp3：raw 段 + zlib 索引 + 自校验）
 │   ├── ks_extract.py    #   .ks 解析（编码探测、方括号配对、可译性判定）
 │   ├── tjs2js.py        #   TJS2 → JavaScript 转换（KAG3 [iscript] 块）
-│   ├── convert_kag.py   #   KAG3 → TyranoScript 工程转换
+│   ├── kag/             #   KAG3 → TyranoScript 转换器（原 convert_kag.py 拆分）
+│   │   ├── cli.py       #     CLI（Typer）+ convert() 编排
+│   │   ├── tags.py      #     pass 0：标签表与语料/引擎盘点（只读）
+│   │   ├── scenario.py  #     pass 1-2：.ks 逐行转换
+│   │   ├── assets.py    #     pass 3：素材名映射与媒体转换（TLG/BMP/影片）
+│   │   ├── shims.py     #     pass 5：JS/CSS 垫片装配（文本在 js/）
+│   │   ├── fonts.py     #     字体与排版注入（@font-face / 竖屏 CSS）
+│   │   ├── project.py   #     输出工程组装（引擎骨架、宏、意图报告）
+│   │   └── js/          #     垫片源码（真实 .js/.css，importlib.resources 读）
+│   │       ├── runtime_shim.js
+│   │       ├── map_engine.js
+│   │       ├── noop_plus_real.js
+│   │       ├── video_shim.js
+│   │       ├── waitskip_shim.js
+│   │       ├── fast_skip.js
+│   │       └── portrait.css
+│   ├── convert_kag.py   #   兼容层（历史导入路径 + 可运行入口，转调 kirikiri/kag/）
 │   ├── tlg.py           #   TLG 图像解码（TLG5/TLG6，解包立绘/背景）
 │   └── merge_font.py    #   中文字体 + 日文字体合并（中文方块修复）
 ├── wolfrpg/             # Wolf RPG（ウディタ）工具包

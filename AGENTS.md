@@ -266,7 +266,9 @@ PowerShell `AppActivate` + SendKeys、浏览器 CDP/命令行参数），操作�
    解包 → 提取 → 翻译（**清除 MTool 机翻，自己翻译**）→ 运行时 hook /
    补丁注入。翻译能力按具体游戏持续优化，打补丁内容由 owner 逐款给出。
 4. **KiriKiri2 / KAG3 → TyranoScript → Android JoiPlay（当前主线）**：
-   使用 `kirikiri/convert_kag.py`，保留原作图层、排版、音画时序与交互体验。
+   使用 `kirikiri/convert_kag.py`（CLI 入口不变，实现在 `kirikiri/kag/`：
+   cli/scenario/assets/shims/fonts/project/tags + `js/` 垫片源码），保留原作
+   图层、排版、音画时序与交互体验。
    先定位可复现差异，用合成数据回归测试，再在工作副本验证；未经运行验证
    不得声称恢复原作体验。浏览器验证与 Android JoiPlay 实机验收分别记录。
    无法等价实现的行为必须记录影响和取舍，不能把空操作当成功。详见

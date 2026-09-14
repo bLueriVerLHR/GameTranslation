@@ -1,9 +1,14 @@
-"""Unit tests for kirikiri/convert_kag.py (KAG3 -> TyranoScript converter)."""
+"""Unit tests for the KAG3 -> TyranoScript converter (kirikiri/kag/).
+
+The converter was split out of kirikiri/convert_kag.py, which is now the
+compatibility layer; `ck` is imported through it on purpose, so these tests
+also pin the re-export surface."""
 
 import json
 import os
 import re
 import sys
+import types
 import collections
 from collections import Counter
 from pathlib import Path
@@ -726,22 +731,31 @@ def test_free_layer_does_not_cover_the_click_event_layer():
     assert ".layer_free>*{pointer-events:auto !important}" in js, js[:400]
 
 
-def test_decoder_mtime_tracks_only_the_image_decoder():
+def test_decoder_mtime_tracks_only_the_image_decoder(tmp_path, monkeypatch):
     """The image cache must invalidate when the decoder changes, but not when
     unrelated converter code changes.
 
-    Including convert_kag.py in the decoder timestamp meant every shim or
+    Including the converter in the decoder timestamp meant every shim or
     scenario tweak reconverted all 748 images (~35 min per edit), which defeats
     the cache; omitting the decoder entirely meant a decoder fix silently kept
     serving images built by the old one.
     """
     from kirikiri import tlg as ktlg
+    from kirikiri.kag import assets as kag_assets
 
     mtime = ck._decoder_mtime()
     assert mtime > 0
     assert abs(mtime - os.path.getmtime(ktlg.__file__)) < 1.0
-    assert mtime < os.path.getmtime(ck.__file__), (
-        "convert_kag.py itself must not be part of the image cache key")
+
+    # Stronger form of "the converter itself is not in the key": point the
+    # decoder module at a file with a known old timestamp and check that the
+    # key equals exactly that, i.e. no other module's mtime is mixed in.
+    fake = tmp_path / "tlg.py"
+    fake.write_text("", encoding="utf-8")
+    os.utime(fake, (1_000_000, 1_000_000))
+    monkeypatch.setattr(kag_assets, "tlg", types.SimpleNamespace(__file__=str(fake)))
+    assert ck._decoder_mtime() == 1_000_000, (
+        "the image cache key must be the decoder only, not the converter")
 
 
 def test_up_to_date_invalidates_images_when_decoder_is_newer(tmp_path):
@@ -1185,10 +1199,11 @@ def test_skip_speed_is_configured_below_the_template_default():
     """The template's 30 ms per line caps skipping at ~33 lines/s, so the
     converter lowers it (measured: 13.7 tags/s before, dominated by the driver
     gate rather than this value; 1 ms removes this cap entirely). Asserted
-    through the source because it is applied by main()'s Config.tjs rewrite."""
+    through the source because it is applied by the Config.tjs rewrite in
+    cli.convert() (the converter is split by concern -- kirikiri/kag/)."""
     import inspect
 
-    src = inspect.getsource(ck.main)
+    src = inspect.getsource(ck.convert)
     assert "skipSpeed" in src
     assert ";skipSpeed = 1;" in src
 

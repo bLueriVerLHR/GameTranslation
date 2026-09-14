@@ -983,6 +983,13 @@ getter 体，把紧跟的 `setter(x){...}` **一并吞入**，于是 JS 里同�
 
 **构建闸门（构建失败优于静默失效）**：
 
+> **现状（2026-09）**：转换器已按上表的关注点拆成 `kirikiri/kag/`
+> （`tags.py` 对应 pass 0、`scenario.py` pass 1-2、`assets.py` pass 3、
+> `shims.py` pass 5 + `js/` 垫片源码，另有 `fonts.py`/`project.py`/`cli.py`），
+> `kirikiri/convert_kag.py` 保留为兼容层与 CLI 入口（命令不变）。
+> 但代码**仍是一趟字符串改写**：上面的多轮中间表示与闸门尚未实现，
+> 拆分只是把各关注点分到不同文件，便于下一步逐个改造成 pass。
+
 - 垫片不允许遮蔽引擎标签（编译期差集 + 运行期复查）；
 - 不允许存在未处理的 `kag.*` 调用点；
 - 写入的每一行必须带行尾（`_finalize_output_lines` 不变量 + 测试）；

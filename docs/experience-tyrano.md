@@ -199,6 +199,15 @@ promise 被拒时挂一次性 click/touchstart/keydown 监听，首次用户交�
    对“游戏用同一首曲子做回放开场”的写法，效果就是**无缝接着放**，玩家
    听不出“回放开始了”。要在回放模式下强制重启，先清 `stat.current_bgm`
    （比 storage 要用 stem：两侧分别是裸名与完整路径）。
+4. **淡出的 BGM 会被引擎“丢失”。** `stopbgm`（`[fadeoutbgm]` 只是
+   `pm.fadeout="true"` 转调它）在淡出分支里**先** `delete
+   target_map[key]`、**再** `audio_obj.fade(...)`；而 `playbgm` 停旧曲靠的正是
+   那张 `kag.tmp.map_bgm[buf]` 表。后果：淡出中的曲子已不在表里，下一个
+   `[playbgm]` 停不掉它，两首叠着放满整个 `time`（本作 3 s）。要按 KAG3
+   单槽语义挖掉它，必须在 `stopbgm` 的**前置**钩子里把即将被淡出的 Howl
+   **对象**存下来（只看 `target=bgm`、`buf_all` 要取整张表），再在新
+   `[playbgm]`（非 `se`）里 `stop()+unload()` —— 存对象而非曲名，才不会
+   误伤 SE/语音；没有后续 BGM 时淡出照常跑完。
 5. **独立源垫片不可单独做语法检查。** `kirikiri/kag/js/*.js` 是**片段**
    （如 `noop_plus_real.js` 顶层没有外层 IIFE，直接当文件解析必然报
    `parse error`——而且 **HEAD 版本也报**），真正的语法门禁是**组装产物**
@@ -209,16 +218,10 @@ promise 被拒时挂一次性 click/touchstart/keydown 监听，首次用户交�
    又消费一遍（实观：进鉴赏自动进第一个 CG、进回想第一句被跳过）。固定做法：
    跳转后给一个短冷却（垫片用 300 ms），在捕获 + 冒泡两个阶段吞掉点击，
    并清掉继承来的 weak-stop 状态（`cancelWeakStop()` / `is_click_text`）。
-7. **`[rclick]` 的“系统菜单默认”在本移植里是显式 no-op。**
-   `runtime_shim.js` 注释写得很直白：Plain `[rclick enabled=true]`（无 jump）
-   是系统菜单默认、注册成 null —— “the port has no system menu overlay”。
-   也就是说游戏内**根本没有菜单**（因此回不到主页菜单，需自建）。
-4. **淡出的 BGM 会被引擎“丢失”。** `stopbgm`（`[fadeoutbgm]` 只是
-   `pm.fadeout="true"` 转调它）在淡出分支里**先** `delete
-   target_map[key]`、**再** `audio_obj.fade(...)`；而 `playbgm` 停旧曲靠的正是
-   那张 `kag.tmp.map_bgm[buf]` 表。后果：淡出中的曲子已不在表里，下一个
-   `[playbgm]` 停不掉它，两首叠着放满整个 `time`（本作 3 s）。要按 KAG3
-   单槽语义挖掉它，必须在 `stopbgm` 的**前置**钩子里把即将被淡出的 Howl
-   **对象**存下来（只看 `target=bgm`、`buf_all` 要取整张表），再在新
-   `[playbgm]`（非 `se`）里 `stop()+unload()` —— 存对象而非曲名，才不会
-   误伤 SE/语音；没有后续 BGM 时淡出照常跑完。
+7. **`[rclick]` 的“系统菜单默认”原本是显式 no-op，现已补上浮层菜单。**
+   原注释：Plain `[rclick enabled=true]`（无 jump）是系统菜单默认、注册成
+   null —— “the port has no system menu overlay”，于是剧情里**根本没有
+   菜单**、回不到主页菜单。现在：右键打开垫片自己的浮层（条目由
+   `--title-jump` 注入，目标不写死），面板行里也有 `MENU` 入口；
+   「回到主页菜单」= 清栈后 process() 跳转。
+

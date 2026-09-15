@@ -974,6 +974,26 @@ SAVE/LOAD/LOG/AUTO/SKIP/HIDE）里加一个 **`GALLERY`** 条目：
 \* 地图引擎的点击钩子是在第一次 `[mapaction]` 时才装的，所以要保证本冷却的捕获
 监听器**先**注册（放在 `runtime_shim.js` 顶部）。
 
+### 4.10 游戏内菜单（KAG3 系统菜单的替代）
+
+**问题**：游戏在剧情里用 `[rclick enabled=true]`（`newgame.ks:26` 等多处）武装
+**KAG3 内置系统菜单**，而本移植把这种“无 jump/target 的默认 rclick”注册成
+**显式 no-op**（原注释：*the port has no system menu overlay*）—— 于是游戏里
+**根本没有菜单**，owner 也就无法回主页菜单。
+
+**修法**：垫片自己提供菜单浮层（`[data-kag3=sysmenu]`）：
+
+- `[rclick enabled=true]`（默认菜单）现在武装 `__kag3_rclick = { menu: true }`，
+  右键打开浮层；**不接左键兼容**（否则剧情里每次点击都会弹菜单）；
+- 条目来自构建开关：`--title-jump "<storage>[:<label>]"` → 注入
+  `window.__kag3_title_jump`。**标题位置是游戏数据，绝不写死在垫片里**；
+- 「回到主页菜单」= 清 `call/macro/if` 帧后跳该目标（KAG3 的 process() 语义，
+  与游戏自己的 `[jump storage="first.ks" target=*start]` 一致）；
+- 面板行里也加了 `MENU` 条目作为入口（触屏没有右键）。
+
+**实测**：剧情中右键 → 浮层出现（「回到主页菜单」「继续游戏」）→ 点前者 →
+浮层关闭并跳到 `first.ks *start`（落到标题的 BGM 宏，即标题流程已开始）。
+
 ## 5. 经验：已推翻的判断 / 测试陷阱 / 排障
 
 ### 5.1 已在实测中被推翻的**四个**初始判断（勿重蹈）

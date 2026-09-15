@@ -51,6 +51,13 @@ GameTranslation/
 │   ├── convert_kag.py   #   兼容层（历史导入路径 + 可运行入口，转调 kirikiri/kag/）
 │   ├── tlg.py           #   TLG 图像解码（TLG5/TLG6，解包立绘/背景）
 │   └── merge_font.py    #   中文字体 + 日文字体合并（中文方块修复）
+├── translation/         # 翻译工作流 v2：一个子智能体全权负责，主智能体只烘焙
+│   ├── codes.py         #   控制码解析 + 从游戏自身 JS 推导的码表（不硬编码）
+│   ├── mvkeys.py        #   故事序键提取（MV/MZ：地图→公共事件→敌群→DB→UI→插件）
+│   ├── rawlib.py        #   无转义译文库（@@@id@@@）+ 回改执行 + 四道硬门禁
+│   ├── bake.py          #   译文库按 id 写回游戏数据（数组/对象两种命令形态）+ 统一字体
+│   ├── workspace.py     #   工作区骨架 + 子智能体 MISSION（流程与规则写死）
+│   └── cli.py           #   命令行：prepare/extract/scaffold/codes/to-json/rewrite/gates/status
 ├── wolfrpg/             # Wolf RPG（ウディタ）工具包
 │   └── dxarchive.py     #   DXArchive v8 解包器（LZ/Huffman/KeyConv，从 UberWolf 移植）
 ├── tyrano/              # TyranoScript / TyranoBuilder 工具包

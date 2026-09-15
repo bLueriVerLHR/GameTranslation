@@ -14,6 +14,29 @@ window.Debug = window.Debug || { message: function () {} };
 // independently of the flow state.
 tyrano.plugin.kag.tag['kag3stop'] = {
   start: function (pm) {
+    // A choice parked here must be restorable.  The port renders the items and
+    // *then* parks on this synthetic stop, so a save taken while the choice is
+    // on screen holds a position PAST the items (measured: saving on a
+    // 3-option select, the save's layers carry no text at all and the reload
+    // showed 0 options - the branch was silently skipped).  KAG3 instead saves
+    // at the [select] itself, so remember the macro invocation that rendered
+    // the choice: the record rides inside stat, i.e. inside the save, and
+    // loadGameData below rewinds to it.
+    try {
+      var st = this.kag.stat;
+      if (window.__kag3_choice_active) {
+        var top = this.kag.getStack('macro');
+        if (top && typeof top.index === 'number') {
+          st.kag3_choice_resume = {
+            scenario: top.storage,
+            index: top.index,
+            depth: ((st.stack && st.stack.macro) || []).length - 1,
+          };
+        }
+      } else if (st.kag3_choice_resume) {
+        delete st.kag3_choice_resume;
+      }
+    } catch (e) {}
     this.kag.weaklyStop();
     this.kag.stronglyStop();
     try { this.kag.layer.hideEventLayer(); } catch (e) {}
@@ -157,6 +180,66 @@ document.addEventListener('mousedown', function (e) {
     return true;
   };
 })();
+// A save made while a choice is displayed must resume AT the choice.  The port
+// parks on the synthetic [kag3stop] *after* rendering the items, so the saved
+// position lands past them and the choice disappeared on load (the branch was
+// silently skipped - not a dead lock, the flow just walked on).  Redirect the
+// restored position back to the recorded macro invocation, drop the macro frame
+// the choice had opened, and refuse the auto-advance the engine would apply.
+//
+// Installed lazily: the shim is parsed before kag.menu.js, so kag.menu does not
+// exist yet, and the choice items come from [link2] (a later plugin), not [ch].
+var __kag3_choice_support = function () {
+  var kag2 = window.TYRANO && TYRANO.kag;
+  if (!kag2 || !kag2.ftag || !kag2.ftag.master_tag || !kag2.menu ||
+      typeof kag2.menu.loadGameData !== 'function') {
+    return false;
+  }
+  if (kag2.__kag3_choice_support) return true;
+  kag2.__kag3_choice_support = true;
+  // Any rendered link marks this stop as interactive: the choice items the game
+  // macros build with [link2] (and map hotspots built the same way) must be
+  // re-rendered after a load, so [kag3stop] records a resume point.
+  ['link', 'link2', 'glink'].forEach(function (name) {
+    var t = kag2.ftag.master_tag[name];
+    if (t && typeof t.start === 'function' && !t.__kag3_choice_flag) {
+      t.__kag3_choice_flag = true;
+      t.start = (function (orig) {
+        return function () {
+          window.__kag3_choice_active = true;
+          return orig.apply(this, arguments);
+        };
+      })(t.start);
+    }
+  });
+  var _loadGameData = kag2.menu.loadGameData;
+  kag2.menu.loadGameData = function (data, options) {
+    try {
+      var st = data && data.stat;
+      var r = st && st.kag3_choice_resume;
+      if (r && typeof r.index === 'number') {
+        data.current_order_index = r.index;
+        if (r.scenario) st.current_scenario = r.scenario;
+        if (st.stack && st.stack.macro && typeof r.depth === 'number') {
+          st.stack.macro.length = Math.min(st.stack.macro.length, r.depth);
+        }
+        // Do not step past the choice that is about to be re-rendered.
+        st.load_auto_next = false;
+        __kag3_log('load: rewinding to a pending choice (' + r.scenario +
+                   ':' + r.index + ')');
+      }
+    } catch (e) {}
+    return _loadGameData.apply(this, arguments);
+  };
+  return true;
+};
+if (!__kag3_choice_support()) {
+  var __kag3_choice_timer = setInterval(function () {
+    if (__kag3_choice_support()) clearInterval(__kag3_choice_timer);
+  }, 50);
+  setTimeout(function () { clearInterval(__kag3_choice_timer); }, 15000);
+}
+
 // Tyrano's layer restore assumes every layer present in the SAVE also exists in
 // the live DOM, and calls .remove() on it (kag.layer.js setLayerHtml).  A save
 // taken while more layers existed - the game grows numeric layers with
@@ -1210,6 +1293,9 @@ if (window.__kag3_msg_style === 'bare') {
         document.addEventListener('click', function (e) {
           var item = e.target && e.target.closest ? e.target.closest('.kag3-choice-item') : null;
           if (!item) return;
+          // The choice is being taken: no pending choice left to restore.
+          window.__kag3_choice_active = false;
+          try { delete TYRANO.kag.stat.kag3_choice_resume; } catch (err) {}
           var $owner = $(item).closest('.message_inner');
           var $layer = $owner.closest('.layer');
           var $old = $owner.find('.kag3-choice-item,.kag3-choice-prompt,.kag3-choice-gap');

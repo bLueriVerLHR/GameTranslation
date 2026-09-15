@@ -272,6 +272,22 @@ class TestGalleryReplayUX:
         assert "#tyrano_base .message_outer.kag3-name-frame" in raw
         assert "box-shadow:none !important" in raw
 
+    def test_saving_at_a_choice_resumes_at_the_choice(self):
+        raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
+        # The port renders a choice and THEN parks on the synthetic [kag3stop],
+        # so a save taken with the choice on screen holds a position past the
+        # items (measured: the save carried no text at all and the reload showed
+        # 0 options - the branch was silently skipped, the flow just walked on).
+        # KAG3 saves at the [select] itself, so the stop records the macro
+        # invocation that rendered the choice and loadGameData rewinds to it.
+        assert "kag3_choice_resume" in raw
+        assert "kag3_choice_active" in raw
+        # The installer must be lazy: the shim is parsed before kag.menu.js, and
+        # the items come from [link2], which is also a later plugin.
+        assert "__kag3_choice_support" in raw
+        assert "setInterval" in raw
+        assert "load_auto_next" in raw
+
     def test_engine_errors_are_reported_without_blocking(self):
         raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
         # Tyrano reports fatal-ish problems with alert(): a modal that freezes the

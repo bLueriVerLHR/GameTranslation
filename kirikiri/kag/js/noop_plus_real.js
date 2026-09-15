@@ -111,6 +111,11 @@
         var isChoice = $current.hasClass("event-setting-element") ||
           $current.closest(".event-setting-element").length > 0;
         if (isChoice) {
+          // Flag the live choice for the runtime shim: a save taken now must be
+          // restored AT the choice, not past it ([kag3stop] records the
+          // invocation and loadGameData rewinds to it).  [link2]-built items are
+          // flagged by the runtime shim's link wrapper as well.
+          window.__kag3_choice_active = true;
           $current.addClass("kag3-choice-item");
           $i.addClass("kag3-choice");
           $i.closest(".layer").addClass("kag3-choice-layer");
@@ -122,6 +127,7 @@
         } else {
           // Choice classes belong to one prompt only. A later plain [ch]
           // must restore the source message geometry before it appends text.
+          window.__kag3_choice_active = false;
           $i.removeClass("kag3-choice");
           $i.closest(".layer").removeClass("kag3-choice-layer");
           $i.find(".kag3-choice-item,.kag3-choice-prompt,.kag3-choice-gap").remove();

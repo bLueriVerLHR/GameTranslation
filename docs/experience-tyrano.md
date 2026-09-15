@@ -204,6 +204,15 @@ promise 被拒时挂一次性 click/touchstart/keydown 监听，首次用户交�
    `parse error`——而且 **HEAD 版本也报**），真正的语法门禁是**组装产物**
    `tyrano/plugins/kag/kag.tag_kag3shim.js`。别把片段文件的解析失败
    当成自己改错了（血泪：白查了一轮）。
+6. **触发跳转的那次点击会继续传播。** KAG3 `[jump]` 是同步的 `process()`：
+   点击事件还没走完，新场景已把点击层 / `[p]` 配好，于是同一次点击被新画面
+   又消费一遍（实观：进鉴赏自动进第一个 CG、进回想第一句被跳过）。固定做法：
+   跳转后给一个短冷却（垫片用 300 ms），在捕获 + 冒泡两个阶段吞掉点击，
+   并清掉继承来的 weak-stop 状态（`cancelWeakStop()` / `is_click_text`）。
+7. **`[rclick]` 的“系统菜单默认”在本移植里是显式 no-op。**
+   `runtime_shim.js` 注释写得很直白：Plain `[rclick enabled=true]`（无 jump）
+   是系统菜单默认、注册成 null —— “the port has no system menu overlay”。
+   也就是说游戏内**根本没有菜单**（因此回不到主页菜单，需自建）。
 4. **淡出的 BGM 会被引擎“丢失”。** `stopbgm`（`[fadeoutbgm]` 只是
    `pm.fadeout="true"` 转调它）在淡出分支里**先** `delete
    target_map[key]`、**再** `audio_obj.fade(...)`；而 `playbgm` 停旧曲靠的正是

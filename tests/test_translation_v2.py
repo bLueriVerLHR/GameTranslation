@@ -444,6 +444,50 @@ def test_append_batch_fix_leading(work, game):
     assert rawlib.append_batch(work, batch, fix_leading=False)["added"] == 0
 
 
+def test_gate_pending_survives_a_broken_line(work, game):
+    """A hand-written bad line must fail the gate, not crash the tool."""
+    mvkeys.extract(game, work)
+    _fill_library(work, _neutral)
+    path = os.path.join(work, "pending.jsonl")
+    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write('{"id": "a", "status": "resolved"}\n')
+        handle.write('{"id": "b", "why": "bad \\px[200] escape"}\n')
+    records, errors = rawlib.read_jsonl_report(path)
+    assert len(records) == 1 and len(errors) == 1
+    gate = {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["pending"]
+    assert gate["ok"] is False and gate["unparsable"] == 1
+    assert "unparsable" in rawlib.gate_markdown(rawlib.run_gates(work))
+    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write('{"id": "a", "status": "resolved"}\n')
+    assert {g["name"]: g for g in rawlib.run_gates(work)["gates"]}[
+        "pending"]["ok"] is True
+
+
+def test_cli_pending_escapes_text(work, game, capsys):
+    assert cli.main(["prepare", game, work]) == 0
+    assert cli.main(["pending", work, "--id", "x", "--why",
+                     'has a \\px[200] code and a \\" quote']) == 0
+    assert cli.main(["pending", work, "--id", "x", "--status", "resolved",
+                     "--why", "decided by owner"]) == 0
+    records, errors = rawlib.read_jsonl_report(
+        os.path.join(work, "pending.jsonl"))
+    assert errors == [] and len(records) == 2
+    assert "\\px[200]" in records[0]["why"]
+    gate = {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["pending"]
+    assert gate["open"] == 0 and gate["entries"] == 2
+    capsys.readouterr()
+
+
+def test_pending_status_summary_reports_parse_errors(work, game):
+    mvkeys.extract(game, work)
+    workspace.scaffold(work)
+    with io.open(os.path.join(work, "pending.jsonl"), "w", encoding="utf-8",
+                 newline="\n") as handle:
+        handle.write("{not json}\n")
+    summary = workspace.status_summary(work)
+    assert summary["ready"] is True
+
+
 def test_gates_all_green(work, game):
     mvkeys.extract(game, work)
     _fill_library(work, _neutral)

@@ -179,6 +179,15 @@ python -m translation.cli append <工作区> --batch <批次文件> --fix-leadin
 - 批次文件里**只写** `@@@<id>@@@` 与译文，不要复制切片里的 `speaker`/`prev` 字段，
   也不要写 `---` 分隔线（一个 id 一个块）。
 - `append` 失败就按报错修批次文件再提交，**不要**自己直接改译文库。
+
+**状态文件不要手写 JSON**（`pending.jsonl` 里一个未转义的反斜杠会解析失败）：用工具写：
+
+```
+python -m translation.cli pending <工作区> --id "<键或话题>" --why "<问题>" [--status resolved]
+```
+
+它会帮你转义（`\px[200]` 这种带控制码的问题也能安全写入），追加式：同一 id 后写一条
+`--status resolved` 就关闭前面的 open。
 - 短文本（system/UI/DB 里的标签、提示、道具名）不必逐条反复推敲：一次性批量译，
   把注意力留给对话与成人场景的语气；这直接决定一轮能推多少条。
 
@@ -238,7 +247,8 @@ def status_summary(work_dir):
     ids = {entry["id"] for entry in keys}
     translated = sum(1 for key in ids if (values.get(key) or "").strip())
     progress = rawlib.read_jsonl(os.path.join(work_dir, "progress.jsonl"))
-    pending = rawlib.read_jsonl(os.path.join(work_dir, "pending.jsonl"))
+    pending, pending_errors = rawlib.read_jsonl_report(
+        os.path.join(work_dir, "pending.jsonl"))
     open_pending = [item for item in pending
                     if (item.get("status") or "open") not in ("resolved",
                                                              "decided",
@@ -248,7 +258,8 @@ def status_summary(work_dir):
               "library_blocks": len(values),
               "unknown_ids": len([k for k in values if k not in ids]),
               "progress_marks": len(progress),
-              "pending": len(pending), "pending_open": len(open_pending)}
+              "pending": len(pending), "pending_open": len(open_pending),
+              "pending_unparsable": len(pending_errors)}
     gate_path = os.path.join(work_dir, "gate_report.json")
     if os.path.isfile(gate_path):
         with io.open(gate_path, encoding="utf-8") as handle:

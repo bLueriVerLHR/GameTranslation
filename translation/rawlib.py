@@ -37,10 +37,10 @@ from .codes import (KANA_RE, has_text_parameter, parameter_of, parse_codes,
                     parse_code_sequence, split_keep_codes)
 
 __all__ = ["HEADER_RE", "read_library", "write_library", "append_block",
-           "read_jsonl", "append_jsonl", "apply_rewrites", "to_json",
-           "run_gates", "gate_markdown", "code_problems", "readable_text",
-           "kana_problem", "validate_blocks", "append_batch", "leading_codes",
-           "fix_leading_codes"]
+           "read_jsonl", "read_jsonl_report", "append_jsonl", "apply_rewrites",
+           "to_json", "run_gates", "gate_markdown", "code_problems",
+           "readable_text", "kana_problem", "validate_blocks", "append_batch",
+           "leading_codes", "fix_leading_codes"]
 
 #: ``@@@<id>@@@`` on a line of its own; the id may contain anything but ``@``.
 HEADER_RE = re.compile(r"^@@@([^@\n]+?)@@@[ \t]*$")
@@ -110,6 +110,31 @@ def read_jsonl(path):
                 raise ValueError("%s:%d: bad JSON line (%s)"
                                  % (path, number, error))
     return out
+
+
+def read_jsonl_report(path):
+    """Read JSONL tolerantly: ``(records, errors)`` instead of raising.
+
+    State files are written by hand by the translator (``pending.jsonl`` is the
+    one that keeps growing), and a single unescaped backslash used to crash the
+    whole finishing chain - gates and status both - which is a silly way to lose
+    a run.  A broken line is skipped here and reported as
+    ``(line number, message)`` so the caller can turn it into a **failure**
+    rather than a false pass: skipping quietly would hide an open question.
+    """
+    records, errors = [], []
+    if not os.path.isfile(path):
+        return records, errors
+    with io.open(path, encoding="utf-8", errors="replace") as handle:
+        for number, line in enumerate(handle, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except ValueError as error:
+                errors.append((number, str(error)))
+    return records, errors
 
 
 def append_jsonl(path, record):
@@ -449,9 +474,11 @@ def _gate_pending(work_dir):
 
     pending.jsonl is append-only like the library, so the *last* entry for an
     id wins: appending ``{"id": ..., "status": "resolved"}`` closes the
-    earlier ``open`` entry for that id instead of requiring an edit.
+    earlier ``open`` entry for that id instead of requiring an edit.  Lines that
+    cannot be parsed fail the gate (they may hold an unreviewed question).
     """
-    entries = read_jsonl(os.path.join(work_dir, "pending.jsonl"))
+    entries, errors = read_jsonl_report(os.path.join(work_dir,
+                                                     "pending.jsonl"))
     latest = OrderedDict()
     for item in entries:
         key = (item.get("id") or item.get("question") or item.get("why")
@@ -461,11 +488,14 @@ def _gate_pending(work_dir):
                   if (item.get("status") or "open") not in CLOSED_STATUS]
     return {
         "name": "pending",
-        "ok": not open_items,
+        "ok": not open_items and not errors,
         "entries": len(entries),
         "open": len(open_items),
-        "detail": [item.get("id") or item.get("question") for item in
-                   open_items][:50],
+        "unparsable": len(errors),
+        "detail": (["line %d: %s" % (number, message)
+                    for number, message in errors[:5]]
+                   + [item.get("id") or item.get("question")
+                      for item in open_items][:50]),
     }
 
 
@@ -507,6 +537,8 @@ def gate_markdown(report):
                                                      gate["allowed"])
         else:
             detail = "%d open of %d" % (gate["open"], gate["entries"])
+            if gate.get("unparsable"):
+                detail += ", %d unparsable" % gate["unparsable"]
         lines.append("| %s | %s | %s |"
                      % (gate["name"], "PASS" if gate["ok"] else "**FAIL**",
                         detail))

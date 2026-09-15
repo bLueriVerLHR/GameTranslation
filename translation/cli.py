@@ -16,6 +16,7 @@ the job:
     to-json   <work_dir>              raw library -> translated.json (escaping)
     rewrite   <work_dir>              execute rewrites.jsonl over the library
     gates     <work_dir>              the four hard gates (bake needs all green)
+    pending   <work_dir> --why ...    record a question safely (escaped)
     status    <work_dir>              progress at a glance
 """
 import json
@@ -274,6 +275,34 @@ def append(
     return 0
 
 
+def pending(
+    work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
+    why: Annotated[str, cliutil.Option(
+        "--why", help="the question / reason (escaped for you)")],
+    key_id: Annotated[str, cliutil.Option(
+        "--id", help="the key or topic this is about")] = None,
+    status: Annotated[str, cliutil.Option(
+        "--status", help="open (default) / resolved / decided / wontfix")] = "open",
+    verbose: cliutil.Verbose = False,
+    quiet: cliutil.Quiet = False,
+    log_file: cliutil.LogFile = None,
+) -> int:
+    """Record a question in pending.jsonl - the safe way to write that file.
+
+    Hand-written JSON in a state file once carried an unescaped backslash and
+    took the whole finishing chain down with it.  This command escapes the text
+    for you, so a question with control codes in it is always parseable.
+    """
+    cliutil.setup_logging(verbose, quiet, log_file)
+    record = {"status": status, "why": why, "at": "cli"}
+    if key_id:
+        record["id"] = key_id
+    path = rawlib.append_jsonl(os.path.join(work_dir, "pending.jsonl"), record)
+    log.info("pending %s: %s", status, (key_id or why)[:60])
+    print(path)
+    return 0
+
+
 app = cliutil.app(help=__doc__)
 app.command()(prepare)
 app.command()(extract)
@@ -285,6 +314,7 @@ app.command()(gates)
 app.command()(status)
 app.command(name="slice")(slice_)
 app.command()(append)
+app.command()(pending)
 
 
 def main(argv=None) -> int:

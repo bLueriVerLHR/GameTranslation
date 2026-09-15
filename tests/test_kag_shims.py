@@ -272,6 +272,18 @@ class TestGalleryReplayUX:
         assert "#tyrano_base .message_outer.kag3-name-frame" in raw
         assert "box-shadow:none !important" in raw
 
+    def test_saved_layers_missing_from_the_dom_do_not_abort_the_load(self):
+        raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
+        # Tyrano's setLayerHtml iterates the layers named in the SAVE and calls
+        # .remove() on the live DOM entry: a save taken while more layers existed
+        # (the game grows numeric layers with [laycount]) threw
+        # "Cannot read properties of undefined (reading 'remove')" and aborted
+        # the whole load (measured: loadGameData got through hideEventLayer /
+        # trigger / stopCharaAnim / offTempListeners, then died in setLayerHtml).
+        assert "__kag3_safe_layers" in raw
+        assert "map_layer_fore" in raw and "map_layer_back" in raw
+        assert "map[k] = $();" in raw
+
     def test_in_game_menu_carries_the_configured_title_jump(self):
         raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
         # KAG3's built-in system menu (plain [rclick enabled=true]) used to be a

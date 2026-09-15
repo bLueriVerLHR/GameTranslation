@@ -1191,10 +1191,13 @@ if (window.__kag3_msg_style === 'bare') {
           '<button data-kag3-action=skip>SKIP</button><button data-kag3-action=hide>HIDE</button>' +
           '<button data-kag3-action=menu>MENU</button>' +
           '<button data-kag3-action=gallery style="display:none">GALLERY</button></div>';
-        panel.style.cssText = 'position:fixed;right:10px;top:10px;z-index:2147483000;' +
+        // Anchored top-LEFT: the game draws its own title/gallery controls in
+        // the top-right corner, and the ☰ button there competed with them on a
+        // real device (the panel is also the only always-on-screen control).
+        panel.style.cssText = 'position:fixed;left:10px;top:10px;z-index:2147483000;' +
           'display:flex;gap:8px;align-items:flex-start;font:600 14px sans-serif;pointer-events:auto';
         var actions = panel.querySelector('.kag3-mobile-actions');
-        actions.style.cssText = 'display:none;gap:6px;flex-wrap:wrap;justify-content:flex-end;' +
+        actions.style.cssText = 'display:none;gap:6px;flex-wrap:wrap;justify-content:flex-start;' +
           'max-width:min(420px,82vw);padding:6px;border-radius:10px;background:rgba(4,7,12,.64);' +
           'box-shadow:0 8px 24px rgba(0,0,0,.35);backdrop-filter:blur(5px)';
         Array.prototype.forEach.call(panel.querySelectorAll('button'), function (b) {

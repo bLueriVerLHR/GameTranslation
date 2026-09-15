@@ -56,13 +56,13 @@ class TestKnownDialectNames:
             "se": {"s.ogg": b"x"},
             "face": {"f.png": b"x"},
             "thumb": {"t.jpg": b"x"},
-            "movie": {"m.wmv": b"x"},
+            "movie": {"m.mp4": b"x"},
             "bgm": {"b.ogg": b"x"},
             "fgimage": {"g.png": b"x"},
         })
         assert set(got) == {
             ("bgimage", "a.jpg"), ("sound", "s.ogg"), ("fgimage", "f.png"),
-            ("image", "t.jpg"), ("video", "m.wmv"), ("bgm", "b.ogg"),
+            ("image", "t.jpg"), ("video", "m.mp4"), ("bgm", "b.ogg"),
             ("fgimage", "g.png")}
 
     def test_tlg_and_bmp_become_png(self, tmp_path):
@@ -107,9 +107,23 @@ class TestRootLevelAssets:
             ("v01.mpg", b"x"), ("cg01.jpg", b"x"), ("bg11.tlg", b"x")])
         assert ("sound", "a0001.ogg") in got
         assert ("sound", "a0001.ogg.sli") in got
-        assert ("video", "v01.mpg") in got
         assert ("image", "cg01.jpg") in got
         assert ("image", "bg11.png") in got and got[("image", "bg11.png")] == "tlg"
+        # unplayable raw video is dropped, not copied
+        assert not any(name.startswith("v01") for _d, name in got)
+
+    def test_playable_video_is_kept(self, tmp_path):
+        got = collect(tmp_path, {}, files=[("op.mp4", b"x"), ("ed.webm", b"x")])
+        assert ("video", "op.mp4") in got
+        assert ("video", "ed.webm") in got
+
+    def test_unplayable_video_in_a_folder_is_dropped_with_a_warning(
+            self, tmp_path, caplog):
+        with caplog.at_level("WARNING"):
+            got = collect(tmp_path, {"others": {"a.wmv": b"x", "b.mp4": b"x"}})
+        assert ("others", "b.mp4") in got
+        assert not any(name == "a.wmv" for _d, name in got)
+        assert "unplayable raw video" in caplog.text
 
     def test_root_config_files_are_skipped(self, tmp_path):
         got = collect(tmp_path, {}, files=[

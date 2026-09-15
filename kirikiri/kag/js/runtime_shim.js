@@ -146,6 +146,15 @@ if (window.__kag3_msg_style === 'bare') {
       "div[class*='message0'] .message_inner," +
       "div[class*='message1'] .message_inner{background:transparent !important;" +
       "background-image:none !important;}" +
+      // The shim's own default window dressing (runtime_shim.js: a translucent
+      // plate + a big drop shadow on .kag3-dialog-frame/.kag3-name-frame) must
+      // go as well, or "remove the plate" still leaves the shadow -- owner:
+      // "底衬好像没删除干净，我还是能看出有阴影".  #tyrano_base raises the
+      // specificity above the default rules.
+      "#tyrano_base .message_outer.kag3-dialog-frame," +
+      "#tyrano_base .message_outer.kag3-name-frame" +
+      "{background:none !important;background-image:none !important;" +
+      "border:0 !important;box-shadow:none !important}" +
       "div[class*='message0'] .message_text .inner," +
       "div[class*='message0'] .message_text_inner," +
       "div[class*='message0'] .message_text," +
@@ -514,7 +523,11 @@ if (window.__kag3_msg_style === 'bare') {
             '.message_inner.kag3-choice p{position:static !important;margin:0 !important;' +
             'padding:0 !important;line-height:1.35 !important}' +
             '.message_inner.kag3-choice .kag3-choice-prompt{' +
-            'display:block;margin:0 0 14px;text-align:center;color:#fff}' +
+            // Left, not centred: the source macros lay the choice rows out left
+            // ([position ...][style align=left][locate x=-30 y=5][ch]) and the
+            // hard-centred prompt read as "the options are centred"
+            // (owner: "理论上选项也应该是左对齐").
+            'display:block;margin:0 0 14px;text-align:left;color:#fff}' +
             '.message_inner.kag3-choice .kag3-choice-gap{' +
             'display:none !important}' +
             '.message_inner.kag3-choice .kag3-choice-item{' +

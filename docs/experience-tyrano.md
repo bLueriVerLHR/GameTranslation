@@ -199,6 +199,11 @@ promise 被拒时挂一次性 click/touchstart/keydown 监听，首次用户交�
    对“游戏用同一首曲子做回放开场”的写法，效果就是**无缝接着放**，玩家
    听不出“回放开始了”。要在回放模式下强制重启，先清 `stat.current_bgm`
    （比 storage 要用 stem：两侧分别是裸名与完整路径）。
+5. **独立源垫片不可单独做语法检查。** `kirikiri/kag/js/*.js` 是**片段**
+   （如 `noop_plus_real.js` 顶层没有外层 IIFE，直接当文件解析必然报
+   `parse error`——而且 **HEAD 版本也报**），真正的语法门禁是**组装产物**
+   `tyrano/plugins/kag/kag.tag_kag3shim.js`。别把片段文件的解析失败
+   当成自己改错了（血泪：白查了一轮）。
 4. **淡出的 BGM 会被引擎“丢失”。** `stopbgm`（`[fadeoutbgm]` 只是
    `pm.fadeout="true"` 转调它）在淡出分支里**先** `delete
    target_map[key]`、**再** `audio_obj.fade(...)`；而 `playbgm` 停旧曲靠的正是

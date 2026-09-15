@@ -923,14 +923,31 @@ SAVE/LOAD/LOG/AUTO/SKIP/HIDE）里加一个 **`GALLERY`** 条目：
 **实验文字样式**（试玩反馈，开关式）：`--msg-style bare` 去掉**两层**消息
 底衬——主对白窗（`message0`）与名字框（`message1`）——改给文字加描边 +
 阴影；对白文字额外 0.8 不透明度（名字短且承载说话人，不改）。默认仍是
-`plate`。**关键**：底衬**不是层 div 的样式**，`[position frame=...]` 贴在
+`plate`。**注意：只压游戏底衬不足以“看不出底衬”**——垫片自己还给消息框加了
+一层半透明底板 + 大范围投影（`.message_outer.kag3-dialog-frame` 的
+`background:rgba(5,8,14,.78)` 与 `box-shadow:0 -14px 34px`），`bare` 必须把这
+两项一起清掉（用 `#tyrano_base` 提优先级），否则 owner 仍会看到“阴影”
+（实测：只压 background 时 `box-shadow` 仍是 `rgba(0,0,0,.48) 0 -14px 34px`）。
+**关键**：底衬**不是层 div 的样式**，`[position frame=...]` 贴在
 消息层**内层 `.message_outer`** 上（`kag.tag.js:3208`
 `j_message_outer.css("background-image", ...)`，frame 颜色同处），所以规则
 必须同时覆盖 `.message_outer`（层 div 那条留着做兜底）。**绝不要用
 `img{display:none}` 去底衬**：消息层里还住着引擎的「点击继续」箭头
 （`system/nextpage.gif`，`.img_next`），会一起被隐藏。实测：`.message_outer`
-内联 `background-color: rgb(0,0,0)`（引擎设的底衬）→ 计算值
-`rgba(0,0,0,0)`、`background-image: none`。
+的底衬背景与投影均被清空，`__dev.msg()` 在候选框内不再返回任何绘制元素。
+
+**消息层对齐的作用域（试玩反馈，已修）**：KAG3 的 `[style align=..]` 是按
+`[current]` 指定的消息层作用域生效的。本作 `SELECT_CLEAR` 宏会在
+`[cm][MES_SIZE]` 之后发一条 `[style align=center]`，此时 `current` 仍是
+`message0`（对白层）**且该层没有文本**——这条对齐实际是给紧随其后写出的
+**说话人名字**用的。垫片原先直接写 `getMessageInnerLayer()`，把 `center`
+写进了对白层内层，于是**选项之后每一句对白都继承居中**（jQuery `.css` 调用
+栈定位到 `kag.tag_kag3shim.js` 的 `[style]` 包装）。修法：对齐请求落在
+「当前为空的 `message0`」时先挂起（`__kag3_pending_align`），由紧随其后的
+`[ch]` 应用到真正写入的那一层——对白保持左对齐、名字仍居中。实测：选完
+选项 `message0 = left`、`message1` 内联 `center`，再推进两句仍 `left`。
+选项提示行也改为左对齐（源码宏本身是
+`[position ...][style align=left][locate x=-30 y=5][ch]`，与其选项行一致）。
 
 ## 5. 经验：已推翻的判断 / 测试陷阱 / 排障
 

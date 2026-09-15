@@ -42,6 +42,32 @@ log = logging.getLogger("transcode_video")
 
 VIDEO_EXT = (".wmv", ".mpg", ".mpeg", ".avi")
 
+#: Preference when several sources map to ONE output name (KAG3 games often
+#: ship the same movie as both .mpg and .wmv).  Both used to be encoded in
+#: parallel into the same `<name>.webm`, which corrupted the output - measured:
+#: 37 of 444 files failed the decode check with "output not decodable" /
+#: "incomplete output".  Prefer the first extension listed here.
+SOURCE_PREFERENCE = (".wmv", ".mpg", ".mpeg", ".avi")
+
+
+def dedupe_by_output(entries):
+    """One entry per output name: several sources may share a `<name>.webm`."""
+    best = {}
+    for e in entries:
+        # lower(): on Windows `Clip.webm` and `clip.webm` are the SAME file, so a
+        # case-sensitive key would let two workers race on one path again.
+        stem = os.path.splitext(os.path.basename(e["name"]))[0].lower()
+        ext = os.path.splitext(e["name"])[1].lower()
+        rank = (SOURCE_PREFERENCE.index(ext)
+                if ext in SOURCE_PREFERENCE else len(SOURCE_PREFERENCE))
+        current = best.get(stem)
+        if current is None or rank < current[0]:
+            best[stem] = (rank, e)
+        elif rank == current[0]:
+            log.debug("duplicate source for %s: %s (keeping %s)", stem,
+                      e["name"], current[1]["name"])
+    return [e for _rank, e in best.values()]
+
 
 def transcode_one(entry, xp3, out_dir, crf, cpu_used):
     """Extract one archive entry and encode it; returns (name, size, s, status).
@@ -65,16 +91,19 @@ def transcode_one(entry, xp3, out_dir, crf, cpu_used):
         try:
             media.transcode_to_webm(raw, dest, crf=crf, cpu_used=cpu_used)
         except Exception as exc:                       # noqa: BLE001
+            _drop_bad_output(dest)
             return (name, 0, time.time() - start,
                     "FAILED: %s: %s" % (type(exc).__name__, exc))
         elapsed = time.time() - start
 
         after = media.probe_video(dest)
         if "error" in after:
+            _drop_bad_output(dest)
             return (name, 0, elapsed,
                     "FAILED: output not decodable: %s" % after["error"])
         ok, reason = media.decode_ok(dest)
         if not ok:
+            _drop_bad_output(dest)
             return (name, 0, elapsed, "FAILED: incomplete output: %s" % reason)
         src_dur = float(before.get("duration") or 0)
         dur = float(after.get("duration") or 0)
@@ -87,6 +116,21 @@ def transcode_one(entry, xp3, out_dir, crf, cpu_used):
         return (name, 0, 0.0, "FAILED: %s" % exc)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _drop_bad_output(dest):
+    """Remove an output that failed its own check.
+
+    The cache rule is "the file exists and probes", so a half-written or
+    corrupted file would otherwise be treated as cached on the next run and
+    stay broken forever.  Deleting it makes a re-run self-healing.
+    """
+    try:
+        if os.path.isfile(dest):
+            os.remove(dest)
+            log.debug("removed failed output %s", dest)
+    except OSError as exc:                             # pragma: no cover
+        log.warning("could not remove failed output %s (%s)", dest, exc)
 
 
 def cmd(xp3: Annotated[str, cliutil.Argument(help="xp3 archive holding the movies")],
@@ -105,7 +149,8 @@ def cmd(xp3: Annotated[str, cliutil.Argument(help="xp3 archive holding the movie
     cliutil.setup_logging(verbose, quiet, log_file)
     jobs = runtime.resolve_workers("video", jobs, path=out)
 
-    entries = [e for e in open_xp3(xp3) if e["name"].lower().endswith(VIDEO_EXT)]
+    entries = dedupe_by_output(
+        [e for e in open_xp3(xp3) if e["name"].lower().endswith(VIDEO_EXT)])
     os.makedirs(out, exist_ok=True)
     print("%d video file(s) in %s" % (len(entries), xp3), flush=True)
 

@@ -136,18 +136,37 @@ def is_candidate(text, kind="map"):
     return True
 
 
-def speaker_of(text):
-    """Speaker referenced by a line: name box, bracket prefix or ``X「``."""
+def namebox_of(text):
+    """The name a ``\\nc<...>`` name box in this text refers to, else None."""
     if not text:
         return None
     for token in parse_codes(text):
         if code_key(token) == "NC" and "<" in token:
             return token[token.index("<") + 1:-1].strip() or None
+    return None
+
+
+def prefix_speaker(text):
+    """A speaker written into the text itself: ``【名前】`` or ``名前「``."""
+    if not text:
+        return None
     match = re.match(r"^【([^】]{1,16})】", text)
     if match:
         return match.group(1).strip() or None
     match = re.match(r"^([^\s「」『』、。！？!?]{1,12})[「『]", text)
     return match.group(1) if match else None
+
+
+def speaker_of(text):
+    """Speaker referenced by a line: name box, bracket prefix or ``X「``.
+
+    The name box is only a *hint* here: real data often puts it at the end of a
+    speaker's paragraph or on a line of its own, so which lines it labels can
+    only be decided per message window (see ``_Collector.result``).
+    """
+    if not text:
+        return None
+    return namebox_of(text) or prefix_speaker(text)
 
 
 class _Collector:
@@ -162,7 +181,7 @@ class _Collector:
         self.actors = {}
         self._streams = defaultdict(list)
 
-    def add(self, key_id, kind, where, text, stream, name_hint=None):
+    def add(self, key_id, kind, where, text, stream, name_hint=None, window=0):
         if not is_candidate(text, kind):
             self.skipped[kind] += 1
             return
@@ -173,6 +192,7 @@ class _Collector:
             "ja": text,
             "speaker": speaker_of(text),
         }
+        entry["_window"] = (stream, window)
         self.entries.append(entry)
         self._streams[stream].append(entry)
         for token in parse_codes(text):
@@ -209,6 +229,21 @@ class _Collector:
         for seq, entry in enumerate(self.entries):
             entry["seq"] = seq
         for entries in self._streams.values():
+            windows = {}
+            for entry in entries:
+                marker = entry.pop("_window", None)
+                windows.setdefault(marker, []).append(entry)
+            for window_entries in windows.values():
+                names = [name for entry in window_entries
+                         if (name := namebox_of(entry["ja"]))]
+                # One message window belongs to one speaker, and the box can
+                # sit anywhere inside it (often at the end), so the last box
+                # labels the whole window - except for lines that name their
+                # speaker in the text itself (【name】), which stays explicit.
+                window_name = names[-1] if names else None
+                for entry in window_entries:
+                    entry["speaker"] = (prefix_speaker(entry["ja"])
+                                        or window_name or entry["speaker"])
             for index, entry in enumerate(entries):
                 low = max(0, index - self.window)
                 high = min(len(entries), index + self.window + 1)
@@ -225,16 +260,21 @@ def _cmd_id(rel, path, suffix):
 
 
 def _walk_list(collector, lst, rel, path, where, stream):
+    window = 0
     for index, command in enumerate(lst or []):
         if not is_command(command):
             collector.skipped["malformed"] += 1
             continue
+        if command_code(command) == 101:
+            # Show Text starts a message window; a name box only labels lines
+            # inside its own window.
+            window += 1
         for field, text in text_codes(command):
             collector.add(_cmd_id(rel, "%s[%d]" % (path, index), field),
                           "map" if "Map" in rel else
                           ("common" if "CommonEvents" in rel else "troop"),
                           "%s/%s" % (where, command_code(command)),
-                          text, stream)
+                          text, stream, window=window)
 
 
 def _map_order(data_dir):

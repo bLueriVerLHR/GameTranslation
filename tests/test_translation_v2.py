@@ -253,6 +253,33 @@ def test_extract_context_and_speaker(work, game):
     assert first["ja"] in second["prev"]
 
 
+def test_speaker_follows_the_message_window(tmp_path):
+    """A name box labels its whole message window, wherever it sits in it."""
+    root = make_game(str(tmp_path / "game"))
+    _dump(os.path.join(root, "data", "Map002.json"),
+          {"displayName": "", "events": [None, {"id": 1, "name": "Ev",
+           "pages": [{"list": [
+               {"code": 101, "indent": 0, "parameters": ["", 0, 0, 2]},
+               {"code": 401, "indent": 0, "parameters": ["\u3042\u3044\u3046"]},
+               {"code": 401, "indent": 0,
+                "parameters": ["\u3046\u3048\u304a\\nc<\u30a2\u30eb>"]},
+               {"code": 101, "indent": 0, "parameters": ["", 0, 0, 2]},
+               {"code": 401, "indent": 0, "parameters": ["\u304b\u304d\u304f"]},
+               {"code": 401, "indent": 0,
+                "parameters": ["\u3051\u3053\\nc<\u30d9\u30eb>"]},
+               {"code": 401, "indent": 0, "parameters": ["\u3055\u3057\u3059"]},
+           ]}]}]})
+    work = str(tmp_path / "work")
+    mvkeys.extract(root, work)
+    speakers = [entry["speaker"] for entry in mvkeys.load_keys(work)
+                if "Map002" in entry["id"]]
+    assert speakers[0] == "\u30a2\u30eb"      # box at the end of window 1
+    assert speakers[1] == "\u30a2\u30eb"      # same window
+    assert speakers[2] == "\u30d9\u30eb"      # box mid-window, window 2
+    assert speakers[3] == "\u30d9\u30eb"      # carried to the rest of window 2
+    assert "_window" not in mvkeys.load_keys(work)[0]
+
+
 def test_names_candidates_include_macros(work, game):
     mvkeys.extract(game, work)
     names = json.load(io.open(os.path.join(work, "names_candidates.json"),

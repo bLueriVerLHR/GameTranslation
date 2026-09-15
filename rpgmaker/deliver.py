@@ -40,18 +40,22 @@ def ps_quote(value):
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def deliver(folder, archive=None, games=None, archives=None, level=15):
+def deliver(folder, archive=None, games=None, archives=None, level=15,
+            name=None):
     """Compress `folder`, copy the archive into `archives`, then extract it
     into `games` (deleting any stale same-name folder there first).
 
     Defaults: `archives`/`games` come from env_config.json deliverables
     (games_dir/archives_dir), `archive` is written to temp_dir first.
+    `name` is the delivered name used for both the archive and the games-dir
+    folder (default: the folder's own basename), so a work-slot layout that
+    builds into `.../out/` can still deliver under the game's real name.
     Returns the archive path in `archives`.
     """
     folder = Path(folder)
     if not folder.is_dir():
         raise FileNotFoundError("folder not found: %s" % folder)
-    name = folder.name
+    name = name or folder.name
     if not name:
         raise ValueError("cannot derive game name from %s" % folder)
     archives = Path(archives or config.archives_dir())
@@ -60,7 +64,12 @@ def deliver(folder, archive=None, games=None, archives=None, level=15):
 
     log.info("deliver %s -> archives=%s games=%s", name, archives, games)
 
-    compress_mod.compress(str(folder), str(local), level=level)
+    # archive.create() appends .7z to a *relative* path (the historical -o
+    # semantics) and returns the path it actually wrote; integrity-test THAT
+    # one, not the requested one.  Measured failure: --archive "<name>" wrote
+    # "<name>.7z" into the cwd while the test looked at "<name>" and reported
+    # a bogus "local archive failed integrity test".
+    local = Path(compress_mod.compress(str(folder), str(local), level=level))
     if not compress_mod.test_archive(str(local)):
         raise RuntimeError("local archive failed integrity test: %s" % local)
 
@@ -78,7 +87,20 @@ def deliver(folder, archive=None, games=None, archives=None, level=15):
             log.info("removing stale folder %s", target)
             shutil.rmtree(target)
     os.makedirs(games, exist_ok=True)
-    _extract(dst_archive, games, name)
+    # The archive stores the build folder under its own basename, so the wrapper
+    # entry to extract is the FOLDER's name, while the delivered name may differ
+    # (a build living in .../out/ delivered under the game's real name).
+    _extract(dst_archive, games, folder.name)
+    if name != folder.name:
+        extracted = games / folder.name
+        final = games / name
+        if final.exists():
+            if config.is_windows_side(final):
+                _remove_windows_side(final)
+            else:
+                shutil.rmtree(final)
+        os.replace(str(extracted), str(final))       # same volume: instant
+        log.info("renamed extracted folder %s -> %s", extracted, final)
 
     log.info("delivered: %s / %s", dst_archive, target)
     return str(dst_archive)

@@ -287,10 +287,17 @@ def cmd_tyrano_compress(
 @tyrano.command("deliver")
 def cmd_tyrano_deliver(
     out: str = typer.Argument(..., help="built game folder"),
-    archive: str = typer.Option(None, help="archive name in the archives dir"),
+    archive: str = typer.Option(
+        None, "--archive",
+        help="local .7z path to write first (default: temp dir)"),
+    name: str = typer.Option(
+        None, "--name",
+        help="delivered name (archive + games-dir folder); defaults to the "
+             "build folder's own name, so pass it when building into a slot "
+             "like .../out/"),
 ):
     """Write back to the storage side (compress, copy, extract)."""
-    deliver.deliver(out, archive=archive)
+    deliver.deliver(out, archive=archive, name=name)
 
 
 def _serve(folder: str, port: int, host: str, test: bool) -> None:

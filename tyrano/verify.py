@@ -65,7 +65,13 @@ def _audio_exists(web_root, ref):
 
 
 def _audio_refs(web_root):
-    """Yield every (file, ref) audio reference in the scenario tree."""
+    """Yield every (file, ref) audio reference in the scenario tree.
+
+    Comment lines are skipped: KAG3 comments are `;`-prefixed and a commented
+    reference is not a runtime lookup.  Measured false positive: a game ships
+    `;[playbgm storage="bgm004.wav"]` in config.ks while the real file is
+    bgm004.ogg, which failed the delivery gate for a build that is fine.
+    """
     scenario = os.path.join(web_root, "data", "scenario")
     if not os.path.isdir(scenario):
         return
@@ -75,8 +81,11 @@ def _audio_refs(web_root):
                 continue
             path = os.path.join(dp, fn)
             text, _enc = load_ks(path)
-            for m in AUDIO_REF.finditer(text):
-                yield path, m.group(2)
+            for line in text.splitlines():
+                if line.lstrip().startswith(";"):
+                    continue
+                for m in AUDIO_REF.finditer(line):
+                    yield path, m.group(2)
 
 
 def check_audio_refs(web_root, source=None):

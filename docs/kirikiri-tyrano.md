@@ -107,6 +107,57 @@ KAG3 由吉里吉里 2 SDK 的 `KAGParser.dll` 解析 `.ks`；常见变体：
 - **坑（按游戏实测记录，不入库）**：`cond` 属性几乎所有标签可用、
   时间单位差异、插件 DLL 无等价物、textrender 语法正文。
 
+## 1.5 一条命令跑完移植（`kirikiri/pipeline.py`）
+
+每款游戏的差异（源目录、档案优先级、转换开关、素材目录表）**全部放进该游戏的
+profile JSON**（本地，不入库），工具本身不含任何游戏数据：
+
+```
+python kirikiri/pipeline.py probe  <游戏目录> [--write-profile p.json]   # 体检：有哪些档案、能不能解
+python kirikiri/pipeline.py unpack <p.json> [--force]                  # 分层解包（后写的覆盖先写的）
+python kirikiri/pipeline.py convert <p.json> [--scenario-only]         # KAG3 -> TyranoScript
+python kirikiri/pipeline.py verify <构建目录> [--source <src>] [--strict]
+python kirikiri/pipeline.py port   <p.json> [--skip-unpack]            # 上面三步一条龙
+```
+
+profile 路径解析约定：`source` / `engine` / `fonts` / `video_dir` / `state_overrides`
+相对**仓库根**（或绝对路径）；`src` / `out` 相对 **profile 自己所在的目录**（即游戏的
+工作槽）。档案顺序默认为引擎的优先级：`data.xp3` → `patch.xp3`/`update.xp3` →
+`patch@r<rev>`（按版本号）→ `patch_append<n>` → 其余按名，每个档案解到同一棵树上覆盖
+上层。
+
+### 1.5.1 `verify` 查什么
+
+| 项 | 性质 |
+|---|---|
+| 有 `index.html` / 有 `data/scenario/**/*.ks` | 硬失败 |
+| `[iscript]` 块的 JavaScript 能否解析（复用 `tools/check_iscript_js.py`） | 硬失败 |
+| 显示文本里的假名残留（复用 `tools/qc_ks_kana.py`） | 警告（`--strict` 升为失败） |
+| 素材引用解析不到 | 警告 |
+| 源树有、构建没有的引用（= 转换丢素材） | 警告，单独列出 |
+
+引用检查要同时认 `storage=` 与 **`file=`**，且值可能**没有引号**
+（`@cg file=BG11a02 zoom=32` 这种 @ 短标签方言转换后仍是裸值）；裸 ID（不是路径）
+只能按“树里有没有这个文件名”兜底，因为这类引擎用 `*.csv`/`*.ams` 自己的表把 ID
+映到目录，构建侧无法重放。
+
+### 1.5.2 素材目录表（曾经的最大坑）
+
+TyranoScript 的 `storage=` 是**按标签目录**解析的（`[bg]` 找 `bgimage/`、
+`[playse]` 找 `sound/`……），所以“源目录 → `data/` 目录”的映射是契约的一部分。
+该映射一度是**写死的一份目录表**（只对应某一款游戏的布局），后果是另一款游戏
+**84% 的素材被静默丢掉**（实测 1010 MiB 源树 → 166 MiB 构建，缺 `bg/`、`face/`、
+`se/`、`thumb/`、`rule/`、`effect/` 等）。现在的规则：
+
+1. 已知方言名走 `kirikiri/kag/assets.py::DEFAULT_ASSET_DIRS`
+   （`bg`→`bgimage`、`se`/`voice`→`sound`、`face`/`frame`/`effect`→`fgimage`、
+   `thumb`/`emotion`/`credit`→`image`、`movie`→`video`……）；
+2. **不认识的目录保留原名搬过去**（并 WARN），绝不静默丢弃；
+3. **根目录的素材文件按扩展名归位**（有些 repack 把所有素材摊在脚本旁边：
+   `.ogg`→`sound`、`.mpg/.wmv`→`video`、图片→`image`，`.tjs/.csv/.ams/.ks` 跳过）；
+4. 转换器自己写的 `data/system/Config.tjs`、`KeyConfig.js` 永不覆盖；
+5. 每款游戏可在 profile 里用 `convert.asset_dirs` 覆盖（命令行 `--asset-dirs "bg=bgimage,se=sound"`）。
+
 ## 2. 需要的软件
 
 ### 2.1 已具备（本机/仓库）

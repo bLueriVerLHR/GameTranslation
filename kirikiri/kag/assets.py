@@ -313,33 +313,91 @@ def _video_map_from_output(out_data):
     return vmap
 
 
-def _collect_asset_jobs(unpacked, out_data):
-    """Walk the mapped asset dirs into a flat ``[(kind, src, dst)]`` list.
+#: Source asset folder -> Tyrano ``data/`` folder.  The destination matters:
+#: TyranoScript resolves ``storage=`` *per tag directory* (a ``[bg]`` looks under
+#: bgimage/, ``[playse]`` under sound/, ...), so an asset placed in the wrong
+#: folder is an asset the game cannot find.  These names cover the dialect
+#: variants seen in real KAG3 games; anything unknown is kept under its own name
+#: (never dropped) and a game can override the table via its profile.
+DEFAULT_ASSET_DIRS = {
+    "bgimage": "bgimage", "bg": "bgimage", "background": "bgimage",
+    "fgimage": "fgimage", "face": "fgimage", "frame": "fgimage",
+    "effect": "fgimage", "rule": "fgimage", "emotion": "fgimage",
+    "image": "image", "thumb": "image", "thumbnail": "image",
+    "credit": "image", "systemimage": "image",
+    "bgm": "bgm",
+    "sound": "sound", "se": "sound", "voice": "sound", "envse": "sound",
+    "video": "video", "movie": "video", "movies": "video",
+    "system": "system", "font": "font", "fonts": "font",
+}
 
-    KAG3 games keep an asset in exactly one place and TyranoScript resolves
-    `storage=` per tag directory, so every asset goes to its one canonical
-    directory and nowhere else.  The old mirroring (bgimage/fgimage/image
-    copies of everything) tripled the build for no benefit - measured: ~75% of
-    the duplicated bytes survive compression, so the redundancy was real
-    delivery size.
+#: Root-level files (some repacks put every asset next to the scripts) are
+#: placed by extension, because the folder is what a Tyrano tag resolves
+#: against.  Anything else at the root is engine config/data and is skipped.
+ROOT_ASSET_EXTS = {
+    "video": (".mpg", ".mpeg", ".wmv", ".avi", ".mp4", ".webm"),
+    "sound": (".ogg", ".wav", ".mp3", ".m4a", ".opus", ".sli"),
+    "image": (".tlg", ".bmp", ".png", ".jpg", ".jpeg", ".gif", ".webp"),
+}
+
+#: Files the converter writes itself: never copy these over the generated ones.
+ASSET_NAME_SKIP = {"config.tjs", "keyconfig.js", "config.tjs.orig"}
+
+#: Folders that are never assets: engine config is written by the converter
+#: itself (copying the source's ``system/`` over the generated TyranoScript
+#: ``system/`` would break the build - see ASSET_NAME_SKIP for the exception),
+#: plus the usual junk a repack leaves behind.
+NON_ASSET_DIRS = {
+    "scenario", "plugin", "plugins", "k2compat",
+    "savedata", "savedata_cn", "mtondata_", "mtdata_", "mtool", "patch",
+    "directx", "__macosx",
+}
+
+
+def _collect_asset_jobs(unpacked, out_data, asset_dirs=None):
+    """Walk the source's asset dirs into a flat ``[(kind, src, dst)]`` list.
+
+    KAG3 games name their asset folders inconsistently (``bg`` / ``bgimage`` /
+    ``background``, ``se`` / ``sound`` / ``voice``, ``face`` / ``fgimage`` /
+    ``frame`` ...) and TyranoScript resolves ``storage=`` *per tag directory*, so
+    the destination folder is part of the contract.  The historical hardcoded
+    list only knew one game's layout and silently dropped every other folder:
+    measured on a real port, 1010 MiB of source became a 166 MiB build (84% of
+    the assets lost).  Now:
+
+    * :data:`DEFAULT_ASSET_DIRS` maps the known dialect names to their Tyrano
+      folder (``bg`` -> ``bgimage``, ``se`` -> ``sound``, ...);
+    * a folder nobody knows is **kept under its own name** instead of dropped
+      (so nothing is lost silently) unless it is in :data:`NON_ASSET_DIRS`;
+    * a game can override the whole table from its profile (``asset_dirs``),
+      because the mapping is per-game data, not tool behaviour.
+
+    KAG3 keeps an asset in exactly one place and TyranoScript resolves
+    ``storage=`` per tag directory, so every asset goes to its one canonical
+    directory and nowhere else.  The old mirroring (bgimage/fgimage/image copies
+    of everything) tripled the build for no benefit - measured: ~75% of the
+    duplicated bytes survive compression, so the redundancy was real delivery
+    size.
 
     Collecting first (instead of converting during the walk) is what makes the
     pass parallelisable; the walk itself is cheap metadata I/O.
     """
-    mapping = [
-        ("bgimage", "bgimage"),
-        ("fgimage", "fgimage"),
-        ("image", "image"),
-        ("bgm", "bgm"),
-        ("sound", "sound"),
-        ("video", "video"),
-        ("rule", "fgimage"),
-    ]
+    mapping = dict(DEFAULT_ASSET_DIRS)
+    if asset_dirs:
+        mapping.update({k.lower(): v for k, v in asset_dirs.items()})
     jobs = []
-    for src_sub, dst_sub in mapping:
+    unknown = []
+    for src_sub in sorted(os.listdir(unpacked)):
         src_dir = os.path.join(unpacked, src_sub)
         if not os.path.isdir(src_dir):
             continue
+        low = src_sub.lower()
+        if low in NON_ASSET_DIRS:
+            continue                    # scenarios / engine config, handled elsewhere
+        dst_sub = mapping.get(low)
+        if dst_sub is None:
+            dst_sub = src_sub
+            unknown.append(src_sub)
 
         def _walk(cur, sub):
             for fn in sorted(os.listdir(cur)):
@@ -348,6 +406,8 @@ def _collect_asset_jobs(unpacked, out_data):
                 if os.path.isdir(sp):
                     _walk(sp, rel)
                     continue
+                if dst_sub == "system" and fn.lower() in ASSET_NAME_SKIP:
+                    continue            # the converter writes its own
                 ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
                 outname = fn
                 if ext in ("tlg", "bmp"):
@@ -368,10 +428,42 @@ def _collect_asset_jobs(unpacked, out_data):
                 jobs.append((kind, sp, dst_path))
 
         _walk(src_dir, "")
+
+    # Root-level assets: some repacks keep every asset next to the scripts.
+    root_skipped = []
+    for fn in sorted(os.listdir(unpacked)):
+        sp = os.path.join(unpacked, fn)
+        if not os.path.isfile(sp):
+            continue
+        ext = os.path.splitext(fn)[1].lower()
+        dst_sub = next((sub for sub, exts in ROOT_ASSET_EXTS.items()
+                        if ext in exts), None)
+        if dst_sub is None:
+            root_skipped.append(fn)
+            continue
+        outname = (fn.rsplit(".", 1)[0] + ".png"
+                   if ext in (".tlg", ".bmp") else fn)
+        if ext == ".tlg":
+            kind = "tlg"
+        elif ext == ".bmp":
+            kind = "bmp"
+        elif _is_region_image(fn):
+            kind = "region"
+        else:
+            kind = "copy"
+        jobs.append((kind, sp, os.path.join(out_data, dst_sub, outname)))
+
+    if unknown:
+        log.warning("asset folder(s) not in the known layout, kept under their "
+                    "own name: %s (override with the profile's asset_dirs if "
+                    "they belong elsewhere)", ", ".join(sorted(unknown)))
+    if root_skipped:
+        log.debug("skipped %d root-level non-asset file(s): %s",
+                  len(root_skipped), ", ".join(root_skipped[:8]))
     return jobs
 
 
-def _convert_assets(unpacked, out_data, stats, workers=None):
+def _convert_assets(unpacked, out_data, stats, workers=None, asset_dirs=None):
     """Copy/convert asset dirs into the Tyrano data/ layout (recursive).
 
     The image work (TLG/BMP/region -> PNG) is CPU-bound pure Python/PIL, so it
@@ -384,7 +476,7 @@ def _convert_assets(unpacked, out_data, stats, workers=None):
     `workers=None` auto-tunes from the machine (physical cores, see
     rpgmaker/runtime.py); `workers=1` keeps the historical serial behaviour.
     """
-    jobs = _collect_asset_jobs(unpacked, out_data)
+    jobs = _collect_asset_jobs(unpacked, out_data, asset_dirs=asset_dirs)
     image_jobs = [j for j in jobs if j[0] != "copy"]
     copy_jobs = [j for j in jobs if j[0] == "copy"]
 

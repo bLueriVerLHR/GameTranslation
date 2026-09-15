@@ -6,7 +6,9 @@ The image work (TLG/BMP/region -> PNG) moved into worker processes so it no
 longer runs one image at a time (measured: 0.87 s per TLG image, 658 of them).
 Parallelism is only safe if it is *observably* identical to the serial path:
 same files, same bytes, same counters, same WARN lines.  These tests pin that
-equivalence, plus the status accounting the parent aggregates.
+equivalence, plus the status accounting the parent aggregates, plus the asset
+*folder mapping* (which used to be hardcoded to one game's layout and silently
+dropped 84% of another game's assets).
 """
 import hashlib
 import os

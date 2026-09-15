@@ -643,6 +643,14 @@ def test_cli_slice_compact_drops_heavy_fields(work, game, tmp_path, capsys):
     rows = [json.loads(line) for line in
             io.open(out, encoding="utf-8").read().splitlines()]
     assert set(rows[0]) == {"id", "ja", "speaker", "prev", "next"}
+    lean_out = str(tmp_path / "lean.jsonl")
+    assert cli.main(["slice", work, "--count", "3", "--lean",
+                     "--out", lean_out]) == 0
+    lean = [json.loads(line) for line in
+            io.open(lean_out, encoding="utf-8").read().splitlines()]
+    assert set(lean[0]) == {"id", "ja", "speaker", "where"}
+    assert len(io.open(lean_out, encoding="utf-8").read()) < \
+        len(io.open(out, encoding="utf-8").read())
     capsys.readouterr()
 
 

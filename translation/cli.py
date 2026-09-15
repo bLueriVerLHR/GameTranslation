@@ -189,6 +189,8 @@ def slice_(
         "--kind", help="only this kind (map/common/troop/db/ui/plugin)")] = None,
     compact: Annotated[bool, cliutil.Option(
         "--compact", help="drop where/kind/seq (cheaper to read)")] = False,
+    lean: Annotated[bool, cliutil.Option(
+        "--lean", help="only id/ja/speaker/where (no context lines)")] = False,
     out: Annotated[str, cliutil.Option(
         "--out", help="write the slice here (default: stdout)")] = None,
     verbose: cliutil.Verbose = False,
@@ -206,7 +208,14 @@ def slice_(
         return cliutil.fail("keys.jsonl missing in %s (run extract first)"
                             % work_dir)
     entries = mvkeys.slice_keys(work_dir, start=start, count=count, kind=kind)
-    if compact:
+    if lean:
+        # Context lines cost more than they give: reading them is the real
+        # bottleneck of a long run, and `speaker` plus the story order already
+        # keeps a scene coherent.
+        entries = [{key: entry[key] for key in ("id", "ja", "speaker",
+                                                "where")}
+                   for entry in entries]
+    elif compact:
         entries = [{key: entry[key] for key in
                     ("id", "ja", "speaker", "prev", "next")}
                    for entry in entries]

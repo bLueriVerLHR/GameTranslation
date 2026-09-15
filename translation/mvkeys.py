@@ -72,8 +72,13 @@ SCHEMA = 2
 
 
 def text_codes(command):
-    """The displayed strings of one MV/MZ command, as ``[(path, text)]``."""
-    if not command or len(command) < 3:
+    """The displayed strings of one MV/MZ command, as ``[(path, text)]``.
+
+    A command is normally ``[code, indent, *params]``, but plugin-written
+    entries can be any shape (a dict, a short list); anything that is not a
+    command is ignored here and counted as `malformed` by the caller.
+    """
+    if not isinstance(command, (list, tuple)) or len(command) < 3:
         return []
     code, params = command[0], command[2:]
     out = []
@@ -192,6 +197,9 @@ def _cmd_id(rel, path, suffix):
 
 def _walk_list(collector, lst, rel, path, where, stream):
     for index, command in enumerate(lst or []):
+        if not isinstance(command, (list, tuple)):
+            collector.skipped["malformed"] += 1
+            continue
         for field, text in text_codes(command):
             collector.add(_cmd_id(rel, "%s[%d]" % (path, index), field),
                           "map" if "Map" in rel else
@@ -218,6 +226,16 @@ def _map_order(data_dir):
             have.add(int(match.group(1)))
     ids += sorted(have - known)
     return ids
+
+
+def _records(data):
+    """A JSON file that should hold a list of records - positions preserved.
+
+    MV/MZ database arrays carry ``null`` at index 0, and a key's id is its
+    array index, so entries must never be filtered out (that would shift every
+    later id).  Non-dict entries are skipped by the caller, in place.
+    """
+    return data if isinstance(data, list) else []
 
 
 def _read_json(path):
@@ -255,8 +273,8 @@ def _collect_common(collector, data_dir):
     path = os.path.join(data_dir, "CommonEvents.json")
     if not os.path.isfile(path):
         return
-    for index, event in enumerate(_read_json(path) or []):
-        if not event:
+    for index, event in enumerate(_records(_read_json(path))):
+        if not isinstance(event, dict):
             continue
         base = "[%d].list" % index
         _walk_list(collector, event.get("list"), "data/CommonEvents.json", base,
@@ -268,8 +286,8 @@ def _collect_troops(collector, data_dir):
     path = os.path.join(data_dir, "Troops.json")
     if not os.path.isfile(path):
         return
-    for index, troop in enumerate(_read_json(path) or []):
-        if not troop:
+    for index, troop in enumerate(_records(_read_json(path))):
+        if not isinstance(troop, dict):
             continue
         name = troop.get("name") or "Troop%d" % index
         collector.add("data/Troops.json#[%d].name" % index, "troop",
@@ -287,7 +305,7 @@ def _collect_db(collector, data_dir):
         if not os.path.isfile(path):
             continue
         rel = "data/" + filename
-        for index, record in enumerate(_read_json(path) or []):
+        for index, record in enumerate(_records(_read_json(path))):
             if not isinstance(record, dict):
                 continue
             label = record.get("name") or "%s[%d]" % (filename, index)

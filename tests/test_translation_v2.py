@@ -154,6 +154,24 @@ def test_scan_js_and_inventory(game):
 
 # ---------------------------------------------------------------- keys
 
+def test_extract_tolerates_plugin_shaped_entries(tmp_path):
+    """Real data can hold non-command entries (plugins write their own)."""
+    root = make_game(str(tmp_path / "game"))
+    path = os.path.join(root, "data", "Map001.json")
+    data = json.load(io.open(path, encoding="utf-8"))
+    data["events"][1]["pages"][0]["list"] = [
+        {"plugin": "wrote-this"},
+        [401],
+        [401, 0, "\u3042\u3044\u3046"],
+    ]
+    _dump(path, data)
+    work = str(tmp_path / "work")
+    stats = mvkeys.extract(root, work)
+    keys = mvkeys.load_keys(work)
+    assert [entry["ja"] for entry in keys if entry["kind"] == "map"] == ["\u3042\u3044\u3046"]
+    assert stats["skipped"]["malformed"] == 1
+
+
 def test_extract_story_order_and_kinds(work, game):
     stats = mvkeys.extract(game, work)
     keys = mvkeys.load_keys(work)

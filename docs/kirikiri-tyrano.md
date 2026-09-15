@@ -994,6 +994,35 @@ SAVE/LOAD/LOG/AUTO/SKIP/HIDE）里加一个 **`GALLERY`** 条目：
 **实测**：剧情中右键 → 浮层出现（「回到主页菜单」「继续游戏」）→ 点前者 →
 浮层关闭并跳到 `first.ks *start`（落到标题的 BGM 宏，即标题流程已开始）。
 
+### 4.11 读档的 make.ks 过路点与引擎报错的可读化（试玩反馈，已修）
+
+**症状**：读档后游戏像卡死（标签无响应、探针全部超时）。
+
+**真因**：Tyrano 恢复存档时会在跳回存档位置**之前**插入
+`[call storage="make.ks"]`（`kag.menu.js:1193-1204`），而 **KAG3 游戏没有
+make.ks** ✗ → 引擎找不到文件就 `alert()`
+（`lang.js` 的 `file_not_found`："ファイルが見つかりませんでした。 /\n./data/scenario/make.ks"）
+✗ —— 模态框把 JS 线程卡住：CPU 低、探针全超时、标签探针报 "not responding"，
+看起来就像渲染进程崩了 ✗。读档本身其实是成功的 ✓（引擎阶段面包屑走到
+`loadGameData-out → loadGame-out` ✓）。
+
+**修法（两处，都在转换器/垫片侧，不动 vendored 引擎）**：
+
+1. **生成 `make.ks`**（`_write_make_ks()` ✓）：内容与引擎自带模板一致（注释 +
+   `[return]` ✓）；已存在则不覆盖 ✓（游戏自己带的优先）。
+2. **接管 `alert`/`confirm`**（垫片）：不再阻塞 ✓，改为
+   `console.error('[tyrano-engine] …')` + `window.__kag3_engine_errors`
+   + localStorage（跨崩溃可读 ✓）+ 屏上**非阻塞**红色横幅（点击关闭 ✓）；
+   原始弹窗仍可通过 `window.__kag3_native_alert` 取回 ✓。含义：**WebView/
+   JoiPlay 下不会再被弹窗卡死游戏** ✓，报错也能在控制台/屏上直接读 ✓。
+
+**实测**：修复前后 —— 启动期与读档后的 `__kag3_engine_errors` 均为**空** ✓、
+无横幅 ✓、`1+1` 正常 ✓、读档后可见台词与存档时**一致** ✓、`sf` 标志 301 ✓。
+
+> 排障坑：`stat.current_scenario/current_line` 在宏体内指向**宏文件**（例如
+> `define.ks:3392` = `[BGM]` 宏内部），**不能**当成剧情位置 ✗；判断“读档位置
+> 对不对”要看**可见台词**或剧情进度标志 ✓。这个坑本轮踩了三次 ✗。
+
 ## 5. 经验：已推翻的判断 / 测试陷阱 / 排障
 
 ### 5.1 已在实测中被推翻的**四个**初始判断（勿重蹈）

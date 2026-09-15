@@ -1376,6 +1376,21 @@ def test_state_overrides_load_supported_namespaces(tmp_path):
     }
 
 
+def test_generated_make_ks_is_a_return_passthrough(tmp_path):
+    # Tyrano restores a save by inserting [call storage="make.ks"] before the
+    # saved position; without the file the engine raises a BLOCKING alert
+    # ("ファイルが見つかりませんでした。 / ./data/scenario/make.ks") and loading a
+    # save freezes the page.  KAG3 ships no make.ks, so the converter writes the
+    # engine's own pass-through.
+    assert ck._write_make_ks(str(tmp_path)) is True
+    text = (tmp_path / "make.ks").read_text(encoding="utf-8")
+    assert "[return]" in text
+    # an existing file (a game that ships one) must never be overwritten
+    (tmp_path / "make.ks").write_text("[return]\n; game own\n", encoding="utf-8")
+    assert ck._write_make_ks(str(tmp_path)) is False
+    assert "game own" in (tmp_path / "make.ks").read_text(encoding="utf-8")
+
+
 def test_state_overrides_accept_a_utf8_bom(tmp_path):
     # The override file is hand-edited on Windows, where editors add a BOM;
     # utf-8 decoding turned that into a JSONDecodeError and the converter

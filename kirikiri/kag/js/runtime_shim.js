@@ -42,6 +42,11 @@ tyrano.plugin.kag.tag['ch'] = {
 // Plain [rclick enabled=true] (no jump) is the system-menu default:
 // registered as null -> no-op (the port has no system menu overlay).
 var __kag3_rclick = null;
+// Last jump-rclick armed by the game that names a "*return_*" label.  That
+// is the game's own back-to-gallery handler (e.g. seen_set.ks *return_seen:
+// free layers, BGM_FS, jump seen.ks *seentop2); the replay-exit button
+// reuses it because the game disarms rclick while a replay runs.
+var __kag3_context_return = null;
 var __kag3_exec_rclick = function () {
   var kag = window.TYRANO && TYRANO.kag;
   if (!kag || !__kag3_rclick) return;
@@ -60,6 +65,12 @@ tyrano.plugin.kag.tag['rclick'] = {
       __kag3_rclick = null;
     } else {
       __kag3_rclick = { storage: pm.storage || '', target: pm.target || '', exp: pm.exp || '' };
+      if (__kag3_rclick.storage && __kag3_rclick.target &&
+          /return/i.test(String(__kag3_rclick.target))) {
+        __kag3_context_return = {
+          storage: __kag3_rclick.storage, target: __kag3_rclick.target,
+        };
+      }
     }
     this.kag.ftag.nextOrder();
   },
@@ -75,6 +86,89 @@ document.addEventListener('click', function (e) {
   if (Object.keys(window.__kag3_maps || {}).length > 0) return;
   __kag3_exec_rclick();
 }, true);
+// Floating replay-exit button.  The game disarms its own right-click return
+// while a replay runs ([rclick call=false jump=false enabled=true] at replay
+// start), so a touch player has no way back to the gallery before the replay
+// ends.  While tf.now_pv == 1 and the game has registered a *return_* label,
+// show a small button; clicking it abandons the replay's call/macro frames
+// (KAG3 rclick-jump = process(): a full scenario switch, not a nested call)
+// and jumps to that registered return label.
+(function () {
+  var btn = null;
+  var ensure_btn = function () {
+    if (btn) return btn;
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('data-kag3', 'pv-exit');
+    btn.textContent = '退出鉴赏';
+    btn.style.cssText = 'position:fixed;top:8px;right:8px;z-index:2147483000;' +
+      'display:none;padding:6px 12px;opacity:.75;border:1px solid rgba(255,255,255,.6);' +
+      'border-radius:6px;background:rgba(0,0,0,.55);color:#fff;font-size:14px;' +
+      'line-height:1.2;cursor:pointer;';
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var kag = window.TYRANO && TYRANO.kag;
+      if (!kag || !__kag3_context_return) return;
+      try {
+        if (kag.stat && kag.stat.stack) {
+          if (kag.stat.stack.call) kag.stat.stack.call.length = 0;
+          if (kag.stat.stack.macro) kag.stat.stack.macro.length = 0;
+          if (kag.stat.stack.if) kag.stat.stack.if.length = 0;
+        }
+      } catch (e1) {}
+      try {
+        // The normal path resets these in the post-replay cleanup we just
+        // abandoned (PV_START's now_pv=0 tail and seen_set.ks "sf.seenflg=0").
+        // Leaving them set would keep the button visible and hide the
+        // save/load buttons in the gallery (SYSMENU branches on seenflg).
+        kag.variable.tf.now_pv = 0;
+        kag.variable.sf.seenflg = 0;
+      } catch (e3) {}
+      try {
+        __kag3_jump(kag, __kag3_context_return.storage, __kag3_context_return.target);
+      } catch (e2) {}
+      btn.style.display = 'none';
+    });
+    var add = function () { document.body.appendChild(btn); };
+    if (document.body) add();
+    else document.addEventListener('DOMContentLoaded', add);
+    return btn;
+  };
+  setInterval(function () {
+    try {
+      var kag = window.TYRANO && TYRANO.kag;
+      var show = !!(kag && kag.variable && kag.variable.tf &&
+                    kag.variable.tf.now_pv == 1 && __kag3_context_return);
+      var b = ensure_btn();
+      if (b.style.display !== (show ? 'block' : 'none')) {
+        b.style.display = show ? 'block' : 'none';
+      }
+    } catch (e) {}
+  }, 500);
+})();
+// Experimental bare message style (converter --msg-style bare): drop the
+// story window's backing plate and let the text carry an outline + shadow at
+// reduced opacity.  Scoped to the main message layer (message0) only - the
+// name plate lives on message1 and must keep its frame.
+if (window.__kag3_msg_style === 'bare') {
+  (function () {
+    var s = document.createElement('style');
+    s.setAttribute('data-kag3', 'msg-bare');
+    s.textContent =
+      "div[class*='message0']{background:transparent !important;" +
+      "background-image:none !important;}" +
+      "div[class*='message0'] .message_text .inner," +
+      "div[class*='message0'] .message_text_inner," +
+      "div[class*='message0'] .message_text{-webkit-text-stroke:1px rgba(0,0,0,.35);}" +
+      "div[class*='message0'] .message_text .inner span," +
+      "div[class*='message0'] .message_text span," +
+      "div[class*='message0'] .message_text{text-shadow:0 1px 3px rgba(0,0,0,.85),0 0 2px rgba(0,0,0,.7);}" +
+      "div[class*='message0'] .message_text{opacity:.8;}";
+    var add = function () { document.head.appendChild(s); };
+    if (document.head) add();
+    else document.addEventListener('DOMContentLoaded', add);
+  })();
+}
   var apply_runtime = function () {
     var kag = window.TYRANO && TYRANO.kag;
     if (!kag || !kag.ftag || !kag.ftag.master_tag) return false;
@@ -233,6 +327,38 @@ document.addEventListener('click', function (e) {
       _wrap_storage('chara_ptext');
       _wrap_storage('playse');
       _wrap_storage('playbgm');
+      // KAG3 replay semantics: a replay's opening [BGM] must take effect even
+      // when it names the track that is already playing - several scene
+      // entries reuse the gallery/menu track (e.g. [BGM bgm="bgm010"]).
+      // Tyrano skips a same-storage [playbgm], which let the menu music run
+      // seamlessly through the whole replay (owner-reported: "背景音还是菜单
+      // 的音乐").  Clear the engine's current-bgm mark in replay mode so the
+      // track restarts from 0:00 like a fresh KAG3 [playbgm].  Storage forms
+      // differ (bare name vs resolved ../bgm/x.ogg), hence the stem compare;
+      // [playse] passes target=se and must not be touched.
+      (function () {
+        var _pb = kag.ftag.master_tag.playbgm;
+        if (!_pb || !_pb.start || _pb.__kag3_pv_restart) return;
+        var _orig = _pb.start;
+        _pb.__kag3_pv_restart = true;
+        _pb.start = function (pm) {
+          try {
+            if (String((pm && pm.target) || 'bgm') !== 'se' &&
+                kag.variable.tf && kag.variable.tf.now_pv == 1 &&
+                kag.stat.current_bgm) {
+              var stem = function (s) {
+                return String(s == null ? '' : s).replace(/^.*[\\/]/, '')
+                  .replace(/\.[^.]+$/, '').toLowerCase();
+              };
+              if (stem(pm && pm.storage) === stem(kag.stat.current_bgm)) {
+                kag.stat.current_bgm = '';
+                __kag3_log('pv bgm restart: ' + (pm && pm.storage));
+              }
+            }
+          } catch (e) {}
+          return _orig.apply(this, arguments);
+        };
+      })();
       // NOTE: no jump/call/return/link wrappers clear clickable maps.
       // KAG3 keeps the map alive across process()/jumps; scenarios
       // disable it explicitly with [mapdisable] (e.g. the title's

@@ -191,8 +191,23 @@ def load_profile(path):
     conv.setdefault("fast_skip", False)
     conv.setdefault("portrait", False)
     conv.setdefault("asset_dirs", None)
+    conv.setdefault("first_scenario", None)
     for key in ("video_dir", "state_overrides"):
-        conv[key] = repo_path(conv.get(key))
+        # Per-game inputs live in the game's own slot, so a profile naming its
+        # media cache writes "media/webm": prefer the slot-relative path and
+        # fall back to the repo-relative one for shared locations.  (Measured
+        # failure: a slot-relative video_dir resolved against the repo root, so
+        # every transcode cache lookup missed and the raw .mpg/.wmv were copied
+        # into the build instead.)
+        value = conv.get(key)
+        if value and not os.path.isabs(value):
+            slot_candidate = os.path.normpath(os.path.join(slot, value))
+            if os.path.exists(slot_candidate):
+                conv[key] = slot_candidate
+                continue
+            log.debug("%s: %s not in the slot, using the repo-relative path",
+                      key, value)
+        conv[key] = repo_path(value)
     if conv.get("fonts"):
         conv["fonts"] = [repo_path(p) for p in conv["fonts"]]
     profile["_convert"] = conv
@@ -302,6 +317,7 @@ def convert_game(profile, scenario_only=False):
         msg_style=conv.get("msg_style") or "plate",
         title_jump=conv.get("title_jump"),
         asset_dirs=conv.get("asset_dirs"),
+        first_scenario=conv.get("first_scenario"),
         fast_skip=bool(conv.get("fast_skip")),
         portrait=bool(conv.get("portrait")),
         scenario_only=bool(scenario_only or conv.get("scenario_only")),
@@ -391,6 +407,38 @@ def missing_refs(build, source=None):
     return missing, gaps
 
 
+def entry_scenario(build):
+    """The scenario the engine will boot, as declared in index.html (or None).
+
+    Tyrano reads `#first_scenario_file` and otherwise falls back to `first.ks`.
+    """
+    idx = os.path.join(build, "index.html")
+    if not os.path.isfile(idx):
+        return None
+    with open(idx, encoding="utf-8", errors="replace") as f:
+        html = f.read()
+    m = re.search(r'id="first_scenario_file"[^>]*?value="([^"]*)"', html)
+    if not m:
+        return "first.ks"               # engine default
+    value = m.group(1)
+    return os.path.basename(value.split("?")[0].replace("\\", "/")) or None
+
+
+def missing_entry_scenario(build):
+    """True when the engine's entry scenario is not in the build at all.
+
+    Measured on two real ports: a missing entry is invisible offline (black
+    screen, "file not found: ./data/scenario/first.ks") and no other check
+    caught it - the asset-ref check kept saying "no conversion gap" because the
+    dropped file was a scenario, not an asset.
+    """
+    name = entry_scenario(build)
+    if not name:
+        return None
+    return None if os.path.isfile(
+        os.path.join(build, "data", "scenario", name)) else name
+
+
 def verify_build(build, source=None, strict=False):
     """Structural + translation-status check of a converted build.
 
@@ -407,6 +455,12 @@ def verify_build(build, source=None, strict=False):
     scenarios = scenario_files(build)
     if not scenarios:
         problems.append("no data/scenario/**/*.ks in %s" % build)
+    entry_missing = missing_entry_scenario(build)
+    if entry_missing:
+        problems.append(
+            "entry scenario %s is not in the build (the engine will boot to a "
+            "black screen); pass --first-scenario or fix the scenario scan"
+            % entry_missing)
     for problem in problems:
         log.error("%s", problem)
     if problems:

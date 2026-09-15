@@ -83,7 +83,7 @@ def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
             scenario_dir="scenario", scenario_only=False, fonts=None,
             video_dir=None, fast_skip=False, state_overrides_path=None,
             portrait=False, workers=None, video_fit="box", msg_style="plate",
-            title_jump=None, asset_dirs=None):
+            title_jump=None, asset_dirs=None, first_scenario=None):
     """Convert one unpacked KAG3 game into a TyranoScript project.
 
     Programmatic entry point; the Typer command below is its CLI wrapper.  The
@@ -107,6 +107,7 @@ def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
         fast_skip=fast_skip, state_overrides=state_overrides_path,
         portrait=portrait, video_fit=video_fit, msg_style=msg_style,
         title_jump=title_jump, asset_dirs=asset_dirs,
+        first_scenario=first_scenario,
     )
 
     try:
@@ -152,24 +153,59 @@ def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
     # macros (informational)
     macros = _collect_macros(unpacked)
 
-    # scenario
-    scen_src = os.path.join(unpacked, args.scenario_dir)
+    # Scenario: EVERY .ks anywhere in the tree, flattened into data/scenario/.
+    # KAG3 games keep scenarios in the root, in scenario/, and sometimes in
+    # nested folders - measured: one entry scenario was system/gamesystem/first.ks
+    # and another game's were all in scenario/.  The old two-level scan (root +
+    # scenario/) silently dropped the nested ones, including the entry, so the
+    # build booted to a black screen with "file not found:
+    # ./data/scenario/first.ks".
     scen_dst = os.path.join(out_data, "scenario")
-    if os.path.isdir(scen_src):
-        os.makedirs(scen_dst, exist_ok=True)
-        for fn in sorted(os.listdir(scen_src)):
-            sp = os.path.join(scen_src, fn)
-            if not (os.path.isfile(sp) and fn.endswith(".ks")):
+    os.makedirs(scen_dst, exist_ok=True)
+    seen = set()
+    for root_dir, dirs, files in os.walk(unpacked):
+        dirs.sort()                     # deterministic "first copy wins"
+        for fn in sorted(files):
+            if not fn.lower().endswith(".ks"):
                 continue
-            dp = os.path.join(scen_dst, fn.lower())
-            convert_scenario_file(sp, unpacked, dp, macros, stats)
-    # root-level .ks (first.ks / 112.ks / newgame.ks ...)
-    for fn in sorted(os.listdir(unpacked)):
-        if fn.endswith(".ks"):
-            sp = os.path.join(unpacked, fn)
-            if os.path.isfile(sp):
-                dp = os.path.join(scen_dst, fn.lower())
-                convert_scenario_file(sp, unpacked, dp, macros, stats)
+            target = fn.lower()
+            if target in seen:
+                continue                # same basename elsewhere: keep the first
+            seen.add(target)
+            convert_scenario_file(os.path.join(root_dir, fn), unpacked,
+                                  os.path.join(scen_dst, target), macros, stats)
+    if not seen:
+        log.warning("no .ks scenario found under %s", unpacked)
+
+    # Entry scenario.  Tyrano boots by loading `data/scenario/first.ks` unless
+    # index.html overrides it through `#first_scenario_file`, and the engine's
+    # template ships that input with a placeholder value pointing at
+    # http://test.com/... - a game whose entry is not `first.ks` therefore booted
+    # to a black screen ("file not found: ./data/scenario/first.ks").  KAG3 has
+    # no readable declaration of the entry, so prefer the caller's value (game
+    # data, passed in) and fall back to the first.ks convention - loudly when
+    # neither works.
+    entry = _resolve_first_scenario(getattr(args, "first_scenario", None), seen)
+    idx_path = os.path.join(out, "index.html")
+    if entry and os.path.isfile(idx_path):
+        with open(idx_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        patched, n = re.subn(
+            r'(id="first_scenario_file"[^>]*?value=")[^"]*(")',
+            lambda m: m.group(1) + entry + m.group(2), html)
+        if n == 0:
+            patched, n = re.subn(
+                r'(<body[^>]*>)',
+                lambda m: m.group(1) + '\n<input type="hidden" '
+                          'id="first_scenario_file" value="%s">' % entry,
+                html, count=1)
+        if n:
+            with open(idx_path, "w", encoding="utf-8") as f:
+                f.write(patched)
+            log.info("index.html: first scenario = %s", entry)
+        else:
+            log.warning("index.html: could not set #first_scenario_file; the "
+                        "build may not boot")
 
     make_ks = _write_make_ks(scen_dst)
     if make_ks:
@@ -373,6 +409,29 @@ def _write_make_ks(scen_dst):
     return True
 
 
+def _resolve_first_scenario(explicit, seen):
+    """Which scenario the build should boot; None when it cannot be told.
+
+    ``explicit`` is game data (CLI/profile), never a hardcoded title; the
+    fallback is the KAG3 `first.ks` convention.  A wrong entry is invisible
+    offline - it shows up as a black screen with "file not found:
+    ./data/scenario/first.ks" - so an unresolvable entry is a loud warning.
+    """
+    if explicit:
+        name = os.path.basename(explicit).lower()
+        if name not in seen:
+            log.warning("first scenario %s is not among the game's scenarios "
+                        "(%d known); the build will not boot", explicit,
+                        len(seen))
+        return name
+    if "first.ks" in seen:
+        return "first.ks"
+    log.warning("this game has no first.ks and no --first-scenario was given: "
+                "the build will boot to a black screen.  Find the entry "
+                "(title/menu script) and pass --first-scenario NAME.ks")
+    return None
+
+
 def _split_title_jump(value):
     """Split the ``--title-jump`` knob (``storage`` or ``storage:label``).
 
@@ -451,6 +510,11 @@ def cmd(
         help="override the source-folder -> data-folder table for this game "
              "(e.g. \"bg=bgimage,se=sound\"); folders nobody knows are kept "
              "under their own name")] = None,
+    first_scenario: Annotated[Optional[str], typer.Option(
+        "--first-scenario", metavar="NAME.ks",
+        help="scenario the engine boots (default: first.ks when the game has "
+             "one); game specific - a wrong value shows up as a black "
+             "screen")] = None,
     verbose: cliutil.Verbose = False,
     quiet: cliutil.Quiet = False,
     log_file: cliutil.LogFile = None,
@@ -463,7 +527,8 @@ def cmd(
                    fonts=font, video_dir=video_dir, fast_skip=fast_skip,
                    state_overrides_path=state_overrides, portrait=portrait,
                    workers=workers, video_fit=video_fit, msg_style=msg_style,
-                   title_jump=title_jump, asset_dirs=_parse_asset_dirs(asset_dirs))
+                   title_jump=title_jump, asset_dirs=_parse_asset_dirs(asset_dirs),
+                   first_scenario=first_scenario)
 
 
 def _parse_asset_dirs(spec):

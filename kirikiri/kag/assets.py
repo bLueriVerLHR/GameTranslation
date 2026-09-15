@@ -268,6 +268,7 @@ def _convert_videos(unpacked, out_data, video_dir, stats):
 
     out_dir = os.path.join(out_data, "video")
     os.makedirs(out_dir, exist_ok=True)
+    stats.setdefault("video_stale", 0)
     vmap = {}
     for src in sorted(found):
         stem = os.path.splitext(os.path.basename(src))[0]
@@ -280,6 +281,18 @@ def _convert_videos(unpacked, out_data, video_dir, stats):
                 break
         if webm:
             shutil.copy2(webm, os.path.join(out_dir, stem + ".webm"))
+            # Self-heal: an earlier run (before the WebM cache existed) may have
+            # copied the raw container here as well.  Measured on a real game:
+            # a build kept 446 stale .mpg/.wmv next to their 222 .webm
+            # counterparts - ~1.3 GiB of files no browser can play.  Only files
+            # with this video's own stem are touched.
+            for name in os.listdir(out_dir):
+                if os.path.splitext(name)[0].lower() != stem.lower():
+                    continue
+                if os.path.splitext(name)[1].lower() not in exts:
+                    continue
+                os.remove(os.path.join(out_dir, name))
+                stats["video_stale"] += 1
             vmap[stem.lower()] = stem + ".webm"
             vmap[os.path.basename(src).lower()] = stem + ".webm"
             stats["video"] += 1
@@ -292,8 +305,9 @@ def _convert_videos(unpacked, out_data, video_dir, stats):
                         "copied as-is; browsers cannot play %s",
                         os.path.relpath(src, unpacked), video_dir or "-",
                         os.path.splitext(src)[1])
-    log.info("videos: %d -> %s (+%d raw)", stats["video"], out_dir,
-             stats["video_raw"])
+    log.info("videos: %d -> %s (+%d raw, %d stale raw removed)",
+             stats["video"], out_dir, stats["video_raw"],
+             stats.get("video_stale", 0))
     return vmap
 
 

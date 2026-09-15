@@ -59,11 +59,16 @@ def filters_for(level=DEFAULT_LEVEL):
     return [{"id": py7zr.FILTER_ZSTD, "level": int(level)}]
 
 
-def create(folder, archive, level=DEFAULT_LEVEL, threads=None):
+def create(folder, archive, level=DEFAULT_LEVEL, threads=None, wrapper=True):
     """Create `archive` (7z + zstd) from `folder`; returns the archive path.
 
     The folder is stored under its own basename, which is what the previous
     ``7z a <archive> <folder>`` did and what ``deliver`` expects to extract.
+    Pass ``wrapper=False`` to store the folder's *contents* at the archive root
+    instead: that is the shape a device-side importer wants (JoiPlay opens an
+    archive whose root holds ``index.html``) and the shape the delivered folders
+    under the games dir have (measured: 50 of 51 delivered builds keep
+    ``index.html`` at their own root).
     `threads` is accepted for call-site compatibility: py7zr has no ``-mmt``
     equivalent for writing (it measured faster than 7z.exe -mmt anyway), so
     it only controls multiprocessing on the extraction side.
@@ -79,10 +84,18 @@ def create(folder, archive, level=DEFAULT_LEVEL, threads=None):
         os.remove(archive)
         log.info("removed stale archive %s", archive)
 
-    root = os.path.basename(os.path.normpath(folder))
-    log.info("running: py7zr zstd level=%s %s <- %s", level, archive, folder)
+    root = os.path.basename(os.path.normpath(folder)) if wrapper else ""
+    log.info("running: py7zr zstd level=%s %s <- %s (wrapper=%s)",
+             level, archive, folder, wrapper)
     with py7zr.SevenZipFile(archive, "w", filters=filters_for(level)) as a:
-        a.writeall(folder, root)
+        if wrapper:
+            a.writeall(folder, root)
+        else:
+            # writeall(folder, "") would store the folder itself under its
+            # absolute path (py7zr falls back to the real path for an empty
+            # arcname), so add each top-level entry under its own name.
+            for name in sorted(os.listdir(folder)):
+                a.writeall(os.path.join(folder, name), name)
     size = os.path.getsize(archive)
     log.info("archive created: %s (%.1f MB)", archive, size / 1e6)
     return archive

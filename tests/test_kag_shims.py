@@ -262,6 +262,26 @@ class TestGalleryReplayUX:
         # ...but <img> children must survive: the next-page cue lives there too
         assert "img{display:none" not in raw
 
+    def test_bare_style_also_drops_the_shim_plate_and_shadow(self):
+        raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
+        # Removing the backing is not enough: the shim's own default dressing
+        # (translucent plate + big drop shadow on the frame) has to go too, or
+        # the window still reads as "the plate is there" (owner: "底衬好像没
+        # 删除干净，我还是能看出有阴影").  #tyrano_base outranks the defaults.
+        assert "#tyrano_base .message_outer.kag3-dialog-frame" in raw
+        assert "#tyrano_base .message_outer.kag3-name-frame" in raw
+        assert "box-shadow:none !important" in raw
+
+    def test_style_align_is_deferred_while_the_dialog_layer_is_empty(self):
+        raw = open(os.path.join(JS_DIR, "noop_plus_real.js"), encoding="utf-8").read()
+        # KAG3 scopes [style] to the layer named by [current]; this game emits a
+        # bare [style align=center] right before drawing the speaker name, which
+        # used to leave every later line of dialogue centred (owner: "选项之后
+        # 的对话框内容全变成居中了").  An align that lands on the empty dialog
+        # layer belongs to the text written next, so it is held for [ch].
+        assert "__kag3_pending_align" in raw
+        assert "layer === 'message0'" in raw
+
     def test_replay_exit_button_wires_the_game_return_label(self):
         raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
         assert "__kag3_context_return" in raw

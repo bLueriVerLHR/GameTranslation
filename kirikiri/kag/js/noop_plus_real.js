@@ -95,6 +95,14 @@
         // Mark this window as [ch]-composed so it is exempt from the hard clip:
         // choice items legitimately need more room than the 113px dialogue window.
         $i.addClass("kag3ch-msg");
+        // Alignments held back because they arrived while the dialog layer was
+        // still empty belong to the text being written now (see the [style]
+        // wrapper above).
+        if (window.__kag3_pending_align) {
+          $i.css("text-align", window.__kag3_pending_align);
+          $i.find("p").css("text-align", window.__kag3_pending_align);
+          window.__kag3_pending_align = '';
+        }
         var $current = this.kag.getMessageCurrentSpan();
         if (!$current.length) $current = this.kag.setMessageCurrentSpan();
         // A [ch] inside Tyrano's [link] span is a selectable item. Mark the
@@ -140,6 +148,19 @@
   // from [ch], otherwise the choice prompt and the first item share one line
   // (owner: "第一个选项不要和描述放在同一行，换一下行吧") and every option loses
   // the alignment the macro asked for.
+  //
+  // KAG3 scopes [style] to the layer named by [current]; the engine reports the
+  // inner of that layer.  The game uses that to align the *name* frame
+  // (name.ks NAME_W: [current layer=message1] -> [locate] -> [style align=center])
+  // but also emits a bare [style align=center] for the message layer right
+  // before it draws a name (SELECT_CLEAR: [cm] [MES_SIZE] [style align=center])
+  // -- measured: that wrote an inline text-align:center onto message0's inner
+  // and every later line of dialogue stayed centred.owner: "选项之后的对话框
+  // 内容全变成居中了").  An alignment request that lands on the dialogue layer
+  // while that layer has no text yet is meant for the text that is about to be
+  // written (in this game: the speaker name, one layer over), so hold it and
+  // apply it to whatever [ch] writes next.  Text already on screen still gets
+  // restyled immediately, which is what KAG3 does.
   (function () {
     var T = tyrano.plugin.kag.tag;
     var st = T["style"];
@@ -149,6 +170,13 @@
       st.start = function (pm) {
         if (pm && pm.align) {
           var inner = this.kag.getMessageInnerLayer();
+          var layer = String((this.kag.stat && this.kag.stat.current_layer) || '');
+          var has_text = inner.length > 0 &&
+            String(inner.text() || '').replace(/[\s\u3000]/g, '') !== '';
+          if (inner.length > 0 && !has_text && layer === 'message0') {
+            window.__kag3_pending_align = String(pm.align);
+            return _ss.call(this, pm);
+          }
           inner.css("text-align", String(pm.align));
           inner.find("p").css("text-align", String(pm.align));
         }

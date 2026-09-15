@@ -198,10 +198,12 @@ Windows Python 运行不依赖图片二进制扩展的回归测试。最终合�
       播放路径（实测 Howler 实例 1→2），`target=se` 已排除；注：11 个回放里有 6 个
       开场曲本来就是菜单曲，那是原作脚本选择。④ 回放中途无法退出（游戏自己在回放
       开始时用 `[rclick enabled=true jump=false]` 解除右键返回，手机又无右键）——
-      新增浮动“退出鉴赏”按钮（仅 `tf.now_pv==1` 且有 `*return*` 返回标签时显示），
-      点击清空 call/macro/if 帧后跳到游戏自己的 `*return_seen` 并复位
-      `tf.now_pv`/`sf.seenflg`（不复位会让按钮不隐、图库存读档按钮被 SYSMENU 分支
-      隐掉）。实测：点击后 `seen.ks`、栈归零、按钮隐藏。
+      在手机控制面板（`#kag3-mobile-panel`）里新增 `GALLERY` 条目（仅
+      `tf.now_pv==1` 且有 `*return*` 返回标签时出现），点击清空 call/macro/if 帧后
+      跳到游戏自己的 `*return_seen` 并复位 `tf.now_pv`/`sf.seenflg`（不复位会让
+      条目不隐、图库存读档按钮被 SYSMENU 分支隐掉）。**做成浮动按钮会与菜单键
+      （☰）重叠**（owner 看图发现），故必须放在面板行内。实测：点击后 `seen.ks`、
+      栈归零、条目自动隐藏。
 - [x] 消息底衬实验（用户要求）：新增 `--msg-style bare` —— 去掉主消息层
       （`message0`）的底衬图，改给文字加描边 + 阴影、不透明度 0.8；名字框在
       `message1` 层不受影响。默认仍为 `plate`，待用户看效果决定保留与否。

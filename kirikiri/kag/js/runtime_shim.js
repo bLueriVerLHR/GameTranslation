@@ -86,66 +86,41 @@ document.addEventListener('click', function (e) {
   if (Object.keys(window.__kag3_maps || {}).length > 0) return;
   __kag3_exec_rclick();
 }, true);
-// Floating replay-exit button.  The game disarms its own right-click return
-// while a replay runs ([rclick call=false jump=false enabled=true] at replay
-// start), so a touch player has no way back to the gallery before the replay
-// ends.  While tf.now_pv == 1 and the game has registered a *return_* label,
-// show a small button; clicking it abandons the replay's call/macro frames
-// (KAG3 rclick-jump = process(): a full scenario switch, not a nested call)
-// and jumps to that registered return label.
-(function () {
-  var btn = null;
-  var ensure_btn = function () {
-    if (btn) return btn;
-    btn = document.createElement('button');
-    btn.type = 'button';
-    btn.setAttribute('data-kag3', 'pv-exit');
-    btn.textContent = '退出鉴赏';
-    btn.style.cssText = 'position:fixed;top:8px;right:8px;z-index:2147483000;' +
-      'display:none;padding:6px 12px;opacity:.75;border:1px solid rgba(255,255,255,.6);' +
-      'border-radius:6px;background:rgba(0,0,0,.55);color:#fff;font-size:14px;' +
-      'line-height:1.2;cursor:pointer;';
-    btn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      var kag = window.TYRANO && TYRANO.kag;
-      if (!kag || !__kag3_context_return) return;
-      try {
-        if (kag.stat && kag.stat.stack) {
-          if (kag.stat.stack.call) kag.stat.stack.call.length = 0;
-          if (kag.stat.stack.macro) kag.stat.stack.macro.length = 0;
-          if (kag.stat.stack.if) kag.stat.stack.if.length = 0;
-        }
-      } catch (e1) {}
-      try {
-        // The normal path resets these in the post-replay cleanup we just
-        // abandoned (PV_START's now_pv=0 tail and seen_set.ks "sf.seenflg=0").
-        // Leaving them set would keep the button visible and hide the
-        // save/load buttons in the gallery (SYSMENU branches on seenflg).
-        kag.variable.tf.now_pv = 0;
-        kag.variable.sf.seenflg = 0;
-      } catch (e3) {}
-      try {
-        __kag3_jump(kag, __kag3_context_return.storage, __kag3_context_return.target);
-      } catch (e2) {}
-      btn.style.display = 'none';
-    });
-    var add = function () { document.body.appendChild(btn); };
-    if (document.body) add();
-    else document.addEventListener('DOMContentLoaded', add);
-    return btn;
-  };
-  setInterval(function () {
-    try {
-      var kag = window.TYRANO && TYRANO.kag;
-      var show = !!(kag && kag.variable && kag.variable.tf &&
-                    kag.variable.tf.now_pv == 1 && __kag3_context_return);
-      var b = ensure_btn();
-      if (b.style.display !== (show ? 'block' : 'none')) {
-        b.style.display = show ? 'block' : 'none';
-      }
-    } catch (e) {}
-  }, 500);
-})();
+// Replay-exit action, exposed for the mobile control panel.  The game disarms
+// its own right-click return while a replay runs ([rclick call=false
+// jump=false enabled=true] at replay start), so a touch player has no way
+// back to the gallery before the replay ends.  KAG3 rclick-jump = process():
+// a full scenario switch, not a nested [call], so the abandoned replay frames
+// must be dropped; the normal path also resets the two flags we skip
+// (PV_START's now_pv=0 tail and seen_set.ks "sf.seenflg=0") - leaving them set
+// would keep the button visible and hide the save/load buttons in the gallery
+// (SYSMENU branches on seenflg).
+var __kag3_exit_replay = function () {
+  var kag = window.TYRANO && TYRANO.kag;
+  if (!kag || !__kag3_context_return) return false;
+  try {
+    if (kag.stat && kag.stat.stack) {
+      if (kag.stat.stack.call) kag.stat.stack.call.length = 0;
+      if (kag.stat.stack.macro) kag.stat.stack.macro.length = 0;
+      if (kag.stat.stack.if) kag.stat.stack.if.length = 0;
+    }
+  } catch (e1) {}
+  try {
+    kag.variable.tf.now_pv = 0;
+    kag.variable.sf.seenflg = 0;
+  } catch (e3) {}
+  try {
+    __kag3_jump(kag, __kag3_context_return.storage, __kag3_context_return.target);
+  } catch (e2) {}
+  return true;
+};
+// True while a replay is running AND the game has registered a *return_* label
+// to go back to - the only situation where an exit action makes sense.
+var __kag3_exit_available = function () {
+  var kag = window.TYRANO && TYRANO.kag;
+  return !!(kag && kag.variable && kag.variable.tf &&
+            kag.variable.tf.now_pv == 1 && __kag3_context_return);
+};
 // Experimental bare message style (converter --msg-style bare): drop the
 // story window's backing plate and let the text carry an outline + shadow at
 // reduced opacity.  Scoped to the main message layer (message0) only - the
@@ -804,7 +779,8 @@ if (window.__kag3_msg_style === 'bare') {
           '<div class=kag3-mobile-actions>' +
           '<button data-kag3-action=save>SAVE</button><button data-kag3-action=load>LOAD</button>' +
           '<button data-kag3-action=log>LOG</button><button data-kag3-action=auto>AUTO</button>' +
-          '<button data-kag3-action=skip>SKIP</button><button data-kag3-action=hide>HIDE</button></div>';
+          '<button data-kag3-action=skip>SKIP</button><button data-kag3-action=hide>HIDE</button>' +
+          '<button data-kag3-action=gallery style="display:none">GALLERY</button></div>';
         panel.style.cssText = 'position:fixed;right:10px;top:10px;z-index:2147483000;' +
           'display:flex;gap:8px;align-items:flex-start;font:600 14px sans-serif;pointer-events:auto';
         var actions = panel.querySelector('.kag3-mobile-actions');
@@ -823,7 +799,16 @@ if (window.__kag3_msg_style === 'bare') {
           var s = panel.querySelector('[data-kag3-action=skip]');
           if (a) a.setAttribute('aria-pressed', kag.stat.is_auto ? 'true' : 'false');
           if (s) s.setAttribute('aria-pressed', kag.stat.is_skip ? 'true' : 'false');
+          // GALLERY (replay exit) only makes sense while a replay runs and the
+          // game registered a *return_* label; it is part of this control row
+          // so it can never overlap the menu key (owner-reported overlap when
+          // it was a separate floating button).
+          var g = panel.querySelector('[data-kag3-action=gallery]');
+          if (g) g.style.display = __kag3_exit_available() ? '' : 'none';
         };
+        // The replay can start without any panel interaction, so keep the
+        // GALLERY entry in sync with the replay state.
+        setInterval(sync, 500);
         var menuLayer = kag.layer.getMenuLayer();
         var menuPending = false;
         var menuIsVisible = function () {
@@ -859,6 +844,12 @@ if (window.__kag3_msg_style === 'bare') {
               if (kag.stat.is_skip) kag.setSkip(false);
               else if (kag.stat.is_adding_text) kag.setSkip(true);
               else kag.ftag.startTag('skipstart', {});
+            }
+            else if (a === 'gallery') {
+              // Leave the replay through the game's own return handler.
+              actions.style.display = 'none';
+              __kag3_log('mobile panel: exit replay');
+              __kag3_exit_replay();
             }
             else if (a === 'hide') {
               if (kag.stat.is_hide_message) {

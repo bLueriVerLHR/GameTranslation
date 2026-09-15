@@ -83,7 +83,7 @@ def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
             scenario_dir="scenario", scenario_only=False, fonts=None,
             video_dir=None, fast_skip=False, state_overrides_path=None,
             portrait=False, workers=None, video_fit="box", msg_style="plate",
-            title_jump=None):
+            title_jump=None, asset_dirs=None):
     """Convert one unpacked KAG3 game into a TyranoScript project.
 
     Programmatic entry point; the Typer command below is its CLI wrapper.  The
@@ -96,6 +96,9 @@ def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
     frame ratio).  ``msg_style``: "plate" keeps the game's message window
     frame; "bare" drops the plate and gives the text an outline + shadow at
     reduced opacity (experimental, main story layer only).
+    ``asset_dirs`` overrides the source-folder -> data-folder table for this
+    game (KAG3 games name their asset folders inconsistently; see
+    kirikiri.kag.assets.DEFAULT_ASSET_DIRS).
     """
     args = SimpleNamespace(
         unpacked=unpacked, engine=engine, out_dir=out_dir,
@@ -103,7 +106,7 @@ def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
         scenario_only=scenario_only, font=fonts, video_dir=video_dir,
         fast_skip=fast_skip, state_overrides=state_overrides_path,
         portrait=portrait, video_fit=video_fit, msg_style=msg_style,
-        title_jump=title_jump,
+        title_jump=title_jump, asset_dirs=asset_dirs,
     )
 
     try:
@@ -175,7 +178,8 @@ def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
     # assets
     video_map = {}
     if not args.scenario_only:
-        _convert_assets(unpacked, out_data, stats, workers=workers)
+        _convert_assets(unpacked, out_data, stats, workers=workers,
+                        asset_dirs=args.asset_dirs)
         video_map = _convert_videos(unpacked, out_data, args.video_dir, stats)
     else:
         video_map = _video_map_from_output(out_data)
@@ -442,6 +446,11 @@ def cmd(
         "--workers",
         help="parallel asset workers (default: physical cores, auto-tuned; "
              "1 = serial)")] = None,
+    asset_dirs: Annotated[Optional[str], typer.Option(
+        "--asset-dirs", metavar="SRC=DST[,SRC=DST...]",
+        help="override the source-folder -> data-folder table for this game "
+             "(e.g. \"bg=bgimage,se=sound\"); folders nobody knows are kept "
+             "under their own name")] = None,
     verbose: cliutil.Verbose = False,
     quiet: cliutil.Quiet = False,
     log_file: cliutil.LogFile = None,
@@ -454,7 +463,27 @@ def cmd(
                    fonts=font, video_dir=video_dir, fast_skip=fast_skip,
                    state_overrides_path=state_overrides, portrait=portrait,
                    workers=workers, video_fit=video_fit, msg_style=msg_style,
-                   title_jump=title_jump)
+                   title_jump=title_jump, asset_dirs=_parse_asset_dirs(asset_dirs))
+
+
+def _parse_asset_dirs(spec):
+    """Parse ``SRC=DST[,SRC=DST...]`` into a dict (None/empty -> None)."""
+    if not spec:
+        return None
+    table = {}
+    for item in spec.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise typer.BadParameter("bad --asset-dirs entry %r (expected SRC=DST)"
+                                     % item)
+        src, dst = (part.strip() for part in item.split("=", 1))
+        if not src or not dst:
+            raise typer.BadParameter("bad --asset-dirs entry %r (expected SRC=DST)"
+                                     % item)
+        table[src] = dst
+    return table or None
 
 
 app = cliutil.command_app(cmd, help=__doc__)

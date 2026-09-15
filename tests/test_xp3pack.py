@@ -24,9 +24,12 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
-# xp3pack.verify() does `from xp3tool import ...`, so the kirikiri dir must
-# be importable as a top-level package during tests.
-sys.path.insert(0, str(REPO_ROOT / "kirikiri"))
+# NOTE: the kirikiri/ dir must NOT go on sys.path: it would make a bare
+# `import pipeline` / `import xp3tool` resolve to kirikiri/*.py (kirikiri has a
+# pipeline.py mirroring tyrano/pipeline.py), shadowing the repo-root modules for
+# every test collected afterwards.  xp3pack.verify() imports the sibling module
+# by name, which works because the package import below sets up the package
+# first (and kirikiri/ itself is a package).
 
 from kirikiri import xp3pack  # noqa: E402
 from kirikiri import xp3tool  # noqa: E402

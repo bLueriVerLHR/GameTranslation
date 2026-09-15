@@ -101,7 +101,14 @@ def pack(in_dir, out_path, zlib_level=9):
 
 def verify(out_path, files):
     """Self-check: re-read the archive with the xp3tool parser."""
-    from xp3tool import entry_size, open_xp3
+    # Import the sibling module through the package so this works both as
+    # `kirikiri.xp3pack` and as a script; a bare `from xp3tool import ...` only
+    # worked when kirikiri/ itself was on sys.path, which shadowed the repo-root
+    # modules (kirikiri/ has pipeline.py) for everything imported afterwards.
+    try:
+        from kirikiri.xp3tool import entry_size, open_xp3
+    except ImportError:                # run directly: python kirikiri/xp3pack.py
+        from xp3tool import entry_size, open_xp3
 
     parsed = {e["name"]: entry_size(e) for e in open_xp3(out_path)}
     expected = {rel: os.path.getsize(full) for rel, full in files}

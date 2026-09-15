@@ -27,8 +27,9 @@ Unity = MelonLoader/BepInEx 运行时 hook；Wolf RPG = rewolf-trans 补丁
 GameTranslation/
 ├── pipeline.py          # RPG Maker CLI 包装（命令定义在 rpgmaker/cli.py，Typer）
 ├── kirikiri/            # KiriKiri（吉里吉里）工具包
-│   ├── xp3tool.py       #   XP3 解包（zlib 索引、0x80 间接块、raw/zlib 段）
+│   ├── xp3tool.py       #   XP3 解包（zlib 索引、0x80 间接块、raw/zlib 段，含受保护变体体检）
 │   ├── xp3pack.py       #   XP3 打包（patch.xp3：raw 段 + zlib 索引 + 自校验）
+│   ├── pipeline.py      #   通用移植流水线（probe/unpack/convert/verify/port，按 profile 跑）
 │   ├── ks_extract.py    #   .ks 解析（编码探测、方括号配对、可译性判定）
 │   ├── tjs2js.py        #   TJS2 → JavaScript 转换（KAG3 [iscript] 块）
 │   ├── kag/             #   KAG3 → TyranoScript 转换器（原 convert_kag.py 拆分）

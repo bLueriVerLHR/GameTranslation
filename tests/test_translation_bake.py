@@ -182,7 +182,8 @@ def test_unify_plugin_fonts_fixes_language_faces_and_js(tmp_path):
     with io.open(hud, "w", encoding="utf-8", newline="\n") as handle:
         handle.write("return `table {\n    font-family: \"Trebuchet MS\", Arial;\n}\n`;\n"
                      "// font-family: GameFont;\n")
-    changed, js_files, details = bake_mod.unify_plugin_fonts(game)
+    changed, js_files, details = bake_mod.unify_plugin_fonts(
+        game, backup_dir=str(tmp_path / "backup"))
     params = json.loads(io.open(plugins_path, encoding="utf-8").read()
                         .split("[", 1)[1].rsplit("]", 1)[0])["parameters"]
     assert params["Font Name CH"] == "GameFont"
@@ -194,9 +195,12 @@ def test_unify_plugin_fonts_fixes_language_faces_and_js(tmp_path):
     patched = io.open(hud, encoding="utf-8").read()
     assert 'font-family: GameFont;' in patched
     assert "Trebuchet" not in patched
-    assert os.path.isfile(hud + ".prefont")      # reversible
+    assert os.path.isfile(os.path.join(str(tmp_path / "backup"),
+                                       "js", "plugins", "SRD_HUDMaker.js"))
+    assert not os.path.isfile(hud + ".prefont")   # never inside the game dir
     # idempotent
-    assert bake_mod.unify_plugin_fonts(game)[0] == 0
+    assert bake_mod.unify_plugin_fonts(
+        game, backup_dir=str(tmp_path / "backup"))[0] == 0
 
 
 def test_bake_font_only_skips_key_writing(tmp_path):

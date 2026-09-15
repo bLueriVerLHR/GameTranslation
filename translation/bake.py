@@ -140,7 +140,7 @@ def save_plugin_params(game_dir, plugins, prefix, suffix):
     return path
 
 
-def unify_plugin_fonts(game_dir, family="GameFont"):
+def unify_plugin_fonts(game_dir, family="GameFont", backup_dir=None):
     """Point every *font* the game's plugins name at the unified family.
 
     Found by probing a real build: ``YEP_MessageCore`` ships language-specific
@@ -183,7 +183,7 @@ def unify_plugin_fonts(game_dir, family="GameFont"):
         replaced, count = js_font.subn("font-family: %s;" % family, source)
         if not count:
             continue
-        _backup_for(game_dir, path, source)
+        _backup_for(game_dir, path, source, backup_dir)
         with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(replaced)
         rel = os.path.relpath(path, game_dir).replace(os.sep, "/")
@@ -193,9 +193,21 @@ def unify_plugin_fonts(game_dir, family="GameFont"):
     return changed, js_files, details
 
 
-def _backup_for(game_dir, path, old_text):
-    """Remember the pre-patch text (``.prefont`` sidecar) so it stays reversible."""
+def _backup_for(game_dir, path, old_text, backup_dir=None):
+    """Remember the pre-patch text so the unification stays reversible.
+
+    The sidecar lands in ``<work>/backup`` when a backup dir is given - never
+    next to the game file, which would ship a stray ``.prefont`` file in the
+    release archive.
+    """
     rel = os.path.relpath(path, game_dir).replace(os.sep, "/")
+    if backup_dir:
+        target = os.path.join(backup_dir, rel)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        if not os.path.isfile(target):
+            with io.open(target, "w", encoding="utf-8", newline="\n") as h:
+                h.write(old_text)
+        return rel
     sidecar = path + ".prefont"
     if not os.path.isfile(sidecar):
         with io.open(sidecar, "w", encoding="utf-8", newline="\n") as handle:
@@ -322,7 +334,8 @@ def bake(game_dir, work_dir, apply_unified_font=True, repo_root=None,
         for rel in font_files:
             if rel != os.path.join("fonts", UNIFIED_FONT):
                 _backup(work_dir, game_dir, rel)
-        changed, js_files, font_details = unify_plugin_fonts(game_dir)
+        changed, js_files, font_details = unify_plugin_fonts(
+            game_dir, backup_dir=os.path.join(work_dir, "backup"))
         if changed:
             _backup(work_dir, game_dir, "js/plugins.js")
         font_files += js_files

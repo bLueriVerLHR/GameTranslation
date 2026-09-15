@@ -181,7 +181,10 @@ def unify_plugin_fonts(game_dir, family="GameFont", backup_dir=None):
         with io.open(path, encoding="utf-8", errors="replace") as handle:
             source = handle.read()
         replaced, count = js_font.subn("font-family: %s;" % family, source)
-        if not count:
+        if not count or replaced == source:
+            # Already unified: replacing a value with itself would report a
+            # change that did not happen, which makes "is it unified?"
+            # unanswerable from the report.
             continue
         _backup_for(game_dir, path, source, backup_dir)
         with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
@@ -263,7 +266,7 @@ def _write_json(path, payload):
 
 
 def bake(game_dir, work_dir, apply_unified_font=True, repo_root=None,
-         font_path=None, dry_run=False, font_only=False):
+         font_path=None, dry_run=False, font_only=False, write_kv=True):
     """Write every translated key back into the game; return a report.
 
     With ``dry_run`` nothing is written and nothing is backed up: the report
@@ -354,6 +357,15 @@ def bake(game_dir, work_dir, apply_unified_font=True, repo_root=None,
     elif plugins is not None and not font_only:
         written.append("js/plugins.js (dry run)")
 
+    kv_path = None
+    if write_kv and not dry_run and not font_only:
+        # House rule: the translation dictionary ships with the game, so the
+        # text can be revised later without re-extracting the whole game.
+        source = os.path.join(work_dir, "translated.json")
+        if os.path.isfile(source):
+            kv_path = os.path.join(game_dir, "translation_kv.json")
+            shutil.copyfile(source, kv_path)
+
     return {
         "keys": len(values),
         "applied": applied,
@@ -364,5 +376,6 @@ def bake(game_dir, work_dir, apply_unified_font=True, repo_root=None,
         "font_warnings": warnings,
         "font_report": report_font,
         "font_details": font_details[:20],
+        "translation_kv": kv_path,
         "backup_dir": os.path.join(work_dir, "backup"),
     }

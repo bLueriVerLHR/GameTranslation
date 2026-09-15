@@ -165,6 +165,24 @@ def test_bake_dry_run_changes_nothing(tmp_path):
                                            "Map001.json"))
 
 
+def test_bake_ships_the_translation_kv(tmp_path):
+    """House rule: the dictionary travels with the build."""
+    game = make_game(str(tmp_path / "game"))
+    key = ("data/Map001.json#events[1].pages[0].list[0].parameters[0]")
+    work = prepare_work(tmp_path, game, {key: "\u554f\u5019"})
+    with io.open(os.path.join(work, "translated.json"), "w",
+                 encoding="utf-8", newline="\n") as handle:
+        json.dump({"\u3042\u3044\u3046": "\u554f\u5019"}, handle,
+                  ensure_ascii=False)
+    report = bake_mod.bake(game, work, apply_unified_font=False)
+    kv = os.path.join(game, "translation_kv.json")
+    assert report["translation_kv"] == kv and os.path.isfile(kv)
+    assert _load(kv) == {"\u3042\u3044\u3046": "\u554f\u5019"}
+    without = bake_mod.bake(game, work, apply_unified_font=False,
+                            write_kv=False)
+    assert without["translation_kv"] is None
+
+
 def test_unify_plugin_fonts_fixes_language_faces_and_js(tmp_path):
     """A Chinese face in a plugin parameter is what makes a build look mixed."""
     game = make_game(str(tmp_path / "game"))
@@ -199,8 +217,9 @@ def test_unify_plugin_fonts_fixes_language_faces_and_js(tmp_path):
                                        "js", "plugins", "SRD_HUDMaker.js"))
     assert not os.path.isfile(hud + ".prefont")   # never inside the game dir
     # idempotent
+    # idempotent: nothing left to change, and it says so
     assert bake_mod.unify_plugin_fonts(
-        game, backup_dir=str(tmp_path / "backup"))[0] == 0
+        game, backup_dir=str(tmp_path / "backup")) == (0, [], [])
 
 
 def test_bake_font_only_skips_key_writing(tmp_path):

@@ -242,7 +242,11 @@ class TestGalleryReplayUX:
     def test_replay_exit_button_wires_the_game_return_label(self):
         raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
         assert "__kag3_context_return" in raw
-        assert "pv-exit" in raw
+        # the exit action lives in the mobile control row (a separate floating
+        # button overlapped the menu key -- owner-reported)
+        assert "data-kag3-action=gallery" in raw
+        assert "__kag3_exit_replay" in raw
+        assert "__kag3_exit_available" in raw
         assert "now_pv == 1" in raw
         # the button abandons the replay frames instead of leaving them
         # dangling under the gallery (KAG3 rclick-jump = process())
@@ -251,6 +255,8 @@ class TestGalleryReplayUX:
         assert "__kag3_jump(kag, __kag3_context_return.storage" in raw
         # only a *return_* label is remembered as the exit target
         assert "/return/i.test" in raw
+        # the row must refresh itself: a replay can start without panel input
+        assert "setInterval(sync, 500)" in raw
 
     def test_video_fill_branch_is_gated_on_the_injected_flag(self):
         raw = open(os.path.join(JS_DIR, "video_shim.js"), encoding="utf-8").read()

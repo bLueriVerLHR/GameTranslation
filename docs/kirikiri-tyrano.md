@@ -883,12 +883,16 @@ shim 因此从不传 volume —— 影片**一直静音播放**，玩家只听�
 **实测**：pv 模式下重放同一曲目 → Howler 实例数 1→2（走了完整播放
 路径）；pv=0 对照组不新增实例。
 
-**退出按钮**：游戏在回放开始时用 `[rclick call=false jump=false
-enabled=true]` **主动解除**右键返回，手机端又没有右键 —— 回放中途无路可退。
-垫片因此实现 `[rclick]`（已有）之外再加一个浮动按钮：
+**退出按钮（做在手机控制面板里）**：游戏在回放开始时用 `[rclick call=false
+jump=false enabled=true]` **主动解除**右键返回，手机端又没有右键 —— 回放中途
+无路可退。实现方式：在垫片自己的紧凑控制面板（`#kag3-mobile-panel`：☰ +
+SAVE/LOAD/LOG/AUTO/SKIP/HIDE）里加一个 **`GALLERY`** 条目：
 
-- 只在高 `tf.now_pv == 1` **且**游戏注册过 `*return*` 类返回标签时显示
+- 只在高 `tf.now_pv == 1` **且**游戏注册过 `*return*` 类返回标签时出现
   （`[rclick jump=true target="*return_seen"]` 是游戏的“回图库”处理器）；
+- **不能做成独立浮动按钮**：它会在右上角与菜单键（☰）重叠（owner 看图
+  发现）—— 放进同一行由 flex 排版，天然不重叠，也符合“进菜单里用”的要求；
+  面板每 500ms 同步一次可见性（回放可能不是由面板操作启动的）；
 - 点击时**先清空 `stat.stack` 的 call/macro/if 帧再跳转** —— KAG3 的
   右键跳转等于 `process()`（整场景切换），不是嵌套 `[call]`；不清帧会
   在栈底留下回放的悬挂帧；
@@ -897,8 +901,9 @@ enabled=true]` **主动解除**右键返回，手机端又没有右键 —— �
   `sf.seenflg=0`），不复位会让按钮一直显示、并让图库的存读档按钮消失
   （`SYSMENU` 分支看 `seenflg`）。
 
-**实测**：点击前 `pv=1/seenflg=1/define.ks`、按钮 `display:block`；点击后
-`sc=seen.ks`、`pv=0`、`seenflg=0`、call/macro 栈均为 0、按钮自动隐藏。
+**实测**：回放中展开面板后 `GALLERY` 位于 [1167,66]（☰ 在 [1208,10]，
+不重叠）；点击后 `sc=seen.ks`、`pv=0`、`seenflg=0`、call/macro 栈均为 0、
+条目自动隐下去（`display:none`）。
 
 **实验文字样式**（试玩反馈，开关式）：`--msg-style bare` 去掉主消息层
 （`message0`）的底衬图，改给文字加描边 + 阴影、不透明度 0.8；名字框在

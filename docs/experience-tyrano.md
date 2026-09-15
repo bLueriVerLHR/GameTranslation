@@ -180,9 +180,9 @@ promise 被拒时挂一次性 click/touchstart/keydown 监听，首次用户交�
 - **连带恢复**：本次修好的是语音、语音重播、自动模式、声音测试页与一个音量拆分
   辅助函数——凡是「由游戏 iscript 定义、又被 `[exp]/[if]/[hact]` 调用」的函数都属同一类。
 
-## 5. 音频标签的三个引擎事实（钩子测轨迹时必须知道）
+## 5. 音频标签的四个引擎事实（钩子测轨迹时必须知道）
 
-移植 KAG3 音频时踩到的、**不看引擎源码就会误判**的三条：
+移植 KAG3 音频时踩到的、**不看引擎源码就会误判**的四条：
 
 1. **`[playse]` 内部就是调 `[playbgm]`。** `kag.tag_audio.js` 里
    `tyrano.plugin.kag.tag.playse.start` 直接 `this.kag.ftag.startTag("playbgm", pm)`，
@@ -199,3 +199,12 @@ promise 被拒时挂一次性 click/touchstart/keydown 监听，首次用户交�
    对“游戏用同一首曲子做回放开场”的写法，效果就是**无缝接着放**，玩家
    听不出“回放开始了”。要在回放模式下强制重启，先清 `stat.current_bgm`
    （比 storage 要用 stem：两侧分别是裸名与完整路径）。
+4. **淡出的 BGM 会被引擎“丢失”。** `stopbgm`（`[fadeoutbgm]` 只是
+   `pm.fadeout="true"` 转调它）在淡出分支里**先** `delete
+   target_map[key]`、**再** `audio_obj.fade(...)`；而 `playbgm` 停旧曲靠的正是
+   那张 `kag.tmp.map_bgm[buf]` 表。后果：淡出中的曲子已不在表里，下一个
+   `[playbgm]` 停不掉它，两首叠着放满整个 `time`（本作 3 s）。要按 KAG3
+   单槽语义挖掉它，必须在 `stopbgm` 的**前置**钩子里把即将被淡出的 Howl
+   **对象**存下来（只看 `target=bgm`、`buf_all` 要取整张表），再在新
+   `[playbgm]`（非 `se`）里 `stop()+unload()` —— 存对象而非曲名，才不会
+   误伤 SE/语音；没有后续 BGM 时淡出照常跑完。

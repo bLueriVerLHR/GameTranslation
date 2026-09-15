@@ -905,9 +905,32 @@ SAVE/LOAD/LOG/AUTO/SKIP/HIDE）里加一个 **`GALLERY`** 条目：
 不重叠）；点击后 `sc=seen.ks`、`pv=0`、`seenflg=0`、call/macro 栈均为 0、
 条目自动隐下去（`display:none`）。
 
-**实验文字样式**（试玩反馈，开关式）：`--msg-style bare` 去掉主消息层
-（`message0`）的底衬图，改给文字加描边 + 阴影、不透明度 0.8；名字框在
-`message1` 层，不受影响。默认仍是 `plate`。
+**回放 BGM 的淡出重叠（owner 反馈「有点迷惑」，已修）**：Tyrano 的
+`stopbgm` 走淡出分支时**先把对象从 `kag.tmp.map_bgm[buf]` 删掉**
+（`kag.tag_audio.js` `delete target_map[key]`）再 `fade()`；下一个
+`[playbgm]` 的 `case "bgm"` 因此找不到旧对象可停 → 旧曲继续淡出整个
+`time`（游戏是 3 s）与新曲**叠加**。KAG3 只有一个 BGM 槽，新 `[playbgm]`
+会把淡出中的旧曲直接掐掉。垫片补救：包 `master_tag['stopbgm'].start`
+**在引擎删引用之前**把即将被淡出的 Howl 对象记下来（只记
+`target=bgm`，`[stopse]` 一律不记；`buf_all` 时记整张表），再在
+`master_tag['playbgm'].start` 里（非 `se`）`stop()+unload()` 掉这些遗留
+对象 —— 记的是**对象**而非名字，所以绝不会误杀 SE/语音；没有后续
+`[playbgm]` 时淡出照常走完（游戏自己的时序不变）。**实测（合成复现
+`[playbgm]→[fadeoutbgm 3000]→[playbgm 新曲]`）**：修复前 `t+500ms` 起
+2 个 howl 同时在播（旧曲 v0.70→0.47 递减 + 新曲 v1）；修复后全程 ≤1，
+调用栈显示 `stop bgm001 @ _pb.start` 发生在下一首开播之前。
+
+**实验文字样式**（试玩反馈，开关式）：`--msg-style bare` 去掉**两层**消息
+底衬——主对白窗（`message0`）与名字框（`message1`）——改给文字加描边 +
+阴影；对白文字额外 0.8 不透明度（名字短且承载说话人，不改）。默认仍是
+`plate`。**关键**：底衬**不是层 div 的样式**，`[position frame=...]` 贴在
+消息层**内层 `.message_outer`** 上（`kag.tag.js:3208`
+`j_message_outer.css("background-image", ...)`，frame 颜色同处），所以规则
+必须同时覆盖 `.message_outer`（层 div 那条留着做兜底）。**绝不要用
+`img{display:none}` 去底衬**：消息层里还住着引擎的「点击继续」箭头
+（`system/nextpage.gif`，`.img_next`），会一起被隐藏。实测：`.message_outer`
+内联 `background-color: rgb(0,0,0)`（引擎设的底衬）→ 计算值
+`rgba(0,0,0,0)`、`background-image: none`。
 
 ## 5. 经验：已推翻的判断 / 测试陷阱 / 排障
 

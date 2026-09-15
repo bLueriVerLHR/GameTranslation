@@ -232,12 +232,35 @@ class TestGalleryReplayUX:
         # target=se ([playse] delegates to [playbgm] internally) must be
         # excluded, and the compare must be stem-based (bare name vs resolved
         # ../bgm/x.ogg path).
-        assert "!== 'se'" in raw
+        assert "__is_se" in raw
+        assert "'bgm') === 'se'" in raw
         assert "toLowerCase()" in raw
         # the restart wrapper must run BEFORE the storage resolver's wrapper
         # (last installed runs first), i.e. be installed after it
         assert raw.index("_wrap_storage('playbgm')") < \
             raw.index("__kag3_pv_restart")
+
+    def test_bgm_fade_leftover_is_cut_by_the_next_bgm(self):
+        raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
+        # the engine untracks a fading bgm before fading it, so we capture it
+        assert "__kag3_fading_howls" in raw
+        assert "kag.tmp.map_bgm" in raw
+        assert "__kag3_track_fade" in raw
+        # capture must be limited to the bgm target (never [stopse])
+        assert "String((pm && pm.target) || 'bgm') === 'bgm'" in raw
+        assert "buf_all" in raw
+        # ... and the cut happens on a new bgm only, not on [playse]
+        assert "__h.stop()" in raw and "__h.unload()" in raw
+        assert "__is_se" in raw
+
+    def test_bare_message_style_drops_both_plates(self):
+        raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
+        assert "msg-bare" in raw
+        # story window and name plate both lose their backing (owner request)
+        assert "div[class*='message0'],div[class*='message1']{background:transparent" in raw
+        assert "div[class*='message1'] .message_text" in raw
+        # ...but <img> children must survive: the next-page cue lives there too
+        assert "img{display:none" not in raw
 
     def test_replay_exit_button_wires_the_game_return_label(self):
         raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
@@ -275,9 +298,10 @@ class TestGalleryReplayUX:
     def test_bare_message_style_is_gated_and_scoped(self):
         raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
         assert "window.__kag3_msg_style === 'bare'" in raw
-        # message1 is the name plate; the bare style must not touch it
+        # both message layers are in scope (name plate included); the gating on
+        # the converter flag and the reduced opacity of the story text stay
         assert "message0" in raw
-        assert "div[class*='message1']" not in raw
+        assert "div[class*='message1']" in raw
         assert "opacity:.8" in raw
 
     def test_cli_plumbs_the_new_knobs(self):

@@ -121,23 +121,41 @@ var __kag3_exit_available = function () {
   return !!(kag && kag.variable && kag.variable.tf &&
             kag.variable.tf.now_pv == 1 && __kag3_context_return);
 };
-// Experimental bare message style (converter --msg-style bare): drop the
-// story window's backing plate and let the text carry an outline + shadow at
-// reduced opacity.  Scoped to the main message layer (message0) only - the
-// name plate lives on message1 and must keep its frame.
+// Experimental bare message style (converter --msg-style bare): drop every
+// backing plate (the story window on message0 *and* the name plate on
+// message1) and let the text carry an outline + shadow.  The name plate is
+// part of the same art set, so leaving it framed next to plate-less dialogue
+// looked inconsistent (owner request).
 if (window.__kag3_msg_style === 'bare') {
   (function () {
     var s = document.createElement('style');
     s.setAttribute('data-kag3', 'msg-bare');
+    // The plate is NOT a style on the layer div: [position frame=...] puts the
+    // backing image on the message layer's *inner* .message_outer element
+    // (kag.tag.js:3208 j_message_outer.css("background-image", ...), same for
+    // the frame colour), so the inner element is what has to lose its backing.
+    // The layer-level rule stays for backings set on the layer itself.  Do NOT
+    // hide <img> children: the message layers also hold the engine's "click to
+    // continue" cue (system/nextpage.gif, .img_next) and a game can draw
+    // faces/inline images into the same layer.
     s.textContent =
-      "div[class*='message0']{background:transparent !important;" +
+      "div[class*='message0'],div[class*='message1']{background:transparent !important;" +
+      "background-image:none !important;}" +
+      "div[class*='message0'] .message_outer," +
+      "div[class*='message1'] .message_outer," +
+      "div[class*='message0'] .message_inner," +
+      "div[class*='message1'] .message_inner{background:transparent !important;" +
       "background-image:none !important;}" +
       "div[class*='message0'] .message_text .inner," +
       "div[class*='message0'] .message_text_inner," +
-      "div[class*='message0'] .message_text{-webkit-text-stroke:1px rgba(0,0,0,.35);}" +
+      "div[class*='message0'] .message_text," +
+      "div[class*='message1'] .message_text," +
+      "div[class*='message1'] .name{-webkit-text-stroke:1px rgba(0,0,0,.35);}" +
       "div[class*='message0'] .message_text .inner span," +
       "div[class*='message0'] .message_text span," +
-      "div[class*='message0'] .message_text{text-shadow:0 1px 3px rgba(0,0,0,.85),0 0 2px rgba(0,0,0,.7);}" +
+      "div[class*='message0'] .message_text," +
+      "div[class*='message1'] .message_text span," +
+      "div[class*='message1'] .message_text{text-shadow:0 1px 3px rgba(0,0,0,.85),0 0 2px rgba(0,0,0,.7);}" +
       "div[class*='message0'] .message_text{opacity:.8;}";
     var add = function () { document.head.appendChild(s); };
     if (document.head) add();
@@ -311,14 +329,77 @@ if (window.__kag3_msg_style === 'bare') {
       // track restarts from 0:00 like a fresh KAG3 [playbgm].  Storage forms
       // differ (bare name vs resolved ../bgm/x.ogg), hence the stem compare;
       // [playse] passes target=se and must not be touched.
+      // KAG3 keeps a single BGM slot: the fading track is still that slot, so
+      // the next [playbgm] cuts it dead.  Tyrano instead deletes the howl from
+      // kag.tmp.map_bgm[buf] *before* fading it out (kag.tag_audio.js stopbgm:
+      // "delete target_map[key]" then audio_obj.fade(...)), so when the next
+      // [playbgm] runs its case "bgm" finds an empty slot, stops nothing, and
+      // the outgoing track keeps fading for the whole time (~3 s) underneath
+      // the new one - audible doubling at every transition (measured: two
+      // howls playing at once, old volume .70 -> .47 while the new sits at 1).
+      // Capture the howl the engine is about to untrack and stop it on the
+      // next BG start.  Capturing the object (not a name) means SE/voice howls
+      // can never be caught by mistake.
+      var __kag3_fading_howls = [];
+      (function () {
+        var _sb = kag.ftag.master_tag.stopbgm;
+        if (_sb && _sb.start && !_sb.__kag3_track_fade) {
+          var _sb_orig = _sb.start;
+          _sb.__kag3_track_fade = true;
+          _sb.start = function (pm) {
+            try {
+              // [fadeoutbgm] delegates here with fadeout=true, so this one hook
+              // covers both spellings.  Only the bgm slot map is inspected:
+              // [stopse]/[fadeoutse] arrive with target=se and must never be
+              // remembered as a fading BGM, or the next [playbgm] would stop a
+              // perfectly healthy SE.
+              if (String((pm && pm.fadeout) || '') === 'true' &&
+                  String((pm && pm.target) || 'bgm') === 'bgm') {
+                var map = kag.tmp.map_bgm || {};
+                var keys;
+                if (String((pm && pm.buf_all) || 'false') === 'true') {
+                  keys = Object.keys(map);
+                } else {
+                  keys = [String((pm && pm.buf) || '0')];
+                }
+                for (var i = 0; i < keys.length; i++) {
+                  var h = map[keys[i]];
+                  if (h) {
+                    __kag3_fading_howls.push(h);
+                    if (__kag3_fading_howls.length > 8) __kag3_fading_howls.shift();
+                  }
+                }
+              }
+            } catch (e) {}
+            return _sb_orig.apply(this, arguments);
+          };
+        }
+      })();
       (function () {
         var _pb = kag.ftag.master_tag.playbgm;
         if (!_pb || !_pb.start || _pb.__kag3_pv_restart) return;
         var _orig = _pb.start;
         _pb.__kag3_pv_restart = true;
         _pb.start = function (pm) {
+          var __is_se = String((pm && pm.target) || 'bgm') === 'se';
+          // Any new BGM cuts the faded-out leftovers (single-slot semantics).
+          // A [stopbgm]-only path just lets the fade finish: nothing calls
+          // this hook for it.  No BGM follows = no cut, so the game's own
+          // fade timing is preserved everywhere else.
+          if (!__is_se && __kag3_fading_howls.length) {
+            while (__kag3_fading_howls.length) {
+              var __h = __kag3_fading_howls.pop();
+              try {
+                if (__h && __h.playing && __h.playing()) {
+                  __h.stop();
+                  __h.unload();
+                  __kag3_log('bgm fade cut: fading track stopped for a new bgm');
+                }
+              } catch (e) {}
+            }
+          }
           try {
-            if (String((pm && pm.target) || 'bgm') !== 'se' &&
+            if (!__is_se &&
                 kag.variable.tf && kag.variable.tf.now_pv == 1 &&
                 kag.stat.current_bgm) {
               var stem = function (s) {

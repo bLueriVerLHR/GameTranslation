@@ -559,3 +559,143 @@ class TestMain:
         monkeypatch.setattr(sys, "argv", ["xp3tool.py", "nope"])
         assert xp3tool.main() == 2
         assert "No such command" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# Protected-variant detection (names with no extension + opaque payloads)
+# ---------------------------------------------------------------------------
+
+def obfuscated_names(count):
+    """The name pattern of a protected archive: a running sequence, no dots."""
+    return [chr(0x5000 + i) for i in range(count)]
+
+
+def junk(nbytes, seed=0):
+    """Deterministic high-entropy bytes (ciphertext stand-in)."""
+    import random
+    return random.Random(seed).randbytes(nbytes)
+
+
+class TestProtectedVariantDetection:
+    def test_normal_names_with_extensions_are_not_refused(self, tmp_path):
+        p = tmp_path / "ok.xp3"
+        files = [("data/scenario/first.ks", b"*start\r\n[l][r]\r\n" * 4)]
+        files += [("bgimage/cg%02d.png" % i, junk(64, i))
+                  for i in range(24)]
+        p.write_bytes(make_archive(files))
+        assert xp3tool.protected_variant_reason(str(p)) is None
+
+    def test_japanese_names_with_extensions_are_not_refused(self, tmp_path):
+        """Real games use CJK file names; only a missing extension matters."""
+        p = tmp_path / "jp.xp3"
+        files = [("画像/背景%02d.png" % i, junk(64, i)) for i in range(24)]
+        p.write_bytes(make_archive(files))
+        assert xp3tool.protected_variant_reason(str(p)) is None
+
+    def test_extensionless_names_with_real_payloads_are_not_refused(
+            self, tmp_path):
+        """Odd names alone must not refuse: the payload probe clears them."""
+        p = tmp_path / "oddnames.xp3"
+        png = b"\x89PNG\r\n\x1a\n" + b"payload"
+        files = [(chr(0x5000 + i), png) for i in range(24)]
+        p.write_bytes(make_archive(files))
+        assert xp3tool.protected_variant_reason(str(p)) is None
+
+    def test_obfuscated_names_with_opaque_payloads_are_refused(self, tmp_path):
+        p = tmp_path / "protected.xp3"
+        files = [(n, junk(96, i))
+                 for i, n in enumerate(obfuscated_names(24))]
+        p.write_bytes(make_archive(files))
+        reason = xp3tool.protected_variant_reason(str(p))
+        assert reason is not None
+        assert "protected variant" in reason
+        assert "24 of 24 entry names carry no file extension" in reason
+        assert "unencrypted copy" in reason
+
+    def test_small_archives_are_never_refused(self, tmp_path):
+        """Below the ratio floor the sample is not meaningful (edge)."""
+        p = tmp_path / "tiny.xp3"
+        files = [(n, junk(64, i)) for i, n in enumerate(obfuscated_names(5))]
+        p.write_bytes(make_archive(files))
+        assert xp3tool.protected_variant_reason(str(p)) is None
+
+    def test_ratio_floor_boundary(self):
+        """1 name with an extension out of 20 = exactly the 0.05 floor."""
+        entries = ([{"name": "a.png"}]
+                   + [{"name": chr(0x5000 + i)} for i in range(19)])
+        assert xp3tool.name_extension_ratio(entries) == 0.05
+
+    def test_name_extension_ratio_edge_cases(self):
+        assert xp3tool.name_extension_ratio([]) == 1.0
+        # a name with no dot at all has no extension
+        assert xp3tool.name_extension_ratio([{"name": "a"}]) == 0.0
+        assert xp3tool.has_file_extension("a/b/c.png") is True
+        assert xp3tool.has_file_extension("a/b/c") is False
+        # a dot with no suffix, and an over-long suffix, both fail the pattern
+        assert xp3tool.has_file_extension("a/b/c.") is False
+        assert xp3tool.has_file_extension("a/b/c.toolong") is False
+
+    def test_payload_recognizability(self):
+        assert xp3tool.payload_is_recognizable(b"") is True
+        assert xp3tool.payload_is_recognizable(b"\x89PNG\r\n\x1a\n") is True
+        assert xp3tool.payload_is_recognizable(b"OggS\x00\x02") is True
+        assert xp3tool.payload_is_recognizable(zlib.compress(b"x" * 50)) is True
+        assert xp3tool.payload_is_recognizable(
+            b"[playbgm storage=\"bgm01\"]\r\n" * 4) is True
+        # ciphertext: high entropy, not UTF-8, no magic
+        assert xp3tool.payload_is_recognizable(junk(256, 7)) is False
+        # cp932-shaped junk must NOT count as text (it decodes "printably")
+        cp932_junk = bytes([0x67, 0x14, 0x54, 0x46, 0x63, 0xb6, 0x27, 0x7b,
+                            0x03, 0x08, 0xe2, 0xbb, 0xd9, 0x61, 0x74, 0x91,
+                            0x02, 0x07, 0x02])
+        assert xp3tool.payload_is_recognizable(cp932_junk) is False
+
+    def test_probe_counts_what_it_checked(self, tmp_path):
+        p = tmp_path / "probe.xp3"
+        files = [(n, junk(80, i))
+                 for i, n in enumerate(obfuscated_names(24))]
+        p.write_bytes(make_archive(files))
+        checked, known = xp3tool.probe_payloads(
+            str(p), xp3tool.open_xp3(str(p)))
+        assert checked == 8          # _PROBE_LIMIT
+        assert known == 0
+
+
+class TestProtectedVariantCliGate:
+    def _protected(self, tmp_path):
+        p = tmp_path / "protected.xp3"
+        p.write_bytes(make_archive(
+            [(n, junk(96, i)) for i, n in enumerate(obfuscated_names(24))]))
+        return p
+
+    def test_list_refuses_and_reports(self, tmp_path, monkeypatch, capsys):
+        p = self._protected(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["xp3tool.py", "list", str(p)])
+        assert xp3tool.main() == 1
+        assert "protected variant" in capsys.readouterr().err
+
+    def test_extract_refuses_before_writing(self, tmp_path, monkeypatch, capsys):
+        p = self._protected(tmp_path)
+        out = tmp_path / "out"
+        monkeypatch.setattr(
+            sys, "argv", ["xp3tool.py", "extract", str(p), str(out)])
+        assert xp3tool.main() == 1
+        assert "protected variant" in capsys.readouterr().err
+        assert not out.exists()      # nothing half-written
+
+    def test_force_bypasses_the_gate(self, tmp_path, monkeypatch):
+        p = self._protected(tmp_path)
+        out = tmp_path / "out"
+        monkeypatch.setattr(sys, "argv", [
+            "xp3tool.py", "extract", str(p), str(out), "--force"])
+        assert xp3tool.main() == 0
+        assert len(list(out.iterdir())) == 24
+
+    def test_normal_archive_still_extracts(self, tmp_path, monkeypatch):
+        p = tmp_path / "ok.xp3"
+        p.write_bytes(make_archive([("x.txt", b"hello")]))
+        out = tmp_path / "out"
+        monkeypatch.setattr(
+            sys, "argv", ["xp3tool.py", "extract", str(p), str(out)])
+        assert xp3tool.main() == 0
+        assert (out / "x.txt").read_bytes() == b"hello"

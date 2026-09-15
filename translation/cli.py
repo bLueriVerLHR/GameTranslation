@@ -12,6 +12,7 @@ the job:
     scaffold  <work_dir>              state files + MISSION.md
     codes     <work_dir>              regenerate control_codes.md
     slice     <work_dir>              a slice of keys.jsonl for one scene
+    append    <work_dir> --batch F    validate a batch, then append it
     to-json   <work_dir>              raw library -> translated.json (escaping)
     rewrite   <work_dir>              execute rewrites.jsonl over the library
     gates     <work_dir>              the four hard gates (bake needs all green)
@@ -186,6 +187,8 @@ def slice_(
         "--count", help="how many keys to take")] = 40,
     kind: Annotated[str, cliutil.Option(
         "--kind", help="only this kind (map/common/troop/db/ui/plugin)")] = None,
+    compact: Annotated[bool, cliutil.Option(
+        "--compact", help="drop where/kind/seq (cheaper to read)")] = False,
     out: Annotated[str, cliutil.Option(
         "--out", help="write the slice here (default: stdout)")] = None,
     verbose: cliutil.Verbose = False,
@@ -195,13 +198,18 @@ def slice_(
     """Cut a slice of the key list out for the translator to work through.
 
     The key list is far bigger than one context; the translator reads a slice,
-    translates it, appends the raw library and asks for the next slice.
+    translates it, appends the batch (see ``append``) and asks for the next.
+    ``--compact`` keeps only what a translator needs to read and write.
     """
     cliutil.setup_logging(verbose, quiet, log_file)
     if not os.path.isfile(os.path.join(work_dir, "keys.jsonl")):
         return cliutil.fail("keys.jsonl missing in %s (run extract first)"
                             % work_dir)
     entries = mvkeys.slice_keys(work_dir, start=start, count=count, kind=kind)
+    if compact:
+        entries = [{key: entry[key] for key in
+                    ("id", "ja", "speaker", "prev", "next")}
+                   for entry in entries]
     payload = "\n".join(json.dumps(entry, ensure_ascii=False)
                         for entry in entries) + ("\n" if entries else "")
     if out:
@@ -215,6 +223,42 @@ def slice_(
         "no keys in range (start=%d count=%d kind=%s)" % (start, count, kind))
 
 
+def append(
+    work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
+    batch: Annotated[str, cliutil.Option(
+        "--batch", help="batch file to append (same format as the library)")],
+    note: Annotated[str, cliutil.Option(
+        "--note", help="also log a progress line with this note")] = None,
+    verbose: cliutil.Verbose = False,
+    quiet: cliutil.Quiet = False,
+    log_file: cliutil.LogFile = None,
+) -> int:
+    """Validate a translated batch, then append it to the library.
+
+    All or nothing: unknown ids, empty values, changed control codes and kana
+    residue are all reported **before** anything is written, so a batch that
+    fails leaves the library exactly as it was.
+    """
+    cliutil.setup_logging(verbose, quiet, log_file)
+    if not os.path.isfile(batch):
+        return cliutil.fail("batch file not found: %s" % batch)
+    if not os.path.isfile(os.path.join(work_dir, "keys.jsonl")):
+        return cliutil.fail("keys.jsonl missing in %s (run extract first)"
+                            % work_dir)
+    try:
+        report = rawlib.append_batch(work_dir, batch, note=note)
+    except ValueError as error:
+        return cliutil.fail("bad batch file: %s" % error)
+    if report["problems"]:
+        for key_id, problem in report["problems"][:40]:
+            log.error("%s: %s", key_id or "(batch)", problem)
+        return cliutil.fail("batch rejected: %d problem(s), library unchanged"
+                            % len(report["problems"]))
+    log.info("appended %d keys", report["added"])
+    print(json.dumps(report, ensure_ascii=False, indent=1))
+    return 0
+
+
 app = cliutil.app(help=__doc__)
 app.command()(prepare)
 app.command()(extract)
@@ -225,6 +269,7 @@ app.command()(rewrite)
 app.command()(gates)
 app.command()(status)
 app.command(name="slice")(slice_)
+app.command()(append)
 
 
 def main(argv=None) -> int:

@@ -579,6 +579,73 @@ def test_cli_slice_writes_a_workable_slice(work, game, tmp_path, capsys):
     capsys.readouterr()
 
 
+def test_append_batch_validates_before_writing(work, game):
+    """A batch is all-or-nothing: a bad batch must not touch the library."""
+    mvkeys.extract(game, work)
+    entries = mvkeys.load_keys(work)
+    batch = os.path.join(work, "_wip_batch.txt")
+    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@%s@@@\n\u8bd1\u6587\n" % entries[0]["id"])
+    report = rawlib.append_batch(work, batch)
+    assert report["problems"] == [] and report["added"] == 1
+    library = os.path.join(work, rawlib.LIBRARY_NAME)
+    assert rawlib.read_library(library)[entries[0]["id"]] == "\u8bd1\u6587"
+    # a batch with an unknown id, an empty value and a broken code sequence
+    codes_entry = [entry for entry in entries if "\\c[1]" in entry["ja"]][0]
+    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@ghost@@@\n\u8bd1\u6587\n")
+        handle.write("@@@%s@@@\n\n" % entries[1]["id"])
+        handle.write("@@@%s@@@\n%s\n"
+                     % (codes_entry["id"],
+                        codes_entry["ja"].replace("\\c[1]", "")))
+    before = rawlib.read_library(library)
+    report = rawlib.append_batch(work, batch)
+    assert report["added"] == 0 and len(report["problems"]) == 3
+    assert rawlib.read_library(library) == before
+    assert "ghost" not in rawlib.read_library(library)
+
+
+def test_append_batch_rejects_kana_residue(work, game):
+    mvkeys.extract(game, work)
+    entry = [e for e in mvkeys.load_keys(work) if e["kind"] == "db"][0]
+    batch = os.path.join(work, "_wip_batch.txt")
+    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@%s@@@\n%s\n" % (entry["id"], entry["ja"]))
+    report = rawlib.append_batch(work, batch)
+    assert report["added"] == 0
+    assert "kana residue" in report["problems"][0][1]
+    _dump(os.path.join(work, "allow_kana.json"),
+          {"items": [{"match": entry["ja"], "reason": "\u56fa\u6709\u540d\u8bcd"}]})
+    assert rawlib.append_batch(work, batch)["added"] == 1
+
+
+def test_cli_append_reports_problems(work, game, tmp_path, capsys):
+    assert cli.main(["prepare", game, work]) == 0
+    batch = str(tmp_path / "batch.txt")
+    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@ghost@@@\n\u8bd1\u6587\n")
+    assert cli.main(["append", work, "--batch", batch]) != 0
+    entries = mvkeys.load_keys(work)
+    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@%s@@@\n\u8bd1\u6587\n" % entries[0]["id"])
+    assert cli.main(["append", work, "--batch", batch,
+                     "--note", "\u7b2c\u4e00\u6279"]) == 0
+    assert rawlib.read_jsonl(os.path.join(work, "progress.jsonl"))[0]["added"] == 1
+    assert cli.main(["append", work, "--batch", str(tmp_path / "nope.txt")]) != 0
+    capsys.readouterr()
+
+
+def test_cli_slice_compact_drops_heavy_fields(work, game, tmp_path, capsys):
+    assert cli.main(["prepare", game, work]) == 0
+    out = str(tmp_path / "compact.jsonl")
+    assert cli.main(["slice", work, "--count", "3", "--compact",
+                     "--out", out]) == 0
+    rows = [json.loads(line) for line in
+            io.open(out, encoding="utf-8").read().splitlines()]
+    assert set(rows[0]) == {"id", "ja", "speaker", "prev", "next"}
+    capsys.readouterr()
+
+
 def test_cli_reports_missing_work_dir(tmp_path, capsys):
     assert cli.main(["gates", str(tmp_path / "nope")]) != 0
     capsys.readouterr()

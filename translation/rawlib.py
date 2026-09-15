@@ -38,7 +38,8 @@ from .codes import (KANA_RE, has_text_parameter, parameter_of, parse_codes,
 
 __all__ = ["HEADER_RE", "read_library", "write_library", "append_block",
            "read_jsonl", "append_jsonl", "apply_rewrites", "to_json",
-           "run_gates", "gate_markdown"]
+           "run_gates", "gate_markdown", "code_problems", "readable_text",
+           "kana_problem", "validate_blocks", "append_batch"]
 
 #: ``@@@<id>@@@`` on a line of its own; the id may contain anything but ``@``.
 HEADER_RE = re.compile(r"^@@@([^@\n]+?)@@@[ \t]*$")
@@ -224,6 +225,101 @@ def _kana_allowed(text, items):
     return None
 
 
+def code_problems(source_text, target_text):
+    """Differences between two control-code sequences, as messages.
+
+    Codes are compared one by one; the only tolerated difference is inside a
+    *textual* parameter - a name box (``\\nc<チンピラ>``) shows a name to the
+    player, so it must be translated, while a numeric argument (``\\px[200]``)
+    must survive byte for byte.  The bracket shape is checked either way.
+    """
+    source = parse_code_sequence(source_text)
+    target = parse_code_sequence(target_text)
+    if [key for key, _ in source] != [key for key, _ in target]:
+        return ["code sequence: %s -> %s"
+                % ([tok for _, tok in source], [tok for _, tok in target])]
+    problems = []
+    for (_, source_token), (_, target_token) in zip(source, target):
+        if source_token == target_token:
+            continue
+        if has_text_parameter(source_token) \
+                and parameter_of(target_token) is not None:
+            continue
+        problems.append("code parameter: %s -> %s"
+                        % (source_token, target_token))
+    return problems
+
+
+def readable_text(text):
+    """What a player actually reads: text between codes + text parameters."""
+    parts = [piece for is_code, piece in split_keep_codes(text) if not is_code]
+    parts += [parameter_of(token) for token in parse_codes(text)
+              if has_text_parameter(token)]
+    return "\n".join(piece for piece in parts if piece)
+
+
+def kana_problem(text, items):
+    """Kana left in the readable part of `text`, unless the allowlist covers it."""
+    visible = readable_text(text)
+    if not KANA_RE.search(visible):
+        return None, None
+    item = _kana_allowed(visible, items)
+    if item:
+        return None, item
+    return visible, None
+
+
+def validate_blocks(work_dir, values):
+    """Check a batch of translations against the key list before writing it.
+
+    Returns ``[(id, problem), ...]`` - empty means the batch is clean.  Used by
+    ``append_batch`` so a bad batch is rejected *before* it reaches the library
+    (the library is append-only; a half-written batch is hard to unwind).
+    """
+    keys = {entry["id"]: entry for entry in mvkeys.load_keys(work_dir)}
+    items = _allowlist(work_dir)
+    problems = []
+    for key_id, text in values.items():
+        entry = keys.get(key_id)
+        if entry is None:
+            problems.append((key_id, "unknown id (not in keys.jsonl)"))
+            continue
+        if not text.strip():
+            problems.append((key_id, "empty translation"))
+            continue
+        for message in code_problems(entry["ja"], text):
+            problems.append((key_id, message))
+        residue, _allowed = kana_problem(text, items)
+        if residue:
+            problems.append((key_id, "kana residue: %s" % residue[:40]))
+    return problems
+
+
+def append_batch(work_dir, batch_path, note=None):
+    """Validate a batch file and append it to the library (all or nothing).
+
+    The batch file has the library format (``@@@id@@@`` + raw translation), so
+    a batch is just a fragment of the library.  Nothing is written when any
+    block fails validation: the caller gets every problem and the library stays
+    exactly as it was.
+    """
+    values = read_library(batch_path)
+    if not values:
+        return {"added": 0, "problems": [("", "batch file is empty")]}
+    problems = validate_blocks(work_dir, values)
+    if problems:
+        return {"added": 0, "problems": problems}
+    library = os.path.join(work_dir, LIBRARY_NAME)
+    with io.open(library, "a", encoding="utf-8", newline="\n") as handle:
+        for key_id, text in values.items():
+            handle.write("@@@%s@@@\n%s\n" % (key_id, text))
+    if note:
+        append_jsonl(os.path.join(work_dir, "progress.jsonl"),
+                     {"note": note, "added": len(values),
+                      "ids": [key for key in list(values)[:3]]})
+    return {"added": len(values), "problems": []}
+
+
 def _gate_coverage(keys, values):
     missing = [entry["id"] for entry in keys
                if not (values.get(entry["id"]) or "").strip()]
@@ -237,40 +333,27 @@ def _gate_coverage(keys, values):
 
 
 def _gate_codes(keys, values):
-    """The code sequence of a translation must match its source.
-
-    Codes are compared one by one, and the only tolerated difference is inside a
-    *textual* parameter: a name box (``\\nc<チンピラ>``) shows a name to the
-    player, so it must be translated, while a numeric argument (``\\px[200]``)
-    must survive byte for byte.  The bracket shape is checked either way.
-    """
+    """The code sequence of a translation must match its source."""
     mismatch, translated_parameters = [], 0
     for entry in keys:
         text = values.get(entry["id"])
         if not text:
             continue
-        source = parse_code_sequence(entry["ja"])
-        target = parse_code_sequence(text)
-        if [key for key, _ in source] != [key for key, _ in target]:
-            mismatch.append({"id": entry["id"], "where": entry["where"],
-                             "reason": "code sequence",
-                             "source": [tok for _, tok in source],
-                             "target": [tok for _, tok in target]})
+        problems = code_problems(entry["ja"], text)
+        if not problems:
+            if any(source_token != target_token for (_, source_token),
+                   (_, target_token)
+                   in zip(parse_code_sequence(entry["ja"]),
+                          parse_code_sequence(text))):
+                translated_parameters += 1
             continue
-        bad = []
-        for (_, source_token), (_, target_token) in zip(source, target):
-            if source_token == target_token:
-                continue
-            if has_text_parameter(source_token):
-                if (parameter_of(source_token) is not None
-                        and parameter_of(target_token) is not None):
-                    translated_parameters += 1
-                    continue
-            bad.append("%s -> %s" % (source_token, target_token))
-        if bad:
-            mismatch.append({"id": entry["id"], "where": entry["where"],
-                             "reason": "code parameter",
-                             "source": bad, "target": []})
+        mismatch.append({"id": entry["id"], "where": entry["where"],
+                         "reason": problems[0].split(":")[0],
+                         "problems": problems,
+                         "source": [tok for _, tok in
+                                    parse_code_sequence(entry["ja"])],
+                         "target": [tok for _, tok in
+                                    parse_code_sequence(text)]})
     return {
         "name": "control_codes",
         "ok": not mismatch,
@@ -282,7 +365,7 @@ def _gate_codes(keys, values):
 
 
 def _gate_kana(keys, values, items):
-    """Kana left in the *readable* parts of a translation.
+    """Kana left in the readable parts of a translation.
 
     Readable parts are the text between codes **plus** any textual code
     parameter (a name box shows its parameter to the player).  Numeric code
@@ -293,18 +376,11 @@ def _gate_kana(keys, values, items):
         text = values.get(entry["id"])
         if not text:
             continue
-        readable = [piece for is_code, piece in split_keep_codes(text)
-                    if not is_code]
-        readable += [parameter_of(token) for token in parse_codes(text)
-                     if has_text_parameter(token)]
-        visible = "\n".join(piece for piece in readable if piece)
-        if not KANA_RE.search(visible):
-            continue
-        item = _kana_allowed(visible, items)
+        visible, item = kana_problem(text, items)
         if item:
             allowed.append({"id": entry["id"], "match": item["match"],
                             "reason": item.get("reason") or ""})
-        else:
+        elif visible:
             residue.append({"id": entry["id"], "where": entry["where"],
                             "text": visible})
     return {

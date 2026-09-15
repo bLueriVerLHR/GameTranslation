@@ -214,6 +214,80 @@ class TestCliConventions:
             assert opt in src
 
 
+class TestGalleryReplayUX:
+    """Gallery-replay quality fixes measured against the running build.
+
+    (1) Several scene entries open with the gallery/menu track itself
+    (``[BGM bgm="bgm010"]``); Tyrano skips a same-storage ``[playbgm]``, so
+    the menu music ran seamlessly through the replay.  (2) The game disarms
+    its own right-click return while a replay runs, leaving touch players
+    no way back.  (3) The gallery mpeg player's KAG3 box (800x600) leaves a
+    black strip on the 1024x768 canvas.  (4) Experimental bare message style.
+    """
+
+    def test_playbgm_restart_wrapper_installed_after_the_storage_wrapper(self):
+        raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
+        assert "__kag3_pv_restart" in raw
+        assert "now_pv == 1" in raw
+        # target=se ([playse] delegates to [playbgm] internally) must be
+        # excluded, and the compare must be stem-based (bare name vs resolved
+        # ../bgm/x.ogg path).
+        assert "!== 'se'" in raw
+        assert "toLowerCase()" in raw
+        # the restart wrapper must run BEFORE the storage resolver's wrapper
+        # (last installed runs first), i.e. be installed after it
+        assert raw.index("_wrap_storage('playbgm')") < \
+            raw.index("__kag3_pv_restart")
+
+    def test_replay_exit_button_wires_the_game_return_label(self):
+        raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
+        assert "__kag3_context_return" in raw
+        assert "pv-exit" in raw
+        assert "now_pv == 1" in raw
+        # the button abandons the replay frames instead of leaving them
+        # dangling under the gallery (KAG3 rclick-jump = process())
+        assert "stack.call.length = 0" in raw
+        assert "stack.macro.length = 0" in raw
+        assert "__kag3_jump(kag, __kag3_context_return.storage" in raw
+        # only a *return_* label is remembered as the exit target
+        assert "/return/i.test" in raw
+
+    def test_video_fill_branch_is_gated_on_the_injected_flag(self):
+        raw = open(os.path.join(JS_DIR, "video_shim.js"), encoding="utf-8").read()
+        assert "window.__kag3_video_fill" in raw
+        assert "this.style.minWidth = '100%'" in raw
+        assert "this.style.objectFit = 'contain'" in raw
+
+    def test_playvideo_is_not_silent_by_default(self):
+        """Tyrano's movie layer defaults to `video.volume = 0`; a KAG3
+        [playvideo] carries its own audio, so the shim must pass a volume."""
+        raw = open(os.path.join(JS_DIR, "video_shim.js"), encoding="utf-8").read()
+        assert "opt.volume" in raw
+        assert "'100'" in raw
+        assert "v.volume" in raw, "a game-specified volume must pass through"
+
+    def test_bare_message_style_is_gated_and_scoped(self):
+        raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
+        assert "window.__kag3_msg_style === 'bare'" in raw
+        # message1 is the name plate; the bare style must not touch it
+        assert "message0" in raw
+        assert "div[class*='message1']" not in raw
+        assert "opacity:.8" in raw
+
+    def test_cli_plumbs_the_new_knobs(self):
+        import inspect
+        sig = inspect.signature(kag_cli.convert)
+        assert sig.parameters["video_fit"].default == "box"
+        assert sig.parameters["msg_style"].default == "plate"
+        src = open(os.path.join(REPO, "kirikiri", "kag", "cli.py"),
+                   encoding="utf-8").read()
+        assert "--video-fit" in src
+        assert "--msg-style" in src
+        # and the flags actually reach the generated plugin file
+        assert "window.__kag3_video_fill" in src
+        assert "window.__kag3_msg_style" in src
+
+
 class TestPackaging:
     """A non-editable install must ship the shim assets: they are read through
     importlib.resources, so a missing package-data entry breaks the converter

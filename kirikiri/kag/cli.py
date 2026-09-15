@@ -82,20 +82,26 @@ log = logging.getLogger(__name__)
 def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
             scenario_dir="scenario", scenario_only=False, fonts=None,
             video_dir=None, fast_skip=False, state_overrides_path=None,
-            portrait=False, workers=None):
+            portrait=False, workers=None, video_fit="box", msg_style="plate"):
     """Convert one unpacked KAG3 game into a TyranoScript project.
 
     Programmatic entry point; the Typer command below is its CLI wrapper.  The
     body is the historical ``main()`` with its argparse namespace replaced by
     these explicit arguments (behaviour unchanged); `workers` is the only new
     knob (image/copy parallelism, None = auto-tuned from the machine).
+
+    ``video_fit``: "box" honours the KAG3 [video width=/height=] box;
+    "fill" scales the movie to the whole game canvas (object-fit keeps the
+    frame ratio).  ``msg_style``: "plate" keeps the game's message window
+    frame; "bare" drops the plate and gives the text an outline + shadow at
+    reduced opacity (experimental, main story layer only).
     """
     args = SimpleNamespace(
         unpacked=unpacked, engine=engine, out_dir=out_dir,
         keep_game_buttons=keep_game_buttons, scenario_dir=scenario_dir,
         scenario_only=scenario_only, font=fonts, video_dir=video_dir,
         fast_skip=fast_skip, state_overrides=state_overrides_path,
-        portrait=portrait,
+        portrait=portrait, video_fit=video_fit, msg_style=msg_style,
     )
 
     try:
@@ -236,11 +242,19 @@ def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
     # name -> converted movie, for the KAG3 video shim ([openvideo storage=X])
     asset_video_js = "window.__kag3_videos = " + json.dumps(
         video_map, ensure_ascii=False) + ";\n"
+    # build knobs consumed by the shims (video box vs. full-canvas playback,
+    # experimental bare message style)
+    video_fit_js = "window.__kag3_video_fill = " + \
+        ("true" if args.video_fit == "fill" else "false") + ";\n"
+    msg_style_js = "window.__kag3_msg_style = " + \
+        json.dumps(str(args.msg_style)) + ";\n"
     tag_usage = collect_tag_usage(args.unpacked)
     shim_js, shim_n = _shim_js(macros, args.engine,
                                collect_scene_tags(args.unpacked), tag_usage)
     runtime_shim = "\n".join([
         "window.__kag3_portrait = " + ("true" if args.portrait else "false") + ";",
+        video_fit_js,
+        msg_style_js,
         RUNTIME_SHIM_IIFE,
         FAST_SKIP_SHIM_JS if args.fast_skip else "",
         tjs2js.SPRINTF_SHIM,
@@ -360,6 +374,16 @@ def cmd(
         "--portrait",
         help="768x1024 portrait layout: art scaled to the top, message text in "
              "the bottom black area")] = False,
+    video_fit: Annotated[str, typer.Option(
+        "--video-fit", metavar="BOX|FILL",
+        help="movie playback area: box = honour the KAG3 [video width=/height=] "
+             "box (KAG3 semantics); fill = scale the movie to the whole game "
+             "canvas, frame ratio preserved (default: box)")] = "box",
+    msg_style: Annotated[str, typer.Option(
+        "--msg-style", metavar="PLATE|BARE",
+        help="story message window: plate = keep the game's window frame; "
+             "bare = drop the plate, text carries an outline + shadow at 80% "
+             "opacity (experimental; name plate unaffected) (default: plate)")] = "plate",
     workers: Annotated[Optional[int], typer.Option(
         "--workers",
         help="parallel asset workers (default: physical cores, auto-tuned; "
@@ -375,7 +399,7 @@ def cmd(
                    scenario_dir=scenario_dir, scenario_only=scenario_only,
                    fonts=font, video_dir=video_dir, fast_skip=fast_skip,
                    state_overrides_path=state_overrides, portrait=portrait,
-                   workers=workers)
+                   workers=workers, video_fit=video_fit, msg_style=msg_style)
 
 
 app = cliutil.command_app(cmd, help=__doc__)

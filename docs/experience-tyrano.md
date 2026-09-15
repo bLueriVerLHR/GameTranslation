@@ -179,3 +179,23 @@ promise 被拒时挂一次性 click/touchstart/keydown 监听，首次用户交�
   嵌套函数不导出、匿名函数表达式不导出）。
 - **连带恢复**：本次修好的是语音、语音重播、自动模式、声音测试页与一个音量拆分
   辅助函数——凡是「由游戏 iscript 定义、又被 `[exp]/[if]/[hact]` 调用」的函数都属同一类。
+
+## 5. 音频标签的三个引擎事实（钩子测轨迹时必须知道）
+
+移植 KAG3 音频时踩到的、**不看引擎源码就会误判**的三条：
+
+1. **`[playse]` 内部就是调 `[playbgm]`。** `kag.tag_audio.js` 里
+   `tyrano.plugin.kag.tag.playse.start` 直接 `this.kag.ftag.startTag("playbgm", pm)`，
+   `pm.target="se"` 才区分。所以给 `master_tag['playbgm'].start` 挂钩子会**同时**
+   收到 SE/语音事件；`[stopse]` 同理进 `stopbgm`。要按目标分流必须看 `pm.target`，
+   否则会把语音当成 BGM 改动去查（我因此白查了一轮）。
+2. **影片层默认静音。** `kag.tag.js` 的 `layermode_movie`：
+   `if (pm.volume != "") video.volume = 小数; else video.volume = 0;` ——
+   不传 `volume` 的影片**一定无声**。KAG3 的 `[playvideo]` 不含该参数，
+   所以垫片必须补默认值（现为 `100`）。症状是“影片在放但只有 BGM”，极易
+   被误诊成“BGM 没停”。
+3. **同一 storage 的 `[playbgm]` 走跳过路径。** 引擎记住
+   `stat.current_bgm`（值是解析后的路径，如 `../bgm/x.ogg`），同名时不再重放。
+   对“游戏用同一首曲子做回放开场”的写法，效果就是**无缝接着放**，玩家
+   听不出“回放开始了”。要在回放模式下强制重启，先清 `stat.current_bgm`
+   （比 storage 要用 stem：两侧分别是裸名与完整路径）。

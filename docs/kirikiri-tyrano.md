@@ -835,6 +835,75 @@ KAG3 的 `[video width=800 height=600]` 是把影片放进一个 800×600 的框
 但**精确的画面合成仍取决于真实场景的图层/混合状态**，单独驱动标签无法
 复现 —— 这一条需真实场景端到端才能定论。
 
+### 4.7 影片音量与铺满（试玩反馈第 4 批，已修）
+
+两个独立缺陷，都会让“动画鉴赏”看起来像坏了：
+
+**（1）Tyrano 的影片层默认静音。** 引擎 `kag.tag.js` 里：
+
+```js
+if (pm.volume != "") { video.volume = parseFloat(parseInt(pm.volume) / 100); }
+else { video.volume = 0; }            // ← 不传 volume = 静音
+```
+
+KAG3 的 `[playvideo]` 没有 volume 参数（本作的 `[video]` 标签也不带），
+shim 因此从不传 volume —— 影片**一直静音播放**，玩家只听到还在放的 BGM，
+很自然会得出“背景音没卸载”的结论。修法：shim 的 `[video]` 记录可选
+`volume`，`[playvideo]` 默认补 `volume='100'`（游戏显式指定则透传）。
+
+**实测（页面上量元素）**：修正前 `video.volume = 0`；修正后 `= 1`、
+`muted=false`、`paused=false`。
+
+**（2）影片框只占画布一部分。** §4.6 的默认（`box`）忠实还原 KAG3 的
+`[video width=800 height=600]` 盒子；但本作的画布是 1024×768，于是影片
+只占 78% 宽高，右/下露出黑底。试玩反馈明确要求铺满，所以加了构建开关：
+
+```bash
+--video-fit fill     # 影片缩放到整个游戏画布，object-fit 保持画面比例
+```
+
+4:3 的片子配 4:3 画布时 `contain` **不产生黑边**（等比放大到满幅）。
+默认仍是 `box`（KAG3 语义），按游戏偏好选择。
+
+**实测**：`fill` 下 `<video>` 元素尺寸 = 画布尺寸（833×625 的 CSS 像素，
+即 1024×768 缩放后），`style.objectFit=contain`、`left/top=0`。
+
+### 4.8 鉴赏回放：BGM 语义与退出按钮（试玩反馈第 4 批，已修）
+
+**BGM“不换”的真相（先别急着改引擎）**：本作 11 个场景回放里有 6 个
+**开场曲就是图库/菜单用的那首**（脚本里写死 `[BGM bgm="bgm010"]`），
+动画幻灯片脚本（`112.ks`）同理 —— 原作也是“同一首继续”。真正能改进的
+只有一点：Tyrano 对**同一 storage** 的 `[playbgm]` 走跳过路径，于是回放
+开场曲**无缝接着放**，玩家完全听不出“回放开始了”。修法：垫片在
+**回放模式**（`tf.now_pv == 1`）下若 storage 与当前曲目同名（按 stem
+比较，因为两侧分别是裸名与 `../bgm/x.ogg`），先清掉 `stat.current_bgm`
+让引擎走完整播放路径 —— 音乐先停再从 0:00 起，与原作听感一致。
+`target=se`（`[playse]` 内部就是调 `[playbgm]`）必须排除。
+
+**实测**：pv 模式下重放同一曲目 → Howler 实例数 1→2（走了完整播放
+路径）；pv=0 对照组不新增实例。
+
+**退出按钮**：游戏在回放开始时用 `[rclick call=false jump=false
+enabled=true]` **主动解除**右键返回，手机端又没有右键 —— 回放中途无路可退。
+垫片因此实现 `[rclick]`（已有）之外再加一个浮动按钮：
+
+- 只在高 `tf.now_pv == 1` **且**游戏注册过 `*return*` 类返回标签时显示
+  （`[rclick jump=true target="*return_seen"]` 是游戏的“回图库”处理器）；
+- 点击时**先清空 `stat.stack` 的 call/macro/if 帧再跳转** —— KAG3 的
+  右键跳转等于 `process()`（整场景切换），不是嵌套 `[call]`；不清帧会
+  在栈底留下回放的悬挂帧；
+- 跳转后手动复位 `tf.now_pv=0` / `sf.seenflg=0`：正常路径里这两个值由
+  我们跳过的清理代码复位（PV_START 尾巴与 `seen_set.ks` 的
+  `sf.seenflg=0`），不复位会让按钮一直显示、并让图库的存读档按钮消失
+  （`SYSMENU` 分支看 `seenflg`）。
+
+**实测**：点击前 `pv=1/seenflg=1/define.ks`、按钮 `display:block`；点击后
+`sc=seen.ks`、`pv=0`、`seenflg=0`、call/macro 栈均为 0、按钮自动隐藏。
+
+**实验文字样式**（试玩反馈，开关式）：`--msg-style bare` 去掉主消息层
+（`message0`）的底衬图，改给文字加描边 + 阴影、不透明度 0.8；名字框在
+`message1` 层，不受影响。默认仍是 `plate`。
+
 ## 5. 经验：已推翻的判断 / 测试陷阱 / 排障
 
 ### 5.1 已在实测中被推翻的**四个**初始判断（勿重蹈）

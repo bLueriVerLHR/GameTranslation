@@ -1,7 +1,8 @@
   // ---- KAG3 video system (see VIDEO_SHIM_JS in convert_kag.py) ----
   var __kag3_vid = {
     layer: null, page: 'fore', top: 0, left: 0, width: 0, height: 0,
-    loop: 'true', visible: false, file: null, playing: false, url: null
+    loop: 'true', visible: false, file: null, playing: false, url: null,
+    volume: null
   };
   var __kag3_vid_map = function () { return window.__kag3_videos || {}; };
   var __kag3_vid_resolve = function (name) {
@@ -29,12 +30,27 @@
   // element 1024x768 (canvas) before, 800x600 after clearing min-*.  KAG3
   // scales the frame INTO the box, so object-fit: contain reproduces that
   // instead of stretching it.
+  // window.__kag3_video_fill (converter --video-fit fill) instead scales the
+  // movie to the whole game canvas: object-fit: contain keeps the frame
+  // ratio, so a 4:3 movie letterboxes exactly onto a 4:3 canvas and simply
+  // plays larger (owner preference for the gallery mpeg player, whose KAG3
+  // box leaves a black strip on a larger canvas).
   var __kag3_vid_fit = function () {
     try {
       __kag3_vid_el().each(function () {
-        this.style.minWidth = '0';
-        this.style.minHeight = '0';
-        this.style.objectFit = 'contain';
+        if (window.__kag3_video_fill) {
+          this.style.minWidth = '100%';
+          this.style.minHeight = '100%';
+          this.style.width = '100%';
+          this.style.height = '100%';
+          this.style.left = '0';
+          this.style.top = '0';
+          this.style.objectFit = 'contain';
+        } else {
+          this.style.minWidth = '0';
+          this.style.minHeight = '0';
+          this.style.objectFit = 'contain';
+        }
       });
     } catch (e) {}
   };
@@ -48,6 +64,7 @@
       if (pm.width !== undefined) v.width = parseInt(pm.width, 10) || 0;
       if (pm.height !== undefined) v.height = parseInt(pm.height, 10) || 0;
       if (pm.loop !== undefined) v.loop = String(pm.loop);
+      if (pm.volume !== undefined) v.volume = String(pm.volume);
       if (pm.visible !== undefined) v.visible = String(pm.visible) === 'true';
       __kag3_log('video setup layer=' + v.layer + ' ' + v.left + ',' + v.top +
                  ' ' + v.width + 'x' + v.height + ' loop=' + v.loop);
@@ -90,6 +107,13 @@
         return;
       }
       var opt = { video: v.file, loop: v.loop, mode: 'normal', wait: 'false' };
+      // Tyrano's movie layer defaults to a SILENT movie (kag.tag.js:
+      // `else { video.volume = 0; }`), so a KAG3 [playvideo] with no volume
+      // played the clip muted while only the BGM was audible (owner-reported
+      // "动画鉴赏…背景音还是菜单的音乐").  KAG3 movies carry their own audio:
+      // default to full volume, pass a game-specified volume through.
+      opt.volume = (v.volume === null || v.volume === undefined || v.volume === '')
+        ? '100' : String(v.volume);
       // layermode_movie prepends ./data/video/ itself, so pass a bare name.
       if (v.width) opt.width = v.width;
       if (v.height) opt.height = v.height;

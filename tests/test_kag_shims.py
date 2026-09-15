@@ -272,6 +272,21 @@ class TestGalleryReplayUX:
         assert "#tyrano_base .message_outer.kag3-name-frame" in raw
         assert "box-shadow:none !important" in raw
 
+    def test_scene_change_consumes_the_triggering_click(self):
+        raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
+        # The click that triggers a jump must not be consumed again by the screen
+        # it opens: measured with a jump+click in one tick, the replay lost its
+        # first line and the flow ran on into name.ks (owner: "进回想以后，第一句
+        # 话会被自动跳过" / "进画廊后，会自动点第一个 CG 鉴赏").
+        assert "__kag3_click_lock_until" in raw
+        assert "__kag3_lock_clicks" in raw
+        # capture guard (before the map engine's lazy hook) + bubble twin
+        assert raw.count("Date.now() < window.__kag3_click_lock_until") >= 3
+        assert "stopImmediatePropagation" in raw
+        # jump/call arm the lock and drop inherited weak-stop state
+        assert "['jump', 'call'].forEach" in raw
+        assert "cancelWeakStop" in raw
+
     def test_style_align_is_deferred_while_the_dialog_layer_is_empty(self):
         raw = open(os.path.join(JS_DIR, "noop_plus_real.js"), encoding="utf-8").read()
         # KAG3 scopes [style] to the layer named by [current]; this game emits a

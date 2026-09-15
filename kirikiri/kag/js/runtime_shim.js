@@ -35,6 +35,61 @@ tyrano.plugin.kag.tag['ch'] = {
   },
 };
 // __KAG3_INCLUDE:MAP_ENGINE_JS__
+// Click lock: the click that triggers a scene change must not be consumed a
+// second time by the screen it just opened.  KAG3 jumps run synchronously, so
+// the same DOM event finishes bubbling after the new screen has armed its own
+// clickable map / [p] wait - the gallery then opened the entry the pointer
+// happened to land on (owner: "进画廊后，会自动点第一个 CG 鉴赏") and a replay
+// lost its first line (owner: "进回想以后，第一句话会被自动跳过").
+// A jump/call arms a short window during which clicks are swallowed in the
+// capture phase, so no later handler sees a click that belonged to the
+// previous screen.  Registered before the map engine's own hook (which is
+// installed lazily on the first [mapaction]) so the guard runs first.
+window.__kag3_click_lock_until = 0;
+var __kag3_lock_clicks = function (ms) {
+  window.__kag3_click_lock_until = Date.now() + (ms || 300);
+};
+document.addEventListener('click', function (e) {
+  if (Date.now() < window.__kag3_click_lock_until) {
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    if (e.preventDefault) e.preventDefault();
+  }
+}, true);
+// Bubble-phase twin: a jump that started from inside this same click already
+// passed the capture guard, so the event must not reach later handlers either.
+document.addEventListener('click', function (e) {
+  if (Date.now() < window.__kag3_click_lock_until) {
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+  }
+}, false);
+document.addEventListener('mousedown', function (e) {
+  if (Date.now() < window.__kag3_click_lock_until) {
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+  }
+}, true);
+(function () {
+  var T = tyrano.plugin.kag.tag;
+  ['jump', 'call'].forEach(function (name) {
+    var t = T[name];
+    if (!t || !t.start || t.__kag3_click_lock) return;
+    t.__kag3_click_lock = true;
+    var orig = t.start;
+    t.start = function (pm) {
+      __kag3_lock_clicks(300);
+      // The new scene must not inherit half-satisfied click state from the
+      // click that got us here (Tyrano clears weak stops on click, so a
+      // pending one otherwise consumes the new screen's first [p]/[s]).
+      try {
+        this.kag.cancelWeakStop();
+        this.kag.stat.is_click_text = false;
+      } catch (e) {}
+      return orig.apply(this, arguments);
+    };
+  });
+})();
 // KAG3 [rclick] right-click handler. KAG3 fires the registered jump on
 // right-click (comming/lineup screens, submenu back). Touch devices
 // have no right-click, so a left click that is NOT on an active map

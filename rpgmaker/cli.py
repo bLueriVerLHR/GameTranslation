@@ -198,10 +198,12 @@ def cmd_compress(
 @app.command("deliver")
 def cmd_deliver(
     game: str = typer.Argument(..., help="finished JoiPlay folder (usually in temp)"),
+    name: str = typer.Option(None, help="delivered name (archive + games-dir folder); "
+                                      "defaults to the folder's basename"),
     level: int = typer.Option(15, help="zstd compression level"),
 ):
     """Write back to storage: compress, copy the archive, extract into games."""
-    deliver.deliver(game, level=level)
+    deliver.deliver(game, name=name, level=level)
 
 
 # ----------------------------------------------------------------- Tyrano

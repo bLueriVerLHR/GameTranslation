@@ -155,3 +155,25 @@ class TestArchivePath:
             deliver_mod.deliver(str(folder), name="x",
                                 archives=str(tmp_path / "archives"),
                                 games=str(tmp_path / "games"))
+
+
+def test_cli_deliver_passes_name(monkeypatch, tmp_path):
+    """`deliver --name` must reach the delivery: a build living in a work slot
+    (basename != real game name) has to be delivered under its real name."""
+    from rpgmaker import cli as cli_mod
+
+    seen = {}
+
+    def fake_deliver(folder, name=None, level=15, **kwargs):
+        seen.update({"folder": folder, "name": name, "level": level})
+        return str(tmp_path / "out.7z")
+
+    monkeypatch.setattr(cli_mod.deliver, "deliver", fake_deliver)
+    cli_mod.cmd_deliver(str(tmp_path / "slot_build"), name="Real Name",
+                        level=9)
+    assert seen == {"folder": str(tmp_path / "slot_build"),
+                    "name": "Real Name", "level": 9}
+    # Typer passes the option's value through as-is, and omitting the option
+    # yields None (which deliver() turns into the folder basename).
+    cli_mod.cmd_deliver(str(tmp_path / "slot_build"), name=None)
+    assert seen["name"] is None

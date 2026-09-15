@@ -13,6 +13,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from kirikiri import tlg
 
 
+def _real_tlg_files():
+    """Real TLG files for the decoder checks, checked-in fixtures first.
+
+    tests/fixtures/tlg/ is tracked, so these tests run on a fresh clone; an
+    unpacked game tree under .tmp/ (gitignored, local only) is a fallback for
+    extra coverage.  The old hardcoded `tmp/kiri_work/unpacked` path stopped
+    existing when the workspace was reorganised, which quietly turned both
+    real-file tests into permanent skips.
+    """
+    fixtures = Path(__file__).resolve().parent / "fixtures" / "tlg"
+    files = sorted(fixtures.glob("*.tlg")) if fixtures.is_dir() else []
+    if files:
+        return files
+    work = Path(__file__).resolve().parent.parent / ".tmp" / "games"
+    if not work.is_dir():
+        return []
+    return sorted(work.glob("*/src/**/*.tlg"))
+
+
 
 def zero_run_stream(count):
     """Golomb stream for a single zero-run of `count` pixels (bit0 = zero flag)."""
@@ -207,8 +226,7 @@ class TestDecode:
             assert len(rgba) == w * h * 4, (w, h)
 
     def test_decode_real_file(self):
-        p = Path(__file__).resolve().parent.parent / "tmp" / "kiri_work" / "unpacked"
-        real = sorted(p.glob("**/*.tlg"))
+        real = _real_tlg_files()
         if not real:
             pytest.skip("no real TLG files present")
         data = (real[0]).read_bytes()
@@ -432,8 +450,7 @@ class TestNumbaPath:
         assert fast == pure
 
     def test_real_fast_matches_pure(self):
-        p = Path(__file__).resolve().parent.parent / "tmp" / "kiri_work" / "unpacked"
-        real = sorted(p.glob("**/*.tlg"))
+        real = _real_tlg_files()
         if not real:
             pytest.skip("no real TLG files present")
         if not tlg._USE_NUMBA:

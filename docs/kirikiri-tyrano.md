@@ -1023,6 +1023,44 @@ make.ks** ✗ → 引擎找不到文件就 `alert()`
 > `define.ks:3392` = `[BGM]` 宏内部），**不能**当成剧情位置 ✗；判断“读档位置
 > 对不对”要看**可见台词**或剧情进度标志 ✓。这个坑本轮踩了三次 ✗。
 
+### 4.12 选项前存档/读档必须回到选项本身（试玩反馈，已修）
+
+**症状**：在选项显示时存档 → 读档后**选项不再出现** ✗，剧情直接往下走 ✓（不是死锁 ✓，但分支被静默跳过 ✗ = 逻辑被改 ✗）。
+
+**真因**：移植把 KAG3 的 `[select]` 拆成「渲染选项 → 停在合成
+`[kag3stop]`」两步（游戏宏 `SELECT_CENTER` 用 `[ch]` 提示 + `[link2]` 选项 ✓，
+宏末 `[kag3stop]` ✓），所以**存档位置记录在选项之后** ✗；而原版 KAG3 存档位置就在
+`[select]` 命令处 ✓，读档会重新渲染选项 ✓。实测存档内容：31 个图层**全无 text** ✗、
+整个存档 JSON 不含任何假名/选项标记 ✗。
+
+**修法（纯垫片，语义对齐原版）**：
+
+1. 渲染选项时置 `window.__kag3_choice_active`（`[ch]` 的选项分支 ✓ + 延迟安装的
+   `[link]`/`[link2]`/`[glink]` 包装 ✓——选项项是 `link2` 渲染的，不能只靠 `[ch]`）；
+2. `[kag3stop]` 开始时若有活动选项 → 读**宏帧** `kag.getStack('macro')`
+   （`{index, storage}` = 「调用 `[SELECT_CENTER]` 的那个标签」✓）→ 写入
+   `kag.stat.kag3_choice_resume = {scenario, index, depth}` ✓ —— 它在 `stat` 里，
+   **自然随存档保存** ✓（无需改引擎的 snap 逻辑 ✓）；
+3. 包装 `kag.menu.loadGameData`：读档数据带 `kag3_choice_resume` 时把
+   `current_order_index`/`current_scenario` **拨回该调用点** ✓、把宏栈截到
+   `depth` ✓（丢掉选项自己开的帧 ✓）、并置 `stat.load_auto_next=false`
+   （否则引擎读档后会再前进一步 ✗）→ 选项重新渲染 ✓；
+4. 选项被点掉时清 `__kag3_choice_active` 与 `kag3_choice_resume` ✓；
+   `[kag3stop]` 遇到**无**活动选项时删除残留记录 ✓（防陈旧记录乱跳 ✓）。
+
+**安装时机很关键** ✗：垫片在 `kag.menu.js` **之前**解析 ✗（那时 `kag.menu`
+还不存在 ✗），所以包装必须**延迟安装**（`setInterval` 轮询到 `ftag.master_tag` +
+`menu.loadGameData` 都就绪 ✓，见 `__kag3_choice_support`）—— 一次性安装会静默失败 ✗。
+
+**实测**：存档时记录 `{scenario:"newgame.ks", index:9069, depth:0}` ✓ 并出现在
+`getSaveData().data[2].stat.kag3_choice_resume` ✓；读档后 **3 个选项重现** ✓、
+`f.katonflg` 回到空 ✓；点第一项 → **`f.katonflg=1` 分支生效** ✓、0 新报错 ✓。
+
+> 排障提醒：`window.__kag3_engine_errors` 存在 **localStorage** 里 → 跨页面
+> **不会清空** ✗。诊断前先清掉它 ✓（本轮曾把上几个构建的 20 条旧报错
+> ——`style`/`history`/`wm` 不存在、`'%d'.sprintf` 不是函数 —— 误当成当前
+> 构建的缺陷 ✗，实际当前构建全部正常 ✓：标签都在 ✓、`sprintf` 是函数 ✓）。
+
 ## 5. 经验：已推翻的判断 / 测试陷阱 / 排障
 
 ### 5.1 已在实测中被推翻的**四个**初始判断（勿重蹈）

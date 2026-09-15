@@ -154,6 +154,30 @@ def test_scan_js_and_inventory(game):
 
 # ---------------------------------------------------------------- keys
 
+def test_extract_reads_object_shaped_commands(tmp_path):
+    """Real builds can save commands as named objects instead of arrays."""
+    root = make_game(str(tmp_path / "game"))
+    path = os.path.join(root, "data", "Map002.json")
+    _dump(path, {"displayName": "", "events": [None, {"id": 1, "name": "Ev",
+        "pages": [{"list": [
+            {"code": 101, "indent": 0, "parameters": ["", 0, 0, 2]},
+            {"code": 401, "indent": 0, "parameters": ["\u304a\u306f\u3088\u3046"]},
+            {"code": 102, "indent": 0,
+             "parameters": [["\u306f\u3044", "\u3044\u3044\u3048"], 0, 0]},
+            {"code": 108, "indent": 0, "parameters": ["\u30b3\u30e1\u30f3\u30c8"]},
+        ]}]}]})
+    work = str(tmp_path / "work")
+    stats = mvkeys.extract(root, work)
+    entries = {entry["id"]: entry for entry in mvkeys.load_keys(work)
+               if entry["kind"] == "map" and "Map002" in entry["id"]}
+    assert entries["data/Map002.json#events[1].pages[0].list[1]"
+                   ".parameters[0]"]["ja"] == "\u304a\u306f\u3088\u3046"
+    assert entries["data/Map002.json#events[1].pages[0].list[2]"
+                   ".parameters[0][1]"]["ja"] == "\u3044\u3044\u3048"
+    assert len(entries) == 3
+    assert stats["skipped"].get("malformed") is None
+
+
 def test_extract_tolerates_plugin_shaped_entries(tmp_path):
     """Real data can hold non-command entries (plugins write their own)."""
     root = make_game(str(tmp_path / "game"))
@@ -169,7 +193,7 @@ def test_extract_tolerates_plugin_shaped_entries(tmp_path):
     stats = mvkeys.extract(root, work)
     keys = mvkeys.load_keys(work)
     assert [entry["ja"] for entry in keys if entry["kind"] == "map"] == ["\u3042\u3044\u3046"]
-    assert stats["skipped"]["malformed"] == 1
+    assert stats["skipped"]["malformed"] == 2
 
 
 def test_extract_story_order_and_kinds(work, game):
@@ -252,10 +276,12 @@ def test_missing_data_dir_is_an_error(tmp_path):
 
 def test_is_candidate_rules():
     assert mvkeys.is_candidate("\u3042\u3044\u3046", "map") is True
-    assert mvkeys.is_candidate("\u653b\u6483", "map") is False
-    assert mvkeys.is_candidate("\u653b\u6483", "db") is True
+    # kanji-only text is real text (location banners, labels, battle messages)
+    assert mvkeys.is_candidate("\u653b\u6483", "map") is True
+    assert mvkeys.is_candidate("\u5834\u6240\uff1a\u8a3a\u5bdf\u5ba4", "map") is True
     assert mvkeys.is_candidate("", "db") is False
-    assert mvkeys.is_candidate("img\\u30c6.png", "db") is False
+    assert mvkeys.is_candidate("img\u30c6.png", "db") is False
+    assert mvkeys.is_candidate("$dataSystem.x;", "plugin") is False
 
 
 # ---------------------------------------------------------------- library
@@ -442,6 +468,29 @@ def test_cli_prepare_gates_status(work, game, capsys):
     assert cli.main(["rewrite", work]) == 0
     assert cli.main(["codes", work]) == 0
     assert cli.main(["scaffold", work]) == 0
+    capsys.readouterr()
+
+
+def test_slice_keys_streams_in_order(work, game):
+    mvkeys.extract(game, work)
+    entries = mvkeys.slice_keys(work, start=2, count=3)
+    assert [entry["seq"] for entry in entries] == [2, 3, 4]
+    assert mvkeys.slice_keys(work, start=0, count=99)[-1]["seq"] == \
+        len(mvkeys.load_keys(work)) - 1
+    only_db = mvkeys.slice_keys(work, count=None, kind="db")
+    assert only_db and all(entry["kind"] == "db" for entry in only_db)
+    assert mvkeys.slice_keys(work, start=9999, count=5) == []
+
+
+def test_cli_slice_writes_a_workable_slice(work, game, tmp_path, capsys):
+    assert cli.main(["prepare", game, work]) == 0
+    out = str(tmp_path / "slice.jsonl")
+    assert cli.main(["slice", work, "--start", "0", "--count", "5",
+                     "--out", out]) == 0
+    lines = [json.loads(line) for line in
+             io.open(out, encoding="utf-8").read().splitlines()]
+    assert len(lines) == 5 and "ja" in lines[0]
+    assert cli.main(["slice", work, "--start", "9999"]) != 0
     capsys.readouterr()
 
 

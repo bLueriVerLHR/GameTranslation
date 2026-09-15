@@ -38,7 +38,8 @@ from collections import Counter, OrderedDict, defaultdict
 from . import codes as codes_mod
 from .codes import CJK_RE, KANA_RE, code_key, parse_codes
 
-__all__ = ["extract", "load_keys", "text_codes", "speaker_of", "is_candidate"]
+__all__ = ["extract", "load_keys", "text_codes", "is_command",
+           "command_code", "speaker_of", "is_candidate"]
 
 #: Command codes whose first parameter is displayed text.
 TEXT_CODES = (401, 405)
@@ -71,16 +72,39 @@ _SCRIPTISH_RE = re.compile(
 SCHEMA = 2
 
 
-def text_codes(command):
-    """The displayed strings of one MV/MZ command, as ``[(path, text)]``.
+def is_command(command):
+    """Could this page-list entry be a command?  (array or object shape)"""
+    if isinstance(command, dict):
+        return "code" in command
+    return isinstance(command, (list, tuple)) and len(command) >= 3
 
-    A command is normally ``[code, indent, *params]``, but plugin-written
-    entries can be any shape (a dict, a short list); anything that is not a
-    command is ignored here and counted as `malformed` by the caller.
+
+def command_code(command):
+    """The numeric command code of either shape (None when unreadable)."""
+    if isinstance(command, dict):
+        return command.get("code")
+    if isinstance(command, (list, tuple)) and command:
+        return command[0]
+    return None
+
+
+def text_codes(command):
+    """The displayed strings of one MV/MZ command, as ``[(suffix, text)]``.
+
+    A command has two equivalent shapes and real builds ship both: the
+    editor's array (``[401, 0, "text"]``) and the named-object form
+    (``{"code": 401, "indent": 0, "parameters": ["text"]}``) that a tool
+    rewriting the data tends to save - the engine reads named properties, so
+    both run.  Anything that is not a command at all (plugins do write their
+    own entries into a page list) is ignored here and counted by the caller.
     """
-    if not isinstance(command, (list, tuple)) or len(command) < 3:
+    if isinstance(command, dict):
+        code = command.get("code")
+        params = command.get("parameters") or []
+    elif isinstance(command, (list, tuple)) and len(command) >= 3:
+        code, params = command[0], command[2:]
+    else:
         return []
-    code, params = command[0], command[2:]
     out = []
     if code in TEXT_CODES and params and isinstance(params[0], str):
         out.append(("", params[0]))
@@ -94,17 +118,22 @@ def text_codes(command):
 def is_candidate(text, kind="map"):
     """Is this string something to translate?
 
-    Kana always means text.  Kanji-only strings count for database/UI/plugin
-    kinds (labels such as "攻撃"), but not for map dialogue (there a kana-less
-    string is a symbol, a number or a stray control code).
+    Kana always means text, and kanji-only strings count too: a location
+    banner (``\\px[200]場所：診察室``), a menu label, a database name or a
+    battle message is often kanji-only, and dropping those would leave parts
+    of the game untranslated while looking like success (a real sample of 25
+    maps held ~1300 such lines).  ASCII-only strings, file paths and - where
+    script values are plausible - script fragments are excluded.
     """
     if not isinstance(text, str) or not text.strip():
         return False
-    if KANA_RE.search(text):
-        return True
-    if kind in ("db", "ui", "plugin") and CJK_RE.search(text):
-        return not _PATH_RE.search(text) and not _SCRIPTISH_RE.search(text)
-    return False
+    if not (KANA_RE.search(text) or CJK_RE.search(text)):
+        return False
+    if _PATH_RE.search(text):
+        return False
+    if kind in ("db", "ui", "plugin") and _SCRIPTISH_RE.search(text):
+        return False
+    return True
 
 
 def speaker_of(text):
@@ -197,14 +226,14 @@ def _cmd_id(rel, path, suffix):
 
 def _walk_list(collector, lst, rel, path, where, stream):
     for index, command in enumerate(lst or []):
-        if not isinstance(command, (list, tuple)):
+        if not is_command(command):
             collector.skipped["malformed"] += 1
             continue
         for field, text in text_codes(command):
             collector.add(_cmd_id(rel, "%s[%d]" % (path, index), field),
                           "map" if "Map" in rel else
                           ("common" if "CommonEvents" in rel else "troop"),
-                          "%s/%s" % (where, command[0]),
+                          "%s/%s" % (where, command_code(command)),
                           text, stream)
 
 
@@ -448,4 +477,27 @@ def load_keys(work_dir):
             line = line.strip()
             if line:
                 out.append(json.loads(line))
+    return out
+
+
+def slice_keys(work_dir, start=0, count=None, kind=None):
+    """A slice of the key list, streamed - the translator reads one at a time.
+
+    The whole list is far too large for one context (tens of thousands of
+    keys), so the subagent works scene by scene: this returns ``start`` to
+    ``start + count`` in story order, optionally filtered by kind.
+    """
+    out = []
+    path = os.path.join(work_dir, "keys.jsonl")
+    with io.open(path, encoding="utf-8") as handle:
+        for seq, line in enumerate(handle):
+            line = line.strip()
+            if not line or seq < start:
+                continue
+            if count is not None and len(out) >= count:
+                break
+            entry = json.loads(line)
+            if kind and entry.get("kind") != kind:
+                continue
+            out.append(entry)
     return out

@@ -11,6 +11,7 @@ the job:
     extract   <game_dir> <work_dir>   story-ordered keys.jsonl + code table
     scaffold  <work_dir>              state files + MISSION.md
     codes     <work_dir>              regenerate control_codes.md
+    slice     <work_dir>              a slice of keys.jsonl for one scene
     to-json   <work_dir>              raw library -> translated.json (escaping)
     rewrite   <work_dir>              execute rewrites.jsonl over the library
     gates     <work_dir>              the four hard gates (bake needs all green)
@@ -177,6 +178,43 @@ def status(
     return 0
 
 
+def slice_(
+    work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
+    start: Annotated[int, cliutil.Option(
+        "--start", help="first story-order position")] = 0,
+    count: Annotated[int, cliutil.Option(
+        "--count", help="how many keys to take")] = 40,
+    kind: Annotated[str, cliutil.Option(
+        "--kind", help="only this kind (map/common/troop/db/ui/plugin)")] = None,
+    out: Annotated[str, cliutil.Option(
+        "--out", help="write the slice here (default: stdout)")] = None,
+    verbose: cliutil.Verbose = False,
+    quiet: cliutil.Quiet = False,
+    log_file: cliutil.LogFile = None,
+) -> int:
+    """Cut a slice of the key list out for the translator to work through.
+
+    The key list is far bigger than one context; the translator reads a slice,
+    translates it, appends the raw library and asks for the next slice.
+    """
+    cliutil.setup_logging(verbose, quiet, log_file)
+    if not os.path.isfile(os.path.join(work_dir, "keys.jsonl")):
+        return cliutil.fail("keys.jsonl missing in %s (run extract first)"
+                            % work_dir)
+    entries = mvkeys.slice_keys(work_dir, start=start, count=count, kind=kind)
+    payload = "\n".join(json.dumps(entry, ensure_ascii=False)
+                        for entry in entries) + ("\n" if entries else "")
+    if out:
+        with open(out, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(payload)
+        log.info("wrote %d keys (%d..%d) to %s", len(entries), start,
+                 start + len(entries) - 1, out)
+    else:
+        print(payload, end="")
+    return 0 if entries else cliutil.fail(
+        "no keys in range (start=%d count=%d kind=%s)" % (start, count, kind))
+
+
 app = cliutil.app(help=__doc__)
 app.command()(prepare)
 app.command()(extract)
@@ -186,6 +224,7 @@ app.command(name="to-json")(to_json)
 app.command()(rewrite)
 app.command()(gates)
 app.command()(status)
+app.command(name="slice")(slice_)
 
 
 def main(argv=None) -> int:

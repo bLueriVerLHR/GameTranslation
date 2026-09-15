@@ -149,6 +149,12 @@ def _sample_tokens(entry, limit=3):
     return ", ".join("`%s`" % tok for tok, _ in entry["tokens"].most_common(limit))
 
 
+def _clip(text, limit=120):
+    """Trim a JS comment line: the table is read into a prompt, not archived."""
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
 def write_markdown(path, merged, total_keys=0):
     """Write the control-code table the subagent reads before translating."""
     rows = sorted(merged.items(),
@@ -169,7 +175,7 @@ def write_markdown(path, merged, total_keys=0):
     for key, entry in rows:
         sample = _sample_tokens(entry) or ""
         sites = " ".join("`%s`" % site for site in entry["sites"][:2])
-        docs = " / ".join(entry["docs"][:1])
+        docs = _clip(" / ".join(entry["docs"][:1]))
         meaning = " ".join(x for x in (sites, docs) if x) or "_(not found)_"
         lines.append("| `\\%s` | %d | %s | %s | %s |"
                      % (key, entry["count"], sample,

@@ -272,6 +272,22 @@ class TestGalleryReplayUX:
         assert "#tyrano_base .message_outer.kag3-name-frame" in raw
         assert "box-shadow:none !important" in raw
 
+    def test_in_game_menu_carries_the_configured_title_jump(self):
+        raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
+        # KAG3's built-in system menu (plain [rclick enabled=true]) used to be a
+        # no-op, so the story had no menu at all and no way back to the title
+        # (owner: "没办法在游戏里，通过菜单，回到主页菜单").
+        assert "__kag3_menu_open" in raw
+        assert "'data-kag3', 'sysmenu'" in raw
+        assert "__kag3_title_jump" in raw
+        assert "回到主页菜单" in raw
+        # arming: the default rclick opens the overlay, right-click only
+        assert "__kag3_rclick = { menu: true };" in raw
+        assert "__kag3_rclick.menu" in raw
+        # the title target is game data, so it must come from the build knob
+        assert "title_jump" in open(os.path.join(REPO, "kirikiri", "kag", "cli.py"),
+                                    encoding="utf-8").read()
+
     def test_scene_change_consumes_the_triggering_click(self):
         raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
         # The click that triggers a jump must not be consumed again by the screen
@@ -344,6 +360,12 @@ class TestGalleryReplayUX:
         sig = inspect.signature(kag_cli.convert)
         assert sig.parameters["video_fit"].default == "box"
         assert sig.parameters["msg_style"].default == "plate"
+        assert sig.parameters["title_jump"].default is None
+        assert kag_cli._split_title_jump("first.ks:*start") == ("first.ks", "start")
+        assert kag_cli._split_title_jump("first.ks") == ("first.ks", "")
+        assert kag_cli._split_title_jump("*first.ks:start") == ("first.ks", "start")
+        assert kag_cli._split_title_jump("") == ("", "")
+        assert kag_cli._split_title_jump(None) == ("", "")
         src = open(os.path.join(REPO, "kirikiri", "kag", "cli.py"),
                    encoding="utf-8").read()
         assert "--video-fit" in src

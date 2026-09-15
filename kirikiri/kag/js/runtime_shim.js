@@ -90,6 +90,84 @@ document.addEventListener('mousedown', function (e) {
     };
   });
 })();
+// ---------------------------------------------------------------------------
+// In-game menu overlay.
+//
+// KAG3 ships a built-in system menu: the game arms it with a plain
+// [rclick enabled=true] (newgame.ks:26 etc.) and KAG3 opens its own menu on
+// right-click.  This port has no engine menu (the shim used to register the
+// default rclick as a no-op), so in-story there was nothing to open - the owner
+// had no way back to the main menu.  The overlay below is that menu: entries are
+// added from the build knobs (window.__kag3_title_jump carries the game's own
+// title storage/label, which is game data and therefore never hardcoded here).
+var __kag3_menu_el = null;
+var __kag3_menu_close = function () {
+  if (__kag3_menu_el && __kag3_menu_el.parentNode) {
+    __kag3_menu_el.parentNode.removeChild(__kag3_menu_el);
+  }
+  __kag3_menu_el = null;
+};
+var __kag3_menu_is_open = function () { return !!__kag3_menu_el; };
+var __kag3_menu_open = function () {
+  __kag3_menu_close();
+  var kag = window.TYRANO && TYRANO.kag;
+  if (!kag) return;
+  var tj = window.__kag3_title_jump || {};
+  var box = document.createElement('div');
+  box.setAttribute('data-kag3', 'sysmenu');
+  box.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);' +
+    'z-index:2147483001;min-width:240px;padding:16px 18px;border-radius:12px;' +
+    'background:rgba(5,8,14,.94);border:1px solid rgba(255,255,255,.35);' +
+    'box-shadow:0 18px 48px rgba(0,0,0,.6);color:#fff;' +
+    'font:600 15px/1.5 system-ui,sans-serif;text-align:center';
+  var title = document.createElement('div');
+  title.textContent = '菜单';
+  title.style.cssText = 'margin:0 0 12px;opacity:.75;font-size:13px;letter-spacing:.08em';
+  box.appendChild(title);
+  var add = function (label, fn, primary) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('data-kag3-menu', label);
+    b.textContent = label;
+    b.style.cssText = 'display:block;width:100%;margin:6px 0;padding:10px 14px;' +
+      'border-radius:8px;cursor:pointer;font:inherit;' +
+      'border:1px solid rgba(255,255,255,.35);' +
+      (primary ? 'background:rgba(255,255,255,.16);color:#fff;'
+               : 'background:rgba(255,255,255,.06);color:#fff;');
+    b.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      fn();
+    });
+    box.appendChild(b);
+    return b;
+  };
+  if (tj.storage) {
+    // Same semantics as the game's own return-to-title code
+    // ([jump storage=first.ks target=*start]): a full process() switch, so the
+    // pending frames of the abandoned scene must be dropped.
+    add('回到主页菜单', function () {
+      __kag3_menu_close();
+      try {
+        ['call', 'macro', 'if'].forEach(function (n) {
+          if (kag.stat.stack && kag.stat.stack[n]) kag.stat.stack[n].length = 0;
+        });
+        kag.stat.is_skip = false;
+        kag.stat.is_auto = false;
+      } catch (e) {}
+      __kag3_log('sysmenu -> title ' + tj.storage + ' ' + (tj.target || ''));
+      __kag3_jump(kag, tj.storage, String(tj.target || '').replace(/^\*/, ''));
+    }, true);
+  }
+  add('继续游戏', function () { __kag3_menu_close(); });
+  var host = document.body || document.documentElement;
+  if (!host) return;
+  host.appendChild(box);
+  __kag3_menu_el = box;
+};
+var __kag3_menu_toggle = function () {
+  if (__kag3_menu_el) __kag3_menu_close(); else __kag3_menu_open();
+};
 // KAG3 [rclick] right-click handler. KAG3 fires the registered jump on
 // right-click (comming/lineup screens, submenu back). Touch devices
 // have no right-click, so a left click that is NOT on an active map
@@ -106,6 +184,7 @@ var __kag3_exec_rclick = function () {
   var kag = window.TYRANO && TYRANO.kag;
   if (!kag || !__kag3_rclick) return;
   var r = __kag3_rclick;
+  if (r.menu) { __kag3_menu_toggle(); return; }
   __kag3_rclick = null;
   __kag3_log('rclick -> ' + r.storage + ' ' + r.target);
   if (r.exp) { try { __kag3_run_body(r.exp, {}); } catch (e) {} }
@@ -116,8 +195,13 @@ tyrano.plugin.kag.tag['rclick'] = {
     var enabled = String(pm.enabled === undefined ? true : pm.enabled) === 'true';
     var jump = String(pm.jump === undefined ? false : pm.jump) === 'true';
     var has_tgt = String(pm.storage || '') || String(pm.target || '');
-    if (!enabled || (!jump && !has_tgt)) {
+    if (!enabled) {
       __kag3_rclick = null;
+    } else if (!jump && !has_tgt) {
+      // Plain [rclick enabled=true] is KAG3's built-in system menu.  Arm our own
+      // overlay.  Right-click only (no left-click fallback): otherwise every
+      // story click would open a menu.
+      __kag3_rclick = { menu: true };
     } else {
       __kag3_rclick = { storage: pm.storage || '', target: pm.target || '', exp: pm.exp || '' };
       if (__kag3_rclick.storage && __kag3_rclick.target &&
@@ -137,7 +221,7 @@ document.addEventListener('contextmenu', function (e) {
 }, true);
 document.addEventListener('click', function (e) {
   // touch fallback: only when no map is active (maps own their clicks)
-  if (!__kag3_rclick || __kag3_target_is_ui(e)) return;
+  if (!__kag3_rclick || __kag3_rclick.menu || __kag3_target_is_ui(e)) return;
   if (Object.keys(window.__kag3_maps || {}).length > 0) return;
   __kag3_exec_rclick();
 }, true);
@@ -929,6 +1013,7 @@ if (window.__kag3_msg_style === 'bare') {
           '<button data-kag3-action=save>SAVE</button><button data-kag3-action=load>LOAD</button>' +
           '<button data-kag3-action=log>LOG</button><button data-kag3-action=auto>AUTO</button>' +
           '<button data-kag3-action=skip>SKIP</button><button data-kag3-action=hide>HIDE</button>' +
+          '<button data-kag3-action=menu>MENU</button>' +
           '<button data-kag3-action=gallery style="display:none">GALLERY</button></div>';
         panel.style.cssText = 'position:fixed;right:10px;top:10px;z-index:2147483000;' +
           'display:flex;gap:8px;align-items:flex-start;font:600 14px sans-serif;pointer-events:auto';
@@ -993,6 +1078,12 @@ if (window.__kag3_msg_style === 'bare') {
               if (kag.stat.is_skip) kag.setSkip(false);
               else if (kag.stat.is_adding_text) kag.setSkip(true);
               else kag.ftag.startTag('skipstart', {});
+            }
+            else if (a === 'menu') {
+              // The game's own system menu (KAG3's [rclick] default) is not part
+              // of the engine port, so this is where it lives.
+              actions.style.display = 'none';
+              __kag3_menu_toggle();
             }
             else if (a === 'gallery') {
               // Leave the replay through the game's own return handler.

@@ -82,7 +82,8 @@ log = logging.getLogger(__name__)
 def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
             scenario_dir="scenario", scenario_only=False, fonts=None,
             video_dir=None, fast_skip=False, state_overrides_path=None,
-            portrait=False, workers=None, video_fit="box", msg_style="plate"):
+            portrait=False, workers=None, video_fit="box", msg_style="plate",
+            title_jump=None):
     """Convert one unpacked KAG3 game into a TyranoScript project.
 
     Programmatic entry point; the Typer command below is its CLI wrapper.  The
@@ -102,6 +103,7 @@ def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
         scenario_only=scenario_only, font=fonts, video_dir=video_dir,
         fast_skip=fast_skip, state_overrides=state_overrides_path,
         portrait=portrait, video_fit=video_fit, msg_style=msg_style,
+        title_jump=title_jump,
     )
 
     try:
@@ -248,6 +250,11 @@ def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
         ("true" if args.video_fit == "fill" else "false") + ";\n"
     msg_style_js = "window.__kag3_msg_style = " + \
         json.dumps(str(args.msg_style)) + ";\n"
+    # In-game menu target: the title storage/label is game data, so the caller
+    # passes it in ("storage:label") instead of the shim guessing.
+    _tj_storage, _tj_target = _split_title_jump(getattr(args, "title_jump", None))
+    title_jump_js = "window.__kag3_title_jump = " + json.dumps(
+        {"storage": _tj_storage, "target": _tj_target}) + ";\n"
     tag_usage = collect_tag_usage(args.unpacked)
     shim_js, shim_n = _shim_js(macros, args.engine,
                                collect_scene_tags(args.unpacked), tag_usage)
@@ -255,6 +262,7 @@ def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
         "window.__kag3_portrait = " + ("true" if args.portrait else "false") + ";",
         video_fit_js,
         msg_style_js,
+        title_jump_js,
         RUNTIME_SHIM_IIFE,
         FAST_SKIP_SHIM_JS if args.fast_skip else "",
         tjs2js.SPRINTF_SHIM,
@@ -336,6 +344,22 @@ def convert(*, unpacked, engine, out_dir, keep_game_buttons=False,
     return 0
 
 
+def _split_title_jump(value):
+    """Split the ``--title-jump`` knob (``storage`` or ``storage:label``).
+
+    The title storage/label is game data, so the shim never guesses it; the
+    caller names the game's own return-to-title target (the same one the game
+    uses itself, e.g. ``first.ks:*start``).
+    """
+    raw = str(value or "").strip().lstrip("*")
+    if not raw:
+        return "", ""
+    if ":" in raw:
+        storage, _, target = raw.partition(":")
+        return storage.strip(), target.strip().lstrip("*")
+    return raw, ""
+
+
 # --- CLI ---------------------------------------------------------------------
 
 def cmd(
@@ -384,6 +408,11 @@ def cmd(
         help="story message window: plate = keep the game's window frame; "
              "bare = drop the plate, text carries an outline + shadow at 80% "
              "opacity (experimental; name plate unaffected) (default: plate)")] = "plate",
+    title_jump: Annotated[str, typer.Option(
+        "--title-jump", metavar="STORAGE[:LABEL]",
+        help="target of the in-game menu's 'back to main menu' entry, e.g. "
+             "\"first.ks:*start\"; game specific, omit to leave the menu "
+             "without that entry")] = "",
     workers: Annotated[Optional[int], typer.Option(
         "--workers",
         help="parallel asset workers (default: physical cores, auto-tuned; "
@@ -399,7 +428,8 @@ def cmd(
                    scenario_dir=scenario_dir, scenario_only=scenario_only,
                    fonts=font, video_dir=video_dir, fast_skip=fast_skip,
                    state_overrides_path=state_overrides, portrait=portrait,
-                   workers=workers, video_fit=video_fit, msg_style=msg_style)
+                   workers=workers, video_fit=video_fit, msg_style=msg_style,
+                   title_jump=title_jump)
 
 
 app = cliutil.command_app(cmd, help=__doc__)

@@ -39,7 +39,8 @@ from .codes import (KANA_RE, has_text_parameter, parameter_of, parse_codes,
 __all__ = ["HEADER_RE", "read_library", "write_library", "append_block",
            "read_jsonl", "append_jsonl", "apply_rewrites", "to_json",
            "run_gates", "gate_markdown", "code_problems", "readable_text",
-           "kana_problem", "validate_blocks", "append_batch"]
+           "kana_problem", "validate_blocks", "append_batch", "leading_codes",
+           "fix_leading_codes"]
 
 #: ``@@@<id>@@@`` on a line of its own; the id may contain anything but ``@``.
 HEADER_RE = re.compile(r"^@@@([^@\n]+?)@@@[ \t]*$")
@@ -250,6 +251,39 @@ def code_problems(source_text, target_text):
     return problems
 
 
+def leading_codes(text):
+    """The control-code prefix of `text` (the codes before any visible text)."""
+    out = []
+    for is_code, piece in split_keep_codes(text):
+        if is_code:
+            out.append(piece)
+        elif piece:
+            break
+    return "".join(out)
+
+
+def fix_leading_codes(source, target):
+    """Prepend the source's leading codes when the translation omitted them.
+
+    A continuation line repeats the source's leading codes (``\\px[200]``, a run
+    of ``\\{`` size switches), and forgetting one is the most common mechanical
+    slip of a long run - it says nothing about the translation, so the tool
+    fixes it instead of the translator.
+
+    Two cases are deliberately left alone: a translation that already starts
+    with *some* code (only validation may judge whether it is the right one),
+    and a prefix whose parameter carries **text** - a name box must be
+    translated, and copying the source's Japanese name back would be worse than
+    the missing code it was meant to fix.
+    """
+    prefix = leading_codes(source)
+    if not prefix or leading_codes(target):
+        return target
+    if any(has_text_parameter(token) for token in parse_codes(prefix)):
+        return target
+    return prefix + target
+
+
 def readable_text(text):
     """What a player actually reads: text between codes + text parameters."""
     parts = [piece for is_code, piece in split_keep_codes(text) if not is_code]
@@ -295,20 +329,33 @@ def validate_blocks(work_dir, values):
     return problems
 
 
-def append_batch(work_dir, batch_path, note=None):
+def append_batch(work_dir, batch_path, note=None, fix_leading=False):
     """Validate a batch file and append it to the library (all or nothing).
 
     The batch file has the library format (``@@@id@@@`` + raw translation), so
     a batch is just a fragment of the library.  Nothing is written when any
     block fails validation: the caller gets every problem and the library stays
-    exactly as it was.
+    exactly as it was.  With ``fix_leading`` a missing leading control code is
+    restored from the source first (see ``fix_leading_codes``).
     """
     values = read_library(batch_path)
     if not values:
-        return {"added": 0, "problems": [("", "batch file is empty")]}
+        return {"added": 0, "fixed": 0,
+                "problems": [("", "batch file is empty")]}
+    keys = {entry["id"]: entry for entry in mvkeys.load_keys(work_dir)}
+    fixed = 0
+    if fix_leading:
+        for key_id, text in list(values.items()):
+            entry = keys.get(key_id)
+            if entry is None:
+                continue
+            restored = fix_leading_codes(entry["ja"], text)
+            if restored != text:
+                values[key_id] = restored
+                fixed += 1
     problems = validate_blocks(work_dir, values)
     if problems:
-        return {"added": 0, "problems": problems}
+        return {"added": 0, "fixed": fixed, "problems": problems}
     library = os.path.join(work_dir, LIBRARY_NAME)
     with io.open(library, "a", encoding="utf-8", newline="\n") as handle:
         for key_id, text in values.items():
@@ -316,8 +363,9 @@ def append_batch(work_dir, batch_path, note=None):
     if note:
         append_jsonl(os.path.join(work_dir, "progress.jsonl"),
                      {"note": note, "added": len(values),
+                      "fixed_leading": fixed,
                       "ids": [key for key in list(values)[:3]]})
-    return {"added": len(values), "problems": []}
+    return {"added": len(values), "fixed": fixed, "problems": []}
 
 
 def _gate_coverage(keys, values):

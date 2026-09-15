@@ -238,6 +238,8 @@ def append(
         "--batch", help="batch file to append (same format as the library)")],
     note: Annotated[str, cliutil.Option(
         "--note", help="also log a progress line with this note")] = None,
+    fix_leading: Annotated[bool, cliutil.Option(
+        "--fix-leading", help="restore a missing leading control code from the source")] = False,
     verbose: cliutil.Verbose = False,
     quiet: cliutil.Quiet = False,
     log_file: cliutil.LogFile = None,
@@ -246,7 +248,9 @@ def append(
 
     All or nothing: unknown ids, empty values, changed control codes and kana
     residue are all reported **before** anything is written, so a batch that
-    fails leaves the library exactly as it was.
+    fails leaves the library exactly as it was.  With `--fix-leading` a
+    translation that dropped the source's leading codes (``\\px[200]``) gets
+    them restored first - that saves retyping a code on every continuation line.
     """
     cliutil.setup_logging(verbose, quiet, log_file)
     if not os.path.isfile(batch):
@@ -255,7 +259,8 @@ def append(
         return cliutil.fail("keys.jsonl missing in %s (run extract first)"
                             % work_dir)
     try:
-        report = rawlib.append_batch(work_dir, batch, note=note)
+        report = rawlib.append_batch(work_dir, batch, note=note,
+                                     fix_leading=fix_leading)
     except ValueError as error:
         return cliutil.fail("bad batch file: %s" % error)
     if report["problems"]:
@@ -263,7 +268,8 @@ def append(
             log.error("%s: %s", key_id or "(batch)", problem)
         return cliutil.fail("batch rejected: %d problem(s), library unchanged"
                             % len(report["problems"]))
-    log.info("appended %d keys", report["added"])
+    log.info("appended %d keys (%d leading codes restored)", report["added"],
+             report["fixed"])
     print(json.dumps(report, ensure_ascii=False, indent=1))
     return 0
 

@@ -45,6 +45,7 @@ def make_game(root, plugins=True, js=True):
             [108, 0, "\u30b3\u30e1\u30f3\u30c8\u306f\u7ffb\u3055\u306a\u3044"],
             [355, 0, "$gameVariables.setValue(1, 2)"],
             [655, 0, "\u30b9\u30af\u30ea\u30d7\u30c8\u7d9a\u304d"],
+            [401, 0, "\\px[200]\u30c6\u30b9\u30c8\\c[1]\u3002"],
         ]}]}]
     })
     _dump(os.path.join(data, "Map002.json"), {"displayName": "", "events": []})
@@ -412,6 +413,36 @@ def test_apply_rewrites_scope_and_report(work, game):
 
 
 # ---------------------------------------------------------------- gates
+
+def test_fix_leading_codes_restores_only_a_safe_prefix():
+    assert rawlib.leading_codes("\\{\\{\\{\u7ed3\u5c40") == "\\{\\{\\{"
+    assert rawlib.leading_codes("\u7ed3\u5c40") == ""
+    assert rawlib.fix_leading_codes("\\px[200]\u3042\u3044", "\u8bd1\u6587") \
+        == "\\px[200]\u8bd1\u6587"
+    assert rawlib.fix_leading_codes("\\px[200]\u3042\u3044",
+                                    "\\px[200]\u8bd1\u6587") \
+        == "\\px[200]\u8bd1\u6587"
+    assert rawlib.fix_leading_codes("\\px[200]\u3042\u3044", "\\px[100]\u8bd1\u6587") \
+        == "\\px[100]\u8bd1\u6587"      # a wrong code is validation's business
+    assert rawlib.fix_leading_codes("\u3042\u3044", "\u8bd1\u6587") == "\u8bd1\u6587"
+    # a name box is display text: copying it back would restore Japanese
+    assert rawlib.fix_leading_codes("\\nc<\u30df\u30ab>\u3084\u3042", "\u55e8") \
+        == "\u55e8"
+
+
+def test_append_batch_fix_leading(work, game):
+    mvkeys.extract(game, work)
+    entry = [e for e in mvkeys.load_keys(work)
+             if e["ja"].startswith("\\px[200]")][0]
+    batch = os.path.join(work, "_wip_batch.txt")
+    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@%s@@@\n\u8bd1\u6587\\c[1]\u3002\n" % entry["id"])
+    report = rawlib.append_batch(work, batch, fix_leading=True)
+    assert report == {"added": 1, "fixed": 1, "problems": []}
+    values = rawlib.read_library(os.path.join(work, rawlib.LIBRARY_NAME))
+    assert values[entry["id"]] == "\\px[200]\u8bd1\u6587\\c[1]\u3002"
+    assert rawlib.append_batch(work, batch, fix_leading=False)["added"] == 0
+
 
 def test_gates_all_green(work, game):
     mvkeys.extract(game, work)

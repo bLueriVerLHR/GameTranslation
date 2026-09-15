@@ -164,8 +164,13 @@ python -m translation.cli slice <工作区> --start <起点> --count 250 --lean 
 然后提交）：
 
 ```
-python -m translation.cli append <工作区> --batch <批次文件> --note "seq 3001-3300"
+python -m translation.cli append <工作区> --batch <批次文件> --fix-leading --note "seq 3001-3300"
 ```
+
+- **`--fix-leading`（建议总是加）**：续行常常重复开头那串控制码（`\px[200]`、连续 `\{`），
+  漏抄是长跑里最常见的手误。加这个开关后：**你只写正文**，若译文开头没有任何控制码，
+  工具会用原文开头的控制码**自动补回**（你写了别的码则不动，交给校验判）。每次提交报告里
+  的 `fixed` 就是自动补回的条数。
 
 `append` 会先**逐条校验**（id 是否存在、值是否为空、控制码序列与数值参数是否逐字一致、
 假名是否残留未白名单），**全部通过才写盘**；有任何问题就报出 id 与原因且**一个字也不写**

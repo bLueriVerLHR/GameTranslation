@@ -91,6 +91,33 @@ document.addEventListener('mousedown', function (e) {
   });
 })();
 // ---------------------------------------------------------------------------
+// Tyrano's layer restore assumes every layer present in the SAVE also exists in
+// the live DOM, and calls .remove() on it (kag.layer.js setLayerHtml).  A save
+// taken while more layers existed - the game grows numeric layers with
+// [laycount], the gallery expands them, a video/blend layer was open - then
+// throws "Cannot read properties of undefined (reading 'remove')" and the whole
+// load aborts (measured: loadGameData ran hideEventLayer/trigger/stopCharaAnim/
+// offTempListeners, then died inside setLayerHtml).  Seed the missing keys with
+// an empty jQuery set: .remove() becomes a no-op and the loop re-creates the
+// layer from the save right after, which is the documented behaviour anyway.
+(function () {
+  var L = tyrano.plugin.kag.layer;
+  if (!L || !L.setLayerHtml || L.__kag3_safe_layers) return;
+  L.__kag3_safe_layers = true;
+  var orig = L.setLayerHtml;
+  L.setLayerHtml = function (layer) {
+    var seed = function (map, saved) {
+      try {
+        Object.keys(saved || {}).forEach(function (k) {
+          if (!map[k]) map[k] = $();
+        });
+      } catch (e) {}
+    };
+    seed(this.map_layer_fore, layer && layer.map_layer_fore);
+    seed(this.map_layer_back, layer && layer.map_layer_back);
+    return orig.apply(this, arguments);
+  };
+})();
 // In-game menu overlay.
 //
 // KAG3 ships a built-in system menu: the game arms it with a plain

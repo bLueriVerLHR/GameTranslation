@@ -26,6 +26,7 @@ is needed.  The original font file is never deleted.
 Every file this module modifies is backed up into ``<work>/backup/<relpath>``
 first, so a bake is always reversible without touching the sources.
 """
+import glob
 import io
 import json
 import os
@@ -34,7 +35,7 @@ import shutil
 
 __all__ = ["BakeError", "UNIFIED_FONT", "parse_path", "set_by_path",
            "load_plugin_params", "save_plugin_params", "apply_font",
-           "bake"]
+           "unify_plugin_fonts", "bake"]
 
 #: Unified Simplified-Chinese font (local private asset, never committed).
 UNIFIED_FONT = "GlowSansSC-Compressed-Regular.otf"
@@ -139,6 +140,69 @@ def save_plugin_params(game_dir, plugins, prefix, suffix):
     return path
 
 
+def unify_plugin_fonts(game_dir, family="GameFont"):
+    """Point every *font* the game's plugins name at the unified family.
+
+    Found by probing a real build: ``YEP_MessageCore`` ships language-specific
+    faces (``Font Name CH = "SimHei, Heiti TC, sans-serif"``) and switches to
+    them for Chinese text, so dialogue rendered with a system font while the
+    rest of the UI used ``GameFont`` - the game looked like it used two fonts.
+    The CSS @font-face alone cannot fix that: the *name* is a plugin parameter.
+    Hardcoded ``font-family:`` values in plugin JS (an HUD building its own
+    CSS) get the same treatment.  Only font-shaped parameters are touched.
+
+    Returns ``(params_changed, js_files, details)``.
+    """
+    font_key = re.compile(r"font\s*name|font\s*face|fontname", re.I)
+    stack = re.compile(r"^[\w\s,'\"-]+$")
+    plugins, prefix, suffix = load_plugin_params(game_dir)
+    changed, details = 0, []
+    if plugins is not None:
+        for plugin in plugins:
+            params = plugin.get("parameters") or {}
+            for key, value in list(params.items()):
+                if not font_key.search(key) or not isinstance(value, str):
+                    continue
+                if not value.strip() or not stack.match(value):
+                    continue
+                if family in value and len(value.split(",")) == 1:
+                    continue
+                details.append("%s / %s: %r -> %r"
+                               % (plugin.get("name"), key, value, family))
+                params[key] = family
+                changed += 1
+        if changed:
+            save_plugin_params(game_dir, plugins, prefix, suffix)
+
+    js_files = []
+    js_font = re.compile(r"font-family\s*:\s*([^;}]+);")
+    for path in sorted(glob.glob(os.path.join(game_dir, "js", "plugins",
+                                             "*.js"))):
+        with io.open(path, encoding="utf-8", errors="replace") as handle:
+            source = handle.read()
+        replaced, count = js_font.subn("font-family: %s;" % family, source)
+        if not count:
+            continue
+        _backup_for(game_dir, path, source)
+        with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(replaced)
+        rel = os.path.relpath(path, game_dir).replace(os.sep, "/")
+        js_files.append(rel)
+        details.append("%s: %d font-family value(s) -> %s"
+                       % (rel, count, family))
+    return changed, js_files, details
+
+
+def _backup_for(game_dir, path, old_text):
+    """Remember the pre-patch text (``.prefont`` sidecar) so it stays reversible."""
+    rel = os.path.relpath(path, game_dir).replace(os.sep, "/")
+    sidecar = path + ".prefont"
+    if not os.path.isfile(sidecar):
+        with io.open(sidecar, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(old_text)
+    return rel
+
+
 def apply_font(game_dir, font_path=None, repo_root=None):
     """Point the game's single MV font face at a Simplified-Chinese font.
 
@@ -187,19 +251,21 @@ def _write_json(path, payload):
 
 
 def bake(game_dir, work_dir, apply_unified_font=True, repo_root=None,
-         font_path=None, dry_run=False):
+         font_path=None, dry_run=False, font_only=False):
     """Write every translated key back into the game; return a report.
 
     With ``dry_run`` nothing is written and nothing is backed up: the report
     says what *would* change, which is how a build is inspected before touching
     it.
     """
-    ids_path = os.path.join(work_dir, "translated_ids.json")
-    if not os.path.isfile(ids_path):
-        raise BakeError("translated_ids.json missing in %s (run to-json)"
-                        % work_dir)
-    with io.open(ids_path, encoding="utf-8") as handle:
-        values = json.load(handle)
+    values = {}
+    if not font_only:
+        ids_path = os.path.join(work_dir, "translated_ids.json")
+        if not os.path.isfile(ids_path):
+            raise BakeError("translated_ids.json missing in %s (run to-json)"
+                            % work_dir)
+        with io.open(ids_path, encoding="utf-8") as handle:
+            values = json.load(handle)
 
     by_file = {}
     for key_id, text in values.items():
@@ -249,20 +315,30 @@ def bake(game_dir, work_dir, apply_unified_font=True, repo_root=None,
                 _write_json(path, payload)
             written.append(rel)
 
-    font_files, warnings = ([], [])
+    font_files, warnings, font_details = ([], [], [])
     if apply_unified_font and not dry_run:
         font_files, warnings = apply_font(game_dir, font_path=font_path,
                                           repo_root=repo_root)
         for rel in font_files:
             if rel != os.path.join("fonts", UNIFIED_FONT):
                 _backup(work_dir, game_dir, rel)
+        changed, js_files, font_details = unify_plugin_fonts(game_dir)
+        if changed:
+            _backup(work_dir, game_dir, "js/plugins.js")
+        font_files += js_files
+        for rel in js_files:
+            _backup(work_dir, game_dir, rel)
+        report_font = {"params": changed, "files": js_files}
     elif apply_unified_font:
         warnings = ["dry run: unified font not installed"]
+        report_font = {}
+    else:
+        report_font = {}
     if plugins is not None and not dry_run:
         _backup(work_dir, game_dir, "js/plugins.js")
         save_plugin_params(game_dir, plugins, prefix, suffix)
         written.append("js/plugins.js")
-    elif plugins is not None:
+    elif plugins is not None and not font_only:
         written.append("js/plugins.js (dry run)")
 
     return {
@@ -273,5 +349,7 @@ def bake(game_dir, work_dir, apply_unified_font=True, repo_root=None,
         "files": sorted(set(written)),
         "font_files": font_files,
         "font_warnings": warnings,
+        "font_report": report_font,
+        "font_details": font_details[:20],
         "backup_dir": os.path.join(work_dir, "backup"),
     }

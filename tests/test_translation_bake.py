@@ -165,6 +165,53 @@ def test_bake_dry_run_changes_nothing(tmp_path):
                                            "Map001.json"))
 
 
+def test_unify_plugin_fonts_fixes_language_faces_and_js(tmp_path):
+    """A Chinese face in a plugin parameter is what makes a build look mixed."""
+    game = make_game(str(tmp_path / "game"))
+    plugins_path = os.path.join(game, "js", "plugins.js")
+    with io.open(plugins_path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("var $plugins =\n[\n" + json.dumps({
+            "name": "MsgCore", "parameters": {
+                "Font Name": "GameFont",
+                "Font Name CH": "SimHei, Heiti TC, sans-serif",
+                "Font Name KR": "Dotum, AppleGothic, sans-serif",
+                "Font Size": "28",
+                "Outline": "true"}}, ensure_ascii=False) + "\n];\n")
+    os.makedirs(os.path.join(game, "js", "plugins"), exist_ok=True)
+    hud = os.path.join(game, "js", "plugins", "SRD_HUDMaker.js")
+    with io.open(hud, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("return `table {\n    font-family: \"Trebuchet MS\", Arial;\n}\n`;\n"
+                     "// font-family: GameFont;\n")
+    changed, js_files, details = bake_mod.unify_plugin_fonts(game)
+    params = json.loads(io.open(plugins_path, encoding="utf-8").read()
+                        .split("[", 1)[1].rsplit("]", 1)[0])["parameters"]
+    assert params["Font Name CH"] == "GameFont"
+    assert params["Font Name KR"] == "GameFont"
+    assert params["Font Size"] == "28"          # not a font
+    assert params["Outline"] == "true"
+    assert changed == 2 and details
+    assert js_files == ["js/plugins/SRD_HUDMaker.js"]
+    patched = io.open(hud, encoding="utf-8").read()
+    assert 'font-family: GameFont;' in patched
+    assert "Trebuchet" not in patched
+    assert os.path.isfile(hud + ".prefont")      # reversible
+    # idempotent
+    assert bake_mod.unify_plugin_fonts(game)[0] == 0
+
+
+def test_bake_font_only_skips_key_writing(tmp_path):
+    game = make_game(str(tmp_path / "game"))
+    work = str(tmp_path / "work")
+    os.makedirs(work, exist_ok=True)
+    asset = tmp_path / bake_mod.UNIFIED_FONT
+    asset.write_bytes(b"fake")
+    report = bake_mod.bake(game, work, font_only=True, font_path=str(asset))
+    assert report["applied"] == 0 and report["keys"] == 0
+    assert bake_mod.FONT_CSS in report["font_files"]
+    assert _load(os.path.join(game, "data", "Map001.json"))["displayName"] \
+        == "\u8857"                                # data untouched
+
+
 def test_apply_font_switches_single_face(tmp_path):
     game = make_game(str(tmp_path / "game"))
     asset = tmp_path / bake_mod.UNIFIED_FONT

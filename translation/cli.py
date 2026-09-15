@@ -364,6 +364,8 @@ def bake(
     work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
     no_font: Annotated[bool, cliutil.Option(
         "--no-font", help="skip the unified-font step (not recommended)")] = False,
+    font_only: Annotated[bool, cliutil.Option(
+        "--font-only", help="only unify fonts (text is already baked)")] = False,
     font: Annotated[str, cliutil.Option(
         "--font", help="font asset to install (default: local strategy table)")] = None,
     dry_run: Annotated[bool, cliutil.Option(
@@ -382,11 +384,15 @@ def bake(
     try:
         report = bake_mod.bake(game_dir, work_dir,
                                apply_unified_font=not no_font,
-                               font_path=font, dry_run=dry_run)
+                               font_path=font, dry_run=dry_run,
+                               font_only=font_only)
     except bake_mod.BakeError as error:
         return cliutil.fail(str(error))
     log.info("baked %d/%d keys into %d file(s)", report["applied"],
              report["keys"], len(report["files"]))
+    if report.get("font_details"):
+        for detail in report["font_details"]:
+            log.info("font: %s", detail)
     for warning in report["font_warnings"]:
         log.warning("font: %s", warning)
     print(json.dumps(report, ensure_ascii=False, indent=1))

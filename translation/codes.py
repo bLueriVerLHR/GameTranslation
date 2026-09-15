@@ -27,8 +27,9 @@ import re
 from collections import Counter, defaultdict
 
 __all__ = ["CODE_RE", "DISPATCH_RE", "KANA_RE", "CJK_RE", "parse_codes",
-           "code_key", "parse_code_sequence", "split_keep_codes", "scan_js",
-           "inventory", "write_markdown"]
+           "code_key", "parse_code_sequence", "split_keep_codes",
+           "parameter_of", "has_text_parameter", "scan_js", "inventory",
+           "write_markdown"]
 
 #: One control-code token: ``\name<...>`` / ``\name[...]`` / single-char form.
 CODE_RE = re.compile(r"\\[A-Za-z]+(?:<[^<>]*>|\[[^\[\]]*\])?|\\[{}.|^!$~]")
@@ -78,6 +79,33 @@ def split_keep_codes(text):
         return []
     parts = re.split("(%s)" % CODE_RE.pattern, text)
     return [(bool(index % 2), piece) for index, piece in enumerate(parts)]
+
+
+def parameter_of(token):
+    """The bracketed part of a token (``\\nc<name>`` -> ``name``), else None.
+
+    Two parameter shapes mean two different things, and the gates must not
+    confuse them:
+
+    * a **numeric** parameter (``\\px[200]``, ``\\N[1]``, ``\\C[3]``) is an
+      instruction argument - it must be reproduced byte for byte.
+    * a **textual** parameter (``\\nc<チンピラ>``, a YEP name box) is displayed
+      text: it is the name the player reads, so it must be translated.  A gate
+      that demanded the whole token be identical would forbid translating it
+      and leave Japanese names on screen.
+    """
+    for opener, closer in (("<", ">"), ("[", "]")):
+        if token.endswith(closer) and opener in token:
+            return token[token.index(opener) + 1:-1]
+    return None
+
+
+def has_text_parameter(token):
+    """Does this code's parameter carry display text (kana or Han)?"""
+    parameter = parameter_of(token)
+    if parameter is None:
+        return False
+    return bool(KANA_RE.search(parameter) or CJK_RE.search(parameter))
 
 
 def _js_files(game_dir):

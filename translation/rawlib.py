@@ -33,7 +33,8 @@ import re
 from collections import OrderedDict
 
 from . import mvkeys
-from .codes import CODE_RE, KANA_RE, parse_code_sequence
+from .codes import (KANA_RE, has_text_parameter, parameter_of, parse_codes,
+                    parse_code_sequence, split_keep_codes)
 
 __all__ = ["HEADER_RE", "read_library", "write_library", "append_block",
            "read_jsonl", "append_jsonl", "apply_rewrites", "to_json",
@@ -236,41 +237,67 @@ def _gate_coverage(keys, values):
 
 
 def _gate_codes(keys, values):
-    mismatch = []
+    """The code sequence of a translation must match its source.
+
+    Codes are compared one by one, and the only tolerated difference is inside a
+    *textual* parameter: a name box (``\\nc<チンピラ>``) shows a name to the
+    player, so it must be translated, while a numeric argument (``\\px[200]``)
+    must survive byte for byte.  The bracket shape is checked either way.
+    """
+    mismatch, translated_parameters = [], 0
     for entry in keys:
         text = values.get(entry["id"])
         if not text:
             continue
         source = parse_code_sequence(entry["ja"])
         target = parse_code_sequence(text)
-        if source == target:
+        if [key for key, _ in source] != [key for key, _ in target]:
+            mismatch.append({"id": entry["id"], "where": entry["where"],
+                             "reason": "code sequence",
+                             "source": [tok for _, tok in source],
+                             "target": [tok for _, tok in target]})
             continue
-        mismatch.append({"id": entry["id"], "where": entry["where"],
-                         "source": [tok for _, tok in source],
-                         "target": [tok for _, tok in target]})
+        bad = []
+        for (_, source_token), (_, target_token) in zip(source, target):
+            if source_token == target_token:
+                continue
+            if has_text_parameter(source_token):
+                if (parameter_of(source_token) is not None
+                        and parameter_of(target_token) is not None):
+                    translated_parameters += 1
+                    continue
+            bad.append("%s -> %s" % (source_token, target_token))
+        if bad:
+            mismatch.append({"id": entry["id"], "where": entry["where"],
+                             "reason": "code parameter",
+                             "source": bad, "target": []})
     return {
         "name": "control_codes",
         "ok": not mismatch,
         "checked": sum(1 for entry in keys if values.get(entry["id"])),
         "mismatched": len(mismatch),
+        "translated_parameters": translated_parameters,
         "detail": mismatch[:50],
     }
 
 
 def _gate_kana(keys, values, items):
-    """Kana left in the *visible* text of a translation.
+    """Kana left in the *readable* parts of a translation.
 
-    Control codes are stripped first: a name box (``\\nc<name>``) or a macro
-    (``\\N[1]``) is a reference that resolves at runtime, not prose, so kana
-    inside it is not residue - the same rule the rest of the toolkit uses when
-    it says only displayed text is checked.
+    Readable parts are the text between codes **plus** any textual code
+    parameter (a name box shows its parameter to the player).  Numeric code
+    arguments and the code itself are never read as prose.
     """
     allowed, residue = [], []
     for entry in keys:
         text = values.get(entry["id"])
         if not text:
             continue
-        visible = CODE_RE.sub("", text)
+        readable = [piece for is_code, piece in split_keep_codes(text)
+                    if not is_code]
+        readable += [parameter_of(token) for token in parse_codes(text)
+                     if has_text_parameter(token)]
+        visible = "\n".join(piece for piece in readable if piece)
         if not KANA_RE.search(visible):
             continue
         item = _kana_allowed(visible, items)

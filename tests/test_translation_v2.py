@@ -325,9 +325,24 @@ def _fill_library(work_dir, transform=None):
 def _neutral(entry, text):
     """Keep every control code, drop every kana (a gate-clean translation).
 
-    Kana inside a code parameter (``\\nc<name>``) is part of the code, so the
-    substitution is applied to the text segments only.
+    Text inside a code parameter is displayed (a name box), so a gate-clean
+    value has to translate that too - numeric arguments stay untouched.
     """
+    out = []
+    for is_code, piece in codes.split_keep_codes(text):
+        if not is_code:
+            out.append(codes.KANA_RE.sub("\u597d", piece))
+        elif codes.has_text_parameter(piece):
+            parameter = codes.parameter_of(piece)
+            out.append(piece.replace(parameter,
+                                     codes.KANA_RE.sub("\u597d", parameter)))
+        else:
+            out.append(piece)
+    return "".join(out)
+
+
+def _keep_namebox(entry, text):
+    """Neutral text but the original code parameters (a Japanese name box)."""
     return "".join(piece if is_code else codes.KANA_RE.sub("\u597d", piece)
                    for is_code, piece in codes.split_keep_codes(text))
 
@@ -399,6 +414,49 @@ def test_gate_control_codes_fails(work, game):
     gate = {g["name"]: g for g in report["gates"]}["control_codes"]
     assert report["ok"] is False and gate["mismatched"] >= 1
     assert gate["detail"][0]["source"] == ["\\c[1]"]
+
+
+def test_parameter_helpers():
+    assert codes.parameter_of("\\px[200]") == "200"
+    assert codes.parameter_of("\\nc<\u30c1\u30f3\u30d4\u30e9>") == "\u30c1\u30f3\u30d4\u30e9"
+    assert codes.parameter_of("\\{") is None
+    assert codes.has_text_parameter("\\nc<\u30c1\u30f3\u30d4\u30e9>") is True
+    assert codes.has_text_parameter("\\nc<\u6df7\u6df7>") is True
+    assert codes.has_text_parameter("\\px[200]") is False
+    assert codes.has_text_parameter("\\N[1]") is False
+
+
+def test_gate_allows_translated_name_box_parameter(work, game):
+    """A name box shows its parameter, so translating it must not fail."""
+    mvkeys.extract(game, work)
+
+    def rename(entry, text):
+        return text.replace("\\nc<\u30df\u30ab>", "\\nc<\u7f8e\u9999>")
+
+    _fill_library(work, rename)
+    report = rawlib.run_gates(work)
+    gate = {g["name"]: g for g in report["gates"]}["control_codes"]
+    assert gate["ok"] is True and gate["translated_parameters"] == 1
+
+
+def test_gate_rejects_changed_numeric_parameter(work, game):
+    mvkeys.extract(game, work)
+    _fill_library(work, lambda entry, text: text.replace("\\c[1]", "\\c[2]"))
+    gate = {g["name"]: g for g in rawlib.run_gates(work)["gates"]}[
+        "control_codes"]
+    assert gate["ok"] is False and gate["mismatched"] >= 1
+    assert gate["detail"][0]["reason"] == "code parameter"
+
+
+def test_gate_flags_kana_in_name_box(work, game):
+    """An untranslated name inside a code parameter is residue, not invisible."""
+    mvkeys.extract(game, work)
+    _fill_library(work, _keep_namebox)
+    already = {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["kana"]
+    assert already["ok"] is False and already["residue"] == 1
+    _dump(os.path.join(work, "allow_kana.json"),
+          {"items": [{"match": "re:[\u30a2-\u30f4]{2,}", "reason": "\u56fa\u6709\u540d\u8bcd"}]})
+    assert {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["kana"]["ok"] is True
 
 
 def test_gate_kana_residue_and_allowlist(work, game):

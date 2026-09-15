@@ -91,6 +91,72 @@ document.addEventListener('mousedown', function (e) {
   });
 })();
 // ---------------------------------------------------------------------------
+// Tyrano reports problems it considers fatal with alert(): a modal that freezes
+// the whole JS thread (every probe times out, the tab looks crashed) and, in a
+// WebView/JoiPlay, can leave the game stuck outright.  Measured case: a missing
+// `make.ks` alerted "ファイルが見つかりませんでした。" during save-load and made
+// loading look like a hang.  Route those reports somewhere readable instead:
+// console (capturable), a durable buffer (localStorage + window), and a
+// non-blocking on-screen banner that the player can dismiss.
+(function () {
+  var KEY = '__kag3_engine_errors';
+  var banner = null;
+  var where = function () {
+    try {
+      var k = window.TYRANO && TYRANO.kag;
+      if (k && k.stat) return k.stat.current_scenario + ':' + k.stat.current_line;
+    } catch (e) {}
+    return '?';
+  };
+  var banner_show = function (text) {
+    try {
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.setAttribute('data-kag3', 'engine-error');
+        banner.style.cssText = 'position:fixed;left:8px;bottom:8px;max-width:70vw;' +
+          'z-index:2147483002;padding:10px 13px;border-radius:8px;' +
+          'background:rgba(120,12,12,.94);color:#fff;border:1px solid rgba(255,255,255,.5);' +
+          'font:600 13px/1.45 system-ui,sans-serif;white-space:pre-wrap;cursor:pointer';
+        banner.title = '点击关闭';
+        banner.addEventListener('click', function () {
+          banner.style.display = 'none';
+        });
+        (document.body || document.documentElement).appendChild(banner);
+      }
+      banner.style.display = 'block';
+      banner.textContent = 'engine: ' + text;
+    } catch (e) {}
+  };
+  var record = function (kind, msg) {
+    var line = kind + ' @' + where() + ' :: ' + String(msg);
+    try { console.error('[tyrano-engine] ' + line); } catch (e) {}
+    try {
+      window[KEY] = window[KEY] || [];
+      window[KEY].push(line);
+      localStorage.setItem(KEY, JSON.stringify(window[KEY].slice(-20)));
+    } catch (e) {}
+    banner_show(line);
+  };
+  try {
+    window[KEY] = JSON.parse(localStorage.getItem(KEY) || '[]');
+  } catch (e) {
+    window[KEY] = [];
+  }
+  var native_alert = window.alert;
+  window.alert = function (m) {
+    // Never block.  Kept reachable for anything that wants the raw dialog.
+    window.__kag3_native_alert = native_alert;
+    record('alert', m);
+  };
+  var native_confirm = window.confirm;
+  window.confirm = function (m) {
+    // A blocking confirm is legitimate UI, but it must also be visible in the
+    // buffer; the default answer stays "yes" so a flow can proceed.
+    window.__kag3_native_confirm = native_confirm;
+    record('confirm', m);
+    return true;
+  };
+})();
 // Tyrano's layer restore assumes every layer present in the SAVE also exists in
 // the live DOM, and calls .remove() on it (kag.layer.js setLayerHtml).  A save
 // taken while more layers existed - the game grows numeric layers with

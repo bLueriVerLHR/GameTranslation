@@ -272,6 +272,17 @@ class TestGalleryReplayUX:
         assert "#tyrano_base .message_outer.kag3-name-frame" in raw
         assert "box-shadow:none !important" in raw
 
+    def test_engine_errors_are_reported_without_blocking(self):
+        raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
+        # Tyrano reports fatal-ish problems with alert(): a modal that freezes the
+        # JS thread (measured as "loading a save hangs the game" - the missing
+        # make.ks case) and is unreadable from a log.  The shim routes it to the
+        # console, a durable buffer and a dismissible on-screen banner.
+        assert "__kag3_engine_errors" in raw
+        assert "window.alert = function" in raw
+        assert "'data-kag3', 'engine-error'" in raw
+        assert "console.error('[tyrano-engine] '" in raw
+
     def test_saved_layers_missing_from_the_dom_do_not_abort_the_load(self):
         raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
         # Tyrano's setLayerHtml iterates the layers named in the SAVE and calls

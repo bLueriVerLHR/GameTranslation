@@ -22,6 +22,23 @@ KANA = japanese_utils.KANA
 JA = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
 TEXT_ATTR = re.compile(r'\btext\s*=\s*"([^"]*)"')
 STORAGE_ATTR = re.compile(r'\bstorage\s*=\s*"([^"]+)"')
+# Display text also lives in attributes whose name is not `text`.  Game macros
+# carry their visible strings in their own parameter names: measured on one
+# KAG3 title, [NAME_M n="..."] speaker names (91 still-Japanese occurrences),
+# [SELECT_CENTER text="..." sel_1="..."] prompts and choice labels, [title
+# name="..."].  Only the literal text="..." used to count, so those lines were
+# never extracted and the shipped build showed Japanese choice labels.
+# Every attribute can hold display text EXCEPT code-carrying ones: their values
+# are expressions, and translating a string literal inside one would break the
+# comparison (e.g. [if exp="f.name=='ゆき'"]).
+ATTR = re.compile(r'([A-Za-z_][\w.-]*)\s*=\s*"([^"]*)"')
+CODE_ATTRS = frozenset({"exp", "js", "script", "eval", "condition"})
+# Reference attributes: KAG3 scenario files and labels legitimately carry
+# Japanese names (storage="シナリオ.ks", tag_1="*選択"), and a label is a jump
+# target - translating one breaks the jump.  Never treat these as display text.
+FUNCTIONAL_ATTRS = frozenset({"storage", "target", "file", "tag", "path",
+                              "folder", "url", "src", "name_id", "id"})
+FUNCTIONAL_PREFIXES = ("file_", "tag_")
 
 # --- code vs. display text --------------------------------------------------
 # TyranoScript exposes game state through identifiers that may legally be
@@ -144,17 +161,30 @@ def body_text(segments):
 
 
 def tag_text_attrs(segments):
-    """Values of every text="..." attribute inside tags."""
+    """Values of the display-text attributes inside tags.
+
+    Any attribute except the code-carrying ones (``exp``/``js``/``script`` …):
+    a game macro's own parameter names are where its visible strings live, so
+    restricting this to ``text="..."`` silently skipped every custom macro
+    (speaker names, choice labels, window captions) and those lines were never
+    translated.
+    """
     out = []
     for kind, value in segments:
         if kind == "tag":
-            out.extend(TEXT_ATTR.findall(value))
+            for name, val in ATTR.findall(value):
+                low = name.lower()
+                if low in CODE_ATTRS or low in FUNCTIONAL_ATTRS:
+                    continue
+                if low.startswith(FUNCTIONAL_PREFIXES):
+                    continue
+                out.append(val)
     return out
 
 
 def display_text(line):
-    """Readable display text for context windows: body plus text="..."
-    attribute values, tags stripped."""
+    """Readable display text for context windows: body plus display-attribute
+    values, tags stripped."""
     segments, balanced = split_line(line)
     parts = [body_text(segments).strip()]
     parts += [a.strip() for a in tag_text_attrs(segments)]
@@ -163,7 +193,7 @@ def display_text(line):
 
 def translatable(line):
     """True when the line carries display text to translate: JA text in the
-    body or in a text="..." attribute, and all brackets closed."""
+    body or in a display attribute, and all brackets closed."""
     segments, balanced = split_line(line)
     return balanced and translatable_segments(segments)
 

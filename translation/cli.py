@@ -17,6 +17,8 @@ the job:
     rewrite   <work_dir>              execute rewrites.jsonl over the library
     gates     <work_dir>              the four hard gates (bake needs all green)
     pending   <work_dir> --why ...    record a question safely (escaped)
+    decide    <work_dir> --all-open   close questions by appending a ruling
+    bake      <game_dir> <work_dir>   write the library back into the game
     status    <work_dir>              progress at a glance
 """
 import json
@@ -26,6 +28,7 @@ from typing import Annotated
 
 from rpgmaker import cliutil
 
+from . import bake as bake_mod
 from . import codes, mvkeys, rawlib, workspace
 
 log = logging.getLogger(__name__)
@@ -303,6 +306,96 @@ def pending(
     return 0
 
 
+def decide(
+    work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
+    reason: Annotated[str, cliutil.Option(
+        "--reason", help="why these are decided (recorded verbatim)")],
+    all_open: Annotated[bool, cliutil.Option(
+        "--all-open", help="decide every still-open entry")] = False,
+    key_id: Annotated[str, cliutil.Option(
+        "--id", help="decide only this entry")] = None,
+    status: Annotated[str, cliutil.Option(
+        "--status", help="resolved (default) / decided / wontfix")] = "decided",
+    dry_run: Annotated[bool, cliutil.Option(
+        "--dry-run", help="list what would be closed without writing")] = False,
+    verbose: cliutil.Verbose = False,
+    quiet: cliutil.Quiet = False,
+    log_file: cliutil.LogFile = None,
+) -> int:
+    """Close open questions by *appending* a decision (never edit history).
+
+    A batch translation leaves plenty of "default vs alternative" questions
+    open; a product cannot ship with them silently unresolved, and it must not
+    pretend they were never asked either.  This appends a closing entry for
+    each (the original ``open`` line stays in the file, so the reasoning is
+    still auditable), which is what the pending gate reads.
+    """
+    cliutil.setup_logging(verbose, quiet, log_file)
+    path = os.path.join(work_dir, "pending.jsonl")
+    records, errors = rawlib.read_jsonl_report(path)
+    if errors:
+        return cliutil.fail("pending.jsonl has %d unparsable line(s) "
+                           "(fix them first)" % len(errors))
+    latest = {}
+    for item in records:
+        key = (item.get("id") or item.get("question") or item.get("why")
+               or json.dumps(item, ensure_ascii=False, sort_keys=True))
+        latest[key] = item
+    targets = [key for key, item in latest.items()
+               if (item.get("status") or "open") not in rawlib.CLOSED_STATUS]
+    if key_id:
+        targets = [key for key in targets if key == key_id]
+        if not targets:
+            return cliutil.fail("no open entry with id %r" % key_id)
+    elif not all_open:
+        return cliutil.fail("pass --all-open or --id <entry>")
+    for key in targets:
+        if not dry_run:
+            rawlib.append_jsonl(path, {"id": key, "status": status,
+                                       "why": reason, "at": "owner-review"})
+        log.info("closed %s", key)
+    print(json.dumps({"closed": len(targets), "dry_run": dry_run,
+                      "ids": targets[:50]}, ensure_ascii=False, indent=1))
+    return 0
+
+
+def bake(
+    game_dir: Annotated[str, cliutil.Argument(help="game directory to bake into")],
+    work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
+    no_font: Annotated[bool, cliutil.Option(
+        "--no-font", help="skip the unified-font step (not recommended)")] = False,
+    font: Annotated[str, cliutil.Option(
+        "--font", help="font asset to install (default: local strategy table)")] = None,
+    dry_run: Annotated[bool, cliutil.Option(
+        "--dry-run", help="report what would be written, change nothing")] = False,
+    verbose: cliutil.Verbose = False,
+    quiet: cliutil.Quiet = False,
+    log_file: cliutil.LogFile = None,
+) -> int:
+    """Write the translated library back into the game (id-keyed, re-runnable).
+
+    Every modified file is backed up under `<work>/backup/` first, so a bake is
+    reversible.  The unified-font step is mandatory by house rule: a Chinese
+    build with a kana-only font renders every Chinese character as a box.
+    """
+    cliutil.setup_logging(verbose, quiet, log_file)
+    try:
+        report = bake_mod.bake(game_dir, work_dir,
+                               apply_unified_font=not no_font,
+                               font_path=font, dry_run=dry_run)
+    except bake_mod.BakeError as error:
+        return cliutil.fail(str(error))
+    log.info("baked %d/%d keys into %d file(s)", report["applied"],
+             report["keys"], len(report["files"]))
+    for warning in report["font_warnings"]:
+        log.warning("font: %s", warning)
+    print(json.dumps(report, ensure_ascii=False, indent=1))
+    if report["skipped"]:
+        for key_id, why in report["skipped_detail"][:20]:
+            log.error("skipped %s: %s", key_id, why)
+    return 1 if report["skipped"] else 0
+
+
 app = cliutil.app(help=__doc__)
 app.command()(prepare)
 app.command()(extract)
@@ -315,6 +408,8 @@ app.command()(status)
 app.command(name="slice")(slice_)
 app.command()(append)
 app.command()(pending)
+app.command()(decide)
+app.command(name="bake")(bake)
 
 
 def main(argv=None) -> int:

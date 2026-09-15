@@ -463,6 +463,27 @@ def test_gate_pending_survives_a_broken_line(work, game):
         "pending"]["ok"] is True
 
 
+def test_cli_decide_closes_open_entries(work, game, capsys):
+    assert cli.main(["prepare", game, work]) == 0
+    for key in ("a", "b"):
+        assert cli.main(["pending", work, "--id", key,
+                         "--why", "\u53e3\u5f84\u5907\u9009"]) == 0
+    assert cli.main(["decide", work]) != 0            # needs --all-open
+    assert cli.main(["decide", work, "--all-open", "--dry-run",
+                     "--reason", "x"]) == 0
+    gate = {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["pending"]
+    assert gate["open"] == 2                         # dry run writes nothing
+    assert cli.main(["decide", work, "--all-open", "--reason",
+                     "\u6309\u73b0\u6848\u88c1\u5b9a\uff0cowner \u53ef\u56de\u6539"]) == 0
+    gate = {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["pending"]
+    assert gate["ok"] is True and gate["open"] == 0
+    records, errors = rawlib.read_jsonl_report(os.path.join(work, "pending.jsonl"))
+    assert errors == [] and len(records) == 4         # history preserved
+    assert records[-1]["status"] == "decided"
+    assert cli.main(["decide", work, "--id", "nope", "--reason", "x"]) != 0
+    capsys.readouterr()
+
+
 def test_cli_pending_escapes_text(work, game, capsys):
     assert cli.main(["prepare", game, work]) == 0
     assert cli.main(["pending", work, "--id", "x", "--why",

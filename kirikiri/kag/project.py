@@ -21,13 +21,31 @@ log = logging.getLogger(__name__)
 # Main
 # ---------------------------------------------------------------------------
 
+#: Engine-tree entries that are development / build scaffolding, not runtime
+#: parts.  The engine source tree ships them (lint config, editor settings, the
+#: release packaging script, the engine's own docs); a *game* build must not
+#: carry them (owner: "packaging must not include development files").  Kept:
+#: LICENCE.txt and readme.txt, which belong with a redistributed engine.
+ENGINE_DEV_SKIP = {
+    ".vscode", ".github", ".git", ".idea", "node_modules", "release",
+    ".eslintrc.js", ".eslintrc.json", ".prettierignore", ".prettierrc.js",
+    ".prettierrc.json", ".gitignore", ".gitattributes", ".editorconfig",
+    ".babelrc", ".npmignore", "package.json", "package-lock.json",
+    "doc.html", "jsconfig.json", "tsconfig.json", ".DS_Store",
+}
+
+
 def _copy_tree(src, dst, ignore_exts=()):
+    """Copy an engine tree, leaving development scaffolding behind."""
     for root, dirs, files in os.walk(src):
-        dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
+        dirs[:] = [d for d in dirs
+                   if d not in ("__pycache__",) and d not in ENGINE_DEV_SKIP]
         rel = os.path.relpath(root, src)
         target = dst if rel == "." else os.path.join(dst, rel)
         os.makedirs(target, exist_ok=True)
         for f in files:
+            if f in ENGINE_DEV_SKIP:
+                continue
             if any(f.lower().endswith(e) for e in ignore_exts):
                 continue
             shutil.copy2(os.path.join(root, f), os.path.join(target, f))

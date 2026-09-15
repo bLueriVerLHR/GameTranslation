@@ -340,6 +340,14 @@ ROOT_ASSET_EXTS = {
     "image": (".tlg", ".bmp", ".png", ".jpg", ".jpeg", ".gif", ".webp"),
 }
 
+#: Raw video containers no browser/WebView can play: copying them into a build
+#: only bloats the package (measured: one game carries ~200 MiB of .wmv the
+#: engine cannot display; another 223 .mpg + 223 .wmv = most of its 1.8 GiB).
+#: Playable containers (.mp4/.webm, and whatever --video-dir transcoded) are
+#: still copied, and the drop is reported so a port never loses video silently.
+UNPLAYABLE_VIDEO_EXTS = (".wmv", ".mpg", ".mpeg", ".avi", ".rm", ".rmvb",
+                         ".asf", ".vob", ".flv", ".mov")
+
 #: Files the converter writes itself: never copy these over the generated ones.
 ASSET_NAME_SKIP = {"config.tjs", "keyconfig.js", "config.tjs.orig"}
 
@@ -387,6 +395,7 @@ def _collect_asset_jobs(unpacked, out_data, asset_dirs=None):
         mapping.update({k.lower(): v for k, v in asset_dirs.items()})
     jobs = []
     unknown = []
+    dropped_video = []
     for src_sub in sorted(os.listdir(unpacked)):
         src_dir = os.path.join(unpacked, src_sub)
         if not os.path.isdir(src_dir):
@@ -409,6 +418,9 @@ def _collect_asset_jobs(unpacked, out_data, asset_dirs=None):
                 if dst_sub == "system" and fn.lower() in ASSET_NAME_SKIP:
                     continue            # the converter writes its own
                 ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
+                if "." + ext in UNPLAYABLE_VIDEO_EXTS:
+                    dropped_video.append(fn)
+                    continue
                 outname = fn
                 if ext in ("tlg", "bmp"):
                     outname = fn.rsplit(".", 1)[0] + ".png"
@@ -436,6 +448,9 @@ def _collect_asset_jobs(unpacked, out_data, asset_dirs=None):
         if not os.path.isfile(sp):
             continue
         ext = os.path.splitext(fn)[1].lower()
+        if ext in UNPLAYABLE_VIDEO_EXTS:
+            dropped_video.append(fn)
+            continue
         dst_sub = next((sub for sub, exts in ROOT_ASSET_EXTS.items()
                         if ext in exts), None)
         if dst_sub is None:
@@ -460,6 +475,12 @@ def _collect_asset_jobs(unpacked, out_data, asset_dirs=None):
     if root_skipped:
         log.debug("skipped %d root-level non-asset file(s): %s",
                   len(root_skipped), ", ".join(root_skipped[:8]))
+    if dropped_video:
+        log.warning("dropped %d unplayable raw video file(s) (%s): a browser "
+                    "cannot decode them; transcode with tools/transcode_video.py "
+                    "and pass --video-dir to ship playable movies",
+                    len(dropped_video),
+                    ", ".join(sorted({os.path.splitext(f)[1] for f in dropped_video})))
     return jobs
 
 

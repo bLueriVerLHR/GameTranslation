@@ -1381,13 +1381,15 @@ def test_generated_make_ks_is_a_return_passthrough(tmp_path):
     # saved position; without the file the engine raises a BLOCKING alert
     # ("ファイルが見つかりませんでした。 / ./data/scenario/make.ks") and loading a
     # save freezes the page.  KAG3 ships no make.ks, so the converter writes the
-    # engine's own pass-through.
-    assert ck._write_make_ks(str(tmp_path)) is True
+    # engine's own pass-through.  (Reached through the module, not the compat
+    # layer: convert_kag re-exports a fixed surface on purpose.)
+    from kirikiri.kag import cli as kag_cli
+    assert kag_cli._write_make_ks(str(tmp_path)) is True
     text = (tmp_path / "make.ks").read_text(encoding="utf-8")
     assert "[return]" in text
     # an existing file (a game that ships one) must never be overwritten
     (tmp_path / "make.ks").write_text("[return]\n; game own\n", encoding="utf-8")
-    assert ck._write_make_ks(str(tmp_path)) is False
+    assert kag_cli._write_make_ks(str(tmp_path)) is False
     assert "game own" in (tmp_path / "make.ks").read_text(encoding="utf-8")
 
 

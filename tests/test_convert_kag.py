@@ -1376,6 +1376,16 @@ def test_state_overrides_load_supported_namespaces(tmp_path):
     }
 
 
+def test_state_overrides_accept_a_utf8_bom(tmp_path):
+    # The override file is hand-edited on Windows, where editors add a BOM;
+    # utf-8 decoding turned that into a JSONDecodeError and the converter
+    # exited 2 talking about broken JSON.
+    path = tmp_path / "bom.json"
+    path.write_bytes(
+        '\ufeff{"sf":{"seen_max":11}}'.encode("utf-8"))
+    assert ck._load_state_overrides(str(path)) == {"sf": {"seen_max": 11}}
+
+
 def test_state_overrides_reject_invalid_shapes_and_namespaces(tmp_path):
     invalid = [
         "[]",

@@ -58,7 +58,10 @@ def _load_state_overrides(path):
     if not path:
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        # utf-8-sig: the override file is hand-edited on Windows, where editors
+        # happily add a BOM; plain utf-8 turned that into a JSONDecodeError and
+        # the converter exited 2 with a message about broken JSON.
+        with open(path, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
     except (OSError, UnicodeError, json.JSONDecodeError) as e:
         raise ValueError("cannot read state overrides %s: %s" % (path, e)) from e

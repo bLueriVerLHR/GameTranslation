@@ -40,6 +40,43 @@ python3 kirikiri/xp3tool.py extract <game>/patch.xp3 <work>/game
   flags&7 = 0 raw / 1 zlib。
 - 索引/段名可嵌套方括号 —— 解析用块边界，不靠正则扫描。
 
+### 2.1 受保护变体：检测并明确拒绝（不静默产出垃圾）
+
+少量商业发行版会带**受保护**档案：条目名被替换成一串无扩展名的连续
+序号（如 `U+5000` 起的私用序列），载荷也不是可识别的文件。读它们的引擎
+自带配套 loader，所以**游戏能跑**；但解包出来只是一堆匿名二进制，**不能
+当转换输入**（脚本按逻辑名引用素材，名字没了就无从对应）。
+
+`xp3tool.py` 的 `list`/`extract` 会先做体检，命中就拒绝（退出码 1）：
+
+```
+ERROR xp3tool: <path>: refusing to unpack - this archive looks like a protected
+variant: 8357 of 8358 entry names carry no file extension and none of the 8
+probed payloads shows a recognizable file signature or text. ...
+```
+
+判据（两段式，故意的）：
+
+1. **名字扫描**（便宜）：`\.扩展名$` 的条目占比 < 5%，且条目数 ≥ 20
+   （太少时比例无意义）。
+2. **载荷抽样**（可翻案）：解 8 个小条目的内容，若**有任何一个**带已知
+   magic（PNG/JPEG/OggS/RIFF/BM/gzip/zip/PSB/TJS/XP3）、能 zlib 解压、
+   或是**严格 UTF-8**（≥95% 可打印且 ≥20% ASCII）文本，就判定为正常。
+
+两条注意：
+
+- **真名含日文/中文是正常的**（`画像/背景01.png`），判据只看「有没有
+  扩展名」，绝不能只看「有没有 CJK」。实测 6 个正常档案（含 1249/1342、
+   439/680 这种混排）全部放行。
+- **不要用单字节编码（cp932）当「文本」证据**：cp932 几乎把每个字节都
+  映成可打印字符，密文也能「解得很干净」——实测就是它把名字混淆 + 内容
+  不透明的档案误判成正常。
+
+诊断需要绕过体检时加 `--force`（只做 list/extract，不代表可转换）。
+
+> 判定为受保护变体时，**不做**解密/改写：放弃该档案，改用未加密副本。
+> 记录只需写「引擎 + 特征」（名字序号化 + 载荷不透明），不写来源渠道。
+
 ## 3. 提取（`tools/build_ks_translation.py`）
 
 ```

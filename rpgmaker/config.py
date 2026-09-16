@@ -735,8 +735,8 @@ def temp_dir():
     wsl = is_wsl()
     return _temp_dir_cfg("persist" if wsl else "win32") \
         or _deliverable("TEMP_DIR", "temp",
-                        "/tmp/opencode" if wsl
-                        else "%LOCALAPPDATA%/Temp/opencode")
+                        "/tmp/gametrans" if wsl
+                        else "%LOCALAPPDATA%/Temp/gametrans")
 
 
 def _note_default_deliverable(env_var, cfg_name, path, probe):

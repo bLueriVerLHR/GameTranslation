@@ -73,7 +73,7 @@ class TestFullPipeline:
 
 
 class TestDeliver:
-    def test_deliver_roundtrip(self, tmp_path, fake_tools):
+    def test_deliver_roundtrip(self, tmp_path, fake_tools, monkeypatch):
         root = str(tmp_path / "src")
         web = make_game(root)
         out = str(tmp_path / "build")
@@ -81,12 +81,14 @@ class TestDeliver:
         archives = str(tmp_path / "archives")
         build.build_joiplay(web, out, workers=2)
 
-        from rpgmaker import deliver
+        from rpgmaker import config, deliver
+        monkeypatch.setattr(config, "temp_dir", lambda: str(tmp_path / "temp"))
         arch = deliver.deliver(out, games=games, archives=archives)
         assert os.path.isfile(arch)
         assert os.path.isdir(os.path.join(games, "build"))
 
-    def test_deliver_replaces_stale_folder(self, tmp_path, fake_tools):
+    def test_deliver_replaces_stale_folder(self, tmp_path, fake_tools,
+                                          monkeypatch):
         root = str(tmp_path / "src")
         web = make_game(root)
         out = str(tmp_path / "build")
@@ -98,7 +100,8 @@ class TestDeliver:
         os.makedirs(stale)
         with open(os.path.join(stale, "stale.txt"), "w") as f:
             f.write("old")
-        from rpgmaker import deliver
+        from rpgmaker import config, deliver
+        monkeypatch.setattr(config, "temp_dir", lambda: str(tmp_path / "temp"))
         deliver.deliver(out, games=games, archives=archives)
         assert not os.path.exists(os.path.join(games, "build", "stale.txt"))
 

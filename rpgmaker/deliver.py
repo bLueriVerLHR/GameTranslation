@@ -61,6 +61,7 @@ def deliver(folder, archive=None, games=None, archives=None, level=15,
     archives = Path(archives or config.archives_dir())
     games = Path(games or config.games_dir())
     local = Path(archive or Path(config.temp_dir()) / (name + ".7z"))
+    local.parent.mkdir(parents=True, exist_ok=True)
 
     log.info("deliver %s -> archives=%s games=%s", name, archives, games)
 

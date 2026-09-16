@@ -148,8 +148,8 @@ docs/table/
   成单一提交；每个功能/修复一个提交，按逻辑拆分即可。
 - **推送必须显式获准（mandatory）**：**绝不主动 push 到 GitHub** —
   只有 owner 明确说"推送/push"时才推送，且只推主分支（main）；推送前
-  必须先通过下方检查。提交者身份用本工具库的固定身份（与历史提交一致，
-  见 `git log` 的 author），不用 owner 的个人 git 身份。
+  必须先通过下方检查。提交者身份固定为 `agent <agent@localhost>`（仓库
+  本地 git 配置），不用 owner 的个人 git 身份。
 - **合并前必须通过检查（mandatory）**：
   1. 卫生门禁（见上节第一条）：`tests/test_repo_hygiene.py` 全绿；
   2. `python -m py_compile` 所有改动的 `.py`（工具可运行）；

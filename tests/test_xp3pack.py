@@ -6,15 +6,24 @@ The produced archives are read back with the xp3tool parser (the same
 self-verification xp3pack.verify performs), so the pack/unpack contract is
 covered end to end with no external tooling and no game fixtures.
 
+The container contract is fixed by the engine, not by us: krkrz's
+``tTVPXP3Archive::LoadIndex`` *requires* an ``adlr`` sub-chunk (Adler-32 of
+the uncompressed entry) per File chunk and throws ``TVPReadError`` without
+it.  Since the old writer and the old parser agreed with each other while
+both deviating from the engine, the packer's self-check was circular and
+the bug only showed up on a real game ("Script exception raised / Read
+error" at startup).  The negative cases below pack such archives on purpose.
+
 Positive / negative / edge coverage:
   - positive: file collection ordering, index bytes, pack -> parse ->
-    byte-for-byte extract round-trips, verify() success.
-  - negative: empty input dir, verify() detecting missing / resized /
-    unexpected entries, CLI exit code on failure.
+    byte-for-byte extract round-trips, Adler-32 per entry, verify() success.
+  - negative: empty input dir, missing / wrong 'adlr', verify() detecting
+    missing / resized / unexpected entries, CLI exit code on failure.
   - edge: zero-byte files, deeply nested paths, CJK file names, binary
     payloads, many files, header / index flag layout.
 """
 
+import os
 import struct
 import sys
 import zlib
@@ -43,6 +52,50 @@ def write_tree(root, files):
         p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(data)
+
+
+def legacy_file_chunk(name, start, size, adler=None):
+    """A File chunk built without 'adlr' (pre-fix xp3pack output)."""
+    name_bytes = name.encode("utf-16-le")
+    info = struct.pack("<IQQH", 0, size, 0, len(name)) + name_bytes
+    segm = struct.pack("<IQqQ", 0, start, size, size)
+    out = (b"File" + struct.pack("<q", 12 + len(info) + 12 + len(segm))
+           + b"info" + struct.pack("<q", len(info)) + info
+           + b"segm" + struct.pack("<q", len(segm)) + segm)
+    if adler is not None:
+        adlr = struct.pack("<I", adler)
+        out = (b"File" + struct.pack("<q", 12 + len(info) + 12 + len(segm)
+                                     + 12 + len(adlr))
+               + b"info" + struct.pack("<q", len(info)) + info
+               + b"segm" + struct.pack("<q", len(segm)) + segm
+               + b"adlr" + struct.pack("<q", len(adlr)) + adlr)
+    return out
+
+
+def pack_with_index(indir, out_path, index_bytes):
+    """Pack indir's payload with an arbitrary hand-made index.
+
+    Used to reproduce containers the engine rejects (missing or wrong
+    'adlr'), which xp3pack.pack() itself no longer produces.
+    """
+    files = xp3pack.collect_files(str(indir))
+    entries = []
+    with open(out_path, "wb") as out:
+        out.write(MAGIC)
+        out.write(struct.pack("<q", 0))
+        ofs = 19
+        for rel, full in files:
+            data = Path(full).read_bytes()
+            out.write(data)
+            entries.append((rel, ofs, len(data)))
+            ofs += len(data)
+        out.seek(11)
+        out.write(struct.pack("<q", ofs))
+        out.seek(0, os.SEEK_END)
+        comp = zlib.compress(index_bytes)
+        out.write(bytes([1]) + struct.pack("<qq", len(comp),
+                                         len(index_bytes)) + comp)
+    return files
 
 
 # ---------------------------------------------------------------------------
@@ -74,21 +127,34 @@ class TestCollectFiles:
 
 class TestBuildIndex:
     def test_index_parses_back_with_xp3tool(self):
-        raw = xp3pack.build_index([("a.txt", 19, 5), ("b/c.bin", 24, 8)])
+        raw = xp3pack.build_index([("a.txt", 19, 5, 0x01020304),
+                                   ("b/c.bin", 24, 8, 0xdeadbeef)])
         entries = xp3tool.parse_index(raw, 0)
         assert [e["name"] for e in entries] == ["a.txt", "b/c.bin"]
         assert entries[0]["segments"] == [(19, 5, 5, False)]
         assert entries[1]["segments"] == [(24, 8, 8, False)]
+        # the Adler-32 sub-chunk is what the engine's loader insists on
+        assert entries[0]["adler"] == 0x01020304
+        assert entries[1]["adler"] == 0xdeadbeef
+
+    def test_adlr_chunk_layout(self):
+        raw = xp3pack.build_index([("f", 19, 3, 0x12345678)])
+        pos = raw.index(b"adlr")
+        size = struct.unpack_from("<q", raw, pos + 4)[0]
+        assert size == 4
+        assert struct.unpack_from("<I", raw, pos + 12)[0] == 0x12345678
+        # the File chunk size must cover info + segm + adlr
+        assert struct.unpack_from("<q", raw, 4)[0] == len(raw) - 12
 
     def test_names_stored_utf16le(self):
-        raw = xp3pack.build_index([("名前.txt", 19, 4)])
+        raw = xp3pack.build_index([("名前.txt", 19, 4, 1)])
         assert "名前.txt".encode("utf-16-le") in raw
         assert "名前.txt".encode("utf-8") not in raw
 
     def test_segm_record_layout(self):
         # one raw segment of size 7 at offset 1234: 28-byte record with
         # org@+12 and arc@+20 both equal to 7 (see xp3tool.parse_index)
-        raw = xp3pack.build_index([("f", 1234, 7)])
+        raw = xp3pack.build_index([("f", 1234, 7, 1)])
         pos = raw.index(b"segm")
         size = struct.unpack_from("<q", raw, pos + 4)[0]
         rec = raw[pos + 12:pos + 12 + size]
@@ -97,6 +163,16 @@ class TestBuildIndex:
         org = struct.unpack_from("<q", rec, 12)[0]
         arc = struct.unpack_from("<Q", rec, 20)[0]
         assert (flags, start, org, arc) == (0, 1234, 7, 7)
+
+    def test_info_org_and_arc_sizes_both_set(self):
+        # info = flags(u32), org size(i64), arc size(i64), name length(u16),
+        # name.  A raw entry stores org == arc; writing 0 for arc (as the old
+        # writer did) is what the engine reads as the archived size.
+        raw = xp3pack.build_index([("f", 19, 1234, 1)])
+        pos = raw.index(b"info")
+        info = raw[pos + 12:]
+        flags, org, arc = struct.unpack_from("<IQQ", info, 0)
+        assert (flags, org, arc) == (0, 1234, 1234)
 
 
 # ---------------------------------------------------------------------------
@@ -192,11 +268,28 @@ class TestPack:
         # index block: 1-byte zlib flag then (csize, usize) then payload
         assert data[index_ofs] == xp3pack.INDEX_ZLIB
         csize, usize = struct.unpack_from("<qq", data, index_ofs + 1)
-        assert usize == len(xp3pack.build_index([("a.txt", 19, 7)]))
+        expected = xp3pack.build_index(
+            [("a.txt", 19, 7, zlib.adler32(b"payload"))])
+        assert usize == len(expected)
         assert csize == len(data) - (index_ofs + 1 + 16)
         # the stored index must really be zlib-compressed
-        assert zlib.decompress(data[index_ofs + 1 + 16:]) == \
-            xp3pack.build_index([("a.txt", 19, 7)])
+        assert zlib.decompress(data[index_ofs + 1 + 16:]) == expected
+
+    def test_adler_of_uncompressed_content(self, tmp_path):
+        # The engine hands this value to the per-game extraction filter, so it
+        # must be the Adler-32 of the *uncompressed* bytes, for every entry.
+        indir = tmp_path / "in"
+        payloads = [("a.txt", b"alpha"), ("empty.bin", b""),
+                    ("sub/b.dat", bytes(range(256)) * 40),
+                    ("scenario/名前.ks", "こんにちは".encode("utf-8"))]
+        write_tree(indir, payloads)
+        out = tmp_path / "out.xp3"
+        xp3pack.pack(str(indir), str(out))
+        got = {e["name"]: e["adler"] for e in xp3tool.open_xp3(str(out))}
+        for rel, content in payloads:
+            assert got[rel] == zlib.adler32(content) & 0xFFFFFFFF, rel
+        # an empty file hashes to the Adler-32 initial value, not to 0
+        assert got["empty.bin"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +303,27 @@ class TestVerify:
         out = tmp_path / "out.xp3"
         files, _ = xp3pack.pack(str(indir), str(out))
         assert xp3pack.verify(str(out), files) == 2
+
+    def test_verify_detects_missing_adlr(self, tmp_path):
+        """The regression that shipped: an index without 'adlr' is rejected
+        by the engine at startup, so the packer's own verification must
+        reject it too."""
+        indir = tmp_path / "in"
+        write_tree(indir, [("a.txt", b"hello")])
+        out = tmp_path / "out.xp3"
+        files = pack_with_index(indir, out, legacy_file_chunk("a.txt", 19, 5))
+        with pytest.raises(xp3pack.Xp3PackError, match="no 'adlr'"):
+            xp3pack.verify(str(out), files)
+
+    def test_verify_detects_wrong_adler(self, tmp_path):
+        indir = tmp_path / "in"
+        write_tree(indir, [("a.txt", b"hello")])
+        out = tmp_path / "out.xp3"
+        wrong = (zlib.adler32(b"hello") + 1) & 0xFFFFFFFF
+        files = pack_with_index(indir, out,
+                                legacy_file_chunk("a.txt", 19, 5, wrong))
+        with pytest.raises(xp3pack.Xp3PackError, match="wrong Adler-32"):
+            xp3pack.verify(str(out), files)
 
     def test_verify_missing_file_raises(self, tmp_path):
         indir = tmp_path / "in"

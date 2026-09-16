@@ -35,7 +35,17 @@ python3 kirikiri/xp3tool.py extract <game>/patch.xp3 <work>/game
   下一指针）。
 - 索引块 flag：0=RAW（int64 size）、1=ZLIB（int64 csize + int64 usize +
   zlib 流）、0x80 = CONTINUE。
-- File 块子块：`File` / `info` / `segm`（大小写敏感，`info` 小写！）。
+- File 块子块：`File` / `info` / `segm`（大小写敏感，`info` 小写！）/
+  **`adlr`**（Adler-32，小写，**引擎强制要求**，见下）。
+- **`adlr` 块不能缺**：krkrz 的 `tTVPXP3Archive::LoadIndex` 找不到 `adlr`
+  子块就直接 `TVPReadError`，KAG 报「Script exception raised / Read error」，
+  **游戏一个脚本都跑不到**；值是该条目**未压缩**内容的 Adler-32
+  （`zlib.adler32(data)`），引擎把它交给游戏的解包过滤器当逐文件密钥。
+  实测真作档案每个条目都有；xpacker 旧的写法（无 `adlr`、`info` 的
+  arc size 写 0）自身能回读、但引擎拒收 —— **用自家 parser 自检是循环
+  验证**，打包后必须用引擎实跑一次（见 §4）。
+- `info` 字段序：flags(u32)、**org size**(i64)、**arc size**(i64)、
+  name len(u16)、name(UTF-16LE)；raw 段两者相等。
 - 段（segm）记录 28 字节：flags u32、start i64、org i64、arc i64；
   flags&7 = 0 raw / 1 zlib。
 - 索引/段名可嵌套方括号 —— 解析用块边界，不靠正则扫描。
@@ -144,6 +154,33 @@ python3 tools/apply_ks_translation.py <work> --pack patch.xp3
   索引 + 写完自校验（用 xp3tool 解析器回读比对）。patch.xp3 放到
   Game.exe 旁即可，引擎自动叠加。
 - 交付约定同其他引擎：成品目录 + 压缩包，绝不改原版游戏目录。
+
+### 4.1 patch.xp3 的容器契约（不遵守 = 游戏启动即报错）
+
+- **条目就在档案根，不要建 `scenario/` 子目录**：引擎按**文件名**查表
+  （`TVPExtractStorageName` 后的自动搜索路径表），`patch.xp3` 默认只把
+  根目录条目登记进去，所以 `patch.xp3` 里放 `Room.ks`（而不是
+  `scenario/Room.ks`）才能覆盖 `data.xp3` 的 `scenario/Room.ks`。
+  想让 patch 保留目录结构，必须在 patch 里额外放一个根目录 `Config.tjs`
+  注册 `Storages.addAutoPath(System.exePath + "patch.xp3>scenario/")`
+  —— 不改 `Config.tjs` 的话子目录条目**永远不被读到**。
+  （剧本内的 `[call storage=x.ks]` 是裸文件名，靠引擎的 `scenario/`
+  自动路径找到，与 patch 的布局无关。）
+- **每个 File 块必须有 `adlr` 子块**（未压缩内容的 Adler-32）；缺了引擎
+  抛 `TVPReadError`，游戏显示「Script exception raised / Read error」
+  后直接停住（实跑确认）。`xp3pack.py` 已写该块，`xp3tool.py` 会在缺失时
+  WARN，`xp3pack.verify` 会把缺失/错值的 Adler-32 当失败。
+- **打包后必须实跑验证**：`xp3pack.verify` 用的是仓库自己的 parser，与
+  写入端同为一家，**只能防内部不一致**；引擎是否接受只能靠真跑。
+  最小验法：放两三行带中文的**标记补丁**进 `patch.xp3`，启动游戏确认
+  ①不报错 ②标记文字真的上屏（证明覆盖生效）③中文不是方块（证明字体）。
+  实测该验法一次回答上面三个问题（首次跑通的补丁就是这样验的）。
+- **中文渲染**：游戏字体（如 MS Gothic）本身没有 GB 汉字时，Windows 的
+  GDI 字体回退仍能把简体汉字画出来（假名/拉丁走原字体）—— 先实拍确认；
+  若要统一字体，走 patch 根目录的 `Config.tjs` 改 `;userFace = "<字体名>"`
+  （引擎裸名查 `Config.tjs` 时 patch 根优先），前提是该字体在系统里。
+  注意 KAG3 的设置会被存档变量文件的 `chdefaultFace` 覆盖 —— 改字体后
+  要先删存档里的那一行或重开存档。
 
 ## 5. QC（`tools/qc_ks_kana.py`）
 

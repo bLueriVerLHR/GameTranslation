@@ -37,22 +37,44 @@ MAGIC = b"XP3\r\n \n\x1a\x8b\x67\x01"
 # Byte-level builders (mirror xp3pack.build_index + pack layout)
 # ---------------------------------------------------------------------------
 
-def build_file_chunk(name, segments):
-    """One File sub-chunk. segments = [(start, org, arc, compressed)]."""
+def build_file_chunk(name, segments, adler=0):
+    """One File sub-chunk. segments = [(start, org, arc, compressed)].
+
+    adler is written into the 'adlr' sub-chunk; pass None to build the
+    pre-fix layout (no 'adlr'), which krkrz's loader rejects.
+    """
     name_bytes = name.encode("utf-16-le")
     total = sum(org for _start, org, _arc, _comp in segments)
-    info = struct.pack("<IQQH", 0, total, 0, len(name)) + name_bytes
+    info = struct.pack("<IQQH", 0, total, total, len(name)) + name_bytes
     segm = b"".join(
         struct.pack("<IQqQ", 1 if comp else 0, start, org, arc)
         for start, org, arc, comp in segments)
-    return (b"File" + struct.pack("<q", 12 + len(info) + 12 + len(segm))
+    adlr = b"" if adler is None else (b"adlr"
+                                      + struct.pack("<q", 4)
+                                      + struct.pack("<I", adler & 0xFFFFFFFF))
+    return (b"File" + struct.pack("<q", 12 + len(info) + 12 + len(segm)
+                                  + len(adlr))
             + b"info" + struct.pack("<q", len(info)) + info
-            + b"segm" + struct.pack("<q", len(segm)) + segm)
+            + b"segm" + struct.pack("<q", len(segm)) + segm + adlr)
 
 
-def build_index(entries, compress=True, continue_flag=False, raw=False):
-    """Index block bytes. entries = [(name, segments)]."""
-    raw_bytes = b"".join(build_file_chunk(n, s) for n, s in entries)
+def build_index(entries, compress=True, continue_flag=False, raw=False,
+                adlers=()):
+    """Index block bytes. entries = [(name, segments)].
+
+    adlers: () writes a zero Adler-32 for every entry (what the packer
+    does), a dict gives per-name values, and None builds the pre-fix layout
+    with no 'adlr' sub-chunk at all (which krkrz rejects).
+    """
+    def adler_for(name):
+        if adlers is None:
+            return None
+        if isinstance(adlers, dict):
+            return adlers.get(name, 0)
+        return 0
+
+    raw_bytes = b"".join(build_file_chunk(n, s, adler_for(n))
+                         for n, s in entries)
     flag = 0x80 if continue_flag else 0
     if raw:
         return bytes([flag]) + struct.pack("<q", len(raw_bytes)) + raw_bytes
@@ -61,9 +83,11 @@ def build_index(entries, compress=True, continue_flag=False, raw=False):
             + struct.pack("<qq", len(comp), len(raw_bytes)) + comp)
 
 
-def make_archive(files, zlib_segments=(), index_compress=True, index_raw=False):
+def make_archive(files, zlib_segments=(), index_compress=True, index_raw=False,
+                 adlers=()):
     """Single-index archive. files = [(name, content)].  zlib_segments is a
-    set of names whose payload is stored zlib-compressed."""
+    set of names whose payload is stored zlib-compressed.  adlers is passed
+    through to build_index (() / dict / None)."""
     payload = bytearray()
     entries = []
     ofs = 19  # 11-byte magic + 8-byte index pointer
@@ -77,7 +101,8 @@ def make_archive(files, zlib_segments=(), index_compress=True, index_raw=False):
         payload += stored
         entries.append((name, [seg]))
         ofs += len(stored)
-    block = build_index(entries, compress=index_compress, raw=index_raw)
+    block = build_index(entries, compress=index_compress, raw=index_raw,
+                        adlers=adlers)
     return MAGIC + struct.pack("<q", ofs) + bytes(payload) + block
 
 
@@ -520,6 +545,31 @@ class TestSubChunkHelpers:
         entries = xp3tool.parse_index(raw[9:], 0)
         assert [e["name"] for e in entries] == ["a.txt", "b/c.bin"]
         assert entries[0]["segments"] == [(19, 5, 5, False)]
+
+
+class TestAdlerSubChunk:
+    """'adlr' carries the Adler-32 of the uncompressed entry.  krkrz's
+    loader requires the sub-chunk to exist (it throws TVPReadError without
+    it), and passes the value to the game's extraction filter, so the
+    parser must surface it - and complain when it is absent."""
+
+    def test_adler_is_parsed(self, tmp_path):
+        p = tmp_path / "a.xp3"
+        content = b"hello krkrz"
+        p.write_bytes(make_archive([("a.txt", content)],
+                                   adlers={"a.txt": zlib.adler32(content)}))
+        entries = xp3tool.open_xp3(str(p))
+        assert entries[0]["adler"] == zlib.adler32(content) & 0xFFFFFFFF
+
+    def test_missing_adler_is_none_with_warning(self, tmp_path, caplog):
+        p = tmp_path / "no-adlr.xp3"
+        p.write_bytes(make_archive([("a.txt", b"hello")], adlers=None))
+        with caplog.at_level(logging.WARNING):
+            entries = xp3tool.open_xp3(str(p))
+        # older archives could be listed, but the deviation is reported: the
+        # engine would refuse to load this file entirely
+        assert entries[0]["adler"] is None
+        assert "adlr" in caplog.text and "a.txt" in caplog.text
 
 
 class TestListEntries:

@@ -9,8 +9,20 @@ resulting patch.xp3 next to the game executable - the engine overlays
 patch archives on top of the base ones, so the original data.xp3 is never
 touched.
 
+Container details that the engine actually enforces (verified against
+krkrz's tTVPXP3Archive::LoadIndex and against a real game):
+
+  * every File chunk needs an 'info', a 'segm' AND an 'adlr' sub-chunk;
+    'adlr' holds the Adler-32 of the uncompressed content.  Without it the
+    loader throws TVPReadError, which KAG shows as "Script exception
+    raised / Read error" before a single script runs.
+  * patch entries are looked up by *name*, so an archive whose payload sits
+    at the root is what the engine finds by default (folder structure
+    inside a patch archive is ignored unless a patch-supplied Config.tjs
+    registers it).
+
 The archive is verified by re-reading it with the xp3tool parser and
-comparing file names and sizes.
+comparing file names, sizes and Adler-32 hashes.
 
 Usage:
     python3 kirikiri/xp3pack.py <in_dir> <out.xp3>
@@ -35,6 +47,14 @@ log = logging.getLogger("xp3pack")
 MAGIC = b"XP3\r\n \n\x1a\x8b\x67\x01"
 INDEX_ZLIB = 0x01
 
+# Every File chunk must carry an 'adlr' sub-chunk holding the Adler-32 of the
+# entry's *uncompressed* content.  krkrz's loader requires it unconditionally
+# (tTVPXP3Archive::LoadIndex throws TVPReadError without it) and hands the
+# value to the game's extraction filter as the per-file key.  A patch archive
+# written without it makes the engine fail at startup with "Script exception
+# raised / Read error" - the game never even gets to load a script.
+CH_ADLR = b"adlr"
+
 HEADER_SIZE = 11
 PTR_SIZE = 8
 
@@ -55,16 +75,36 @@ def collect_files(in_dir):
     return files
 
 
+def adler32_stream(path, chunk_size=1 << 20):
+    """Adler-32 of a file's whole content, read in chunks."""
+    adler = 1
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            adler = zlib.adler32(chunk, adler)
+    return adler & 0xFFFFFFFF
+
+
 def build_index(entries):
-    """Index block bytes for [(name, start, size)]; one raw segment each."""
+    """Index block bytes for [(name, start, size, adler)]; one raw segment each.
+
+    Each File chunk holds 'info' (flags, org size, arc size, UTF-16LE name),
+    'segm' (one raw segment) and 'adlr' (the Adler-32) - in that order, which
+    is what real games' archives carry.
+    """
     out = bytearray()
-    for name, start, size in entries:
+    for name, start, size, adler in entries:
         name_bytes = name.encode("utf-16-le")
-        info = struct.pack("<IQQH", 0, size, 0, len(name)) + name_bytes
+        info = struct.pack("<IQQH", 0, size, size, len(name)) + name_bytes
         segm = struct.pack("<IQqQ", 0, start, size, size)
-        file_chunk = (b"File" + struct.pack("<q", 12 + len(info) + 12 + len(segm))
+        adlr = struct.pack("<I", adler & 0xFFFFFFFF)
+        file_chunk = (b"File" + struct.pack("<q", 12 + len(info) + 12 + len(segm)
+                                            + 12 + len(adlr))
                       + b"info" + struct.pack("<q", len(info)) + info
-                      + b"segm" + struct.pack("<q", len(segm)) + segm)
+                      + b"segm" + struct.pack("<q", len(segm)) + segm
+                      + CH_ADLR + struct.pack("<q", len(adlr)) + adlr)
         out += file_chunk
     return bytes(out)
 
@@ -81,9 +121,18 @@ def pack(in_dir, out_path, zlib_level=9):
         ofs = HEADER_SIZE + PTR_SIZE
         for rel, full in files:
             size = os.path.getsize(full)
+            adler = 1
             with open(full, "rb") as src:
-                out.write(src.read())
-            entries.append((rel, ofs, size))
+                # streamed so a large payload is never held in memory, and
+                # the Adler-32 is computed while copying (adler32 is
+                # incremental, so chunked == whole-file)
+                while True:
+                    chunk = src.read(1 << 20)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    adler = zlib.adler32(chunk, adler)
+            entries.append((rel, ofs, size, adler & 0xFFFFFFFF))
             ofs += size
 
         index_ofs = ofs
@@ -100,7 +149,13 @@ def pack(in_dir, out_path, zlib_level=9):
 
 
 def verify(out_path, files):
-    """Self-check: re-read the archive with the xp3tool parser."""
+    """Self-check: re-read the archive with the xp3tool parser.
+
+    Beyond names and sizes this also checks the Adler-32 of every entry
+    against the source file, because a missing or wrong 'adlr' sub-chunk is
+    a hard load failure on the engine side while being invisible to a size
+    comparison alone.
+    """
     # Import the sibling module through the package so this works both as
     # `kirikiri.xp3pack` and as a script; a bare `from xp3tool import ...` only
     # worked when kirikiri/ itself was on sys.path, which shadowed the repo-root
@@ -110,7 +165,8 @@ def verify(out_path, files):
     except ImportError:                # run directly: python kirikiri/xp3pack.py
         from xp3tool import entry_size, open_xp3
 
-    parsed = {e["name"]: entry_size(e) for e in open_xp3(out_path)}
+    entries = open_xp3(out_path)
+    parsed = {e["name"]: entry_size(e) for e in entries}
     expected = {rel: os.path.getsize(full) for rel, full in files}
     if parsed != expected:
         missing = sorted(set(expected) - set(parsed))
@@ -119,6 +175,18 @@ def verify(out_path, files):
                          if parsed[n] != expected[n])
         raise Xp3PackError("verify failed: missing=%r extra=%r resized=%r"
                            % (missing[:5], extra[:5], resized[:5]))
+
+    want = {rel: adler32_stream(full) for rel, full in files}
+    got = {e["name"]: e.get("adler") for e in entries}
+    no_hash = sorted(n for n in got if got[n] is None)
+    bad_hash = sorted(n for n in got
+                      if got[n] is not None and got[n] != want[n])
+    if no_hash or bad_hash:
+        raise Xp3PackError(
+            "verify failed: no 'adlr' sub-chunk for %r, wrong Adler-32 for %r "
+            "(krkrz refuses to load such an archive)"
+            % (no_hash[:5], bad_hash[:5]))
+
     log.info("%s: verified %d entries, %d bytes",
              out_path, len(parsed), sum(parsed.values()))
     return len(parsed)

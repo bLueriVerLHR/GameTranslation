@@ -46,6 +46,9 @@ INDEX_CONTINUE = 0x80
 CH_FILE = b"File"
 CH_INFO = b"info"
 CH_SEGM = b"segm"
+# Adler-32 of the uncompressed entry, mandatory for krkrz's loader (see
+# parse_index) and used as the per-file key of the extraction filter.
+CH_ADLR = b"adlr"
 
 SEGM_ENCODE_MASK = 0x07
 SEGM_RAW = 0
@@ -117,7 +120,7 @@ def find_chunk(buf, start, size, magic):
 
 
 def parse_index(buf, block_ofs):
-    """Parse one index block into entries: [{"name", "segments"}].
+    """Parse one index block into entries: [{"name", "segments", "adler"}].
 
     segments: list of (start, arc, org, compressed) tuples.
     """
@@ -152,7 +155,23 @@ def parse_index(buf, block_ofs):
                 raise Xp3Error("entry %r: unknown segment method 0x%02x"
                                % (name, method))
             segments.append((start, arc, org, compressed))
-        entries.append({"name": name, "segments": segments})
+
+        # 'adlr' sub-chunk: Adler-32 of the uncompressed entry.  krkrz's
+        # loader (tTVPXP3Archive::LoadIndex) throws TVPReadError when it is
+        # missing, so an archive without it never loads - the engine reports
+        # that as "Script exception raised / Read error".  The value is also
+        # handed to the game's extraction filter as the per-file key.
+        adler = None
+        try:
+            adlr_start, adlr_size = find_chunk(buf, file_start, file_size,
+                                              CH_ADLR)
+            if adlr_size >= 4:
+                adler = _u32(buf, adlr_start) & 0xFFFFFFFF
+        except Xp3Error:
+            log.warning("index block 0x%x: entry %r has no 'adlr' sub-chunk "
+                        "(Adler-32); the krkrz loader rejects such an archive",
+                        block_ofs, name)
+        entries.append({"name": name, "segments": segments, "adler": adler})
         pos = file_start + file_size
     return entries
 

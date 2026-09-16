@@ -78,6 +78,11 @@
 且 **easy** 加密时是默认步骤；复杂/自定义加密游戏上它不改任何东西
 （见 §4）。如果某步不会改变最终构建，跳过它。
 
+**launcher 打包件**（磁盘上没有 `data/`，数据库被 Enigma Virtual Box
+打进 `<Game>.exe`）：先 `python pipeline.py unpack-data <src>` 把 `data/`
+还原回源目录，再按上面顺序走；`build` 对这类目录会直接报
+「no web root found」。
+
 ```powershell
 $tk  = "<本工具库路径>"                 # 如本仓库目录
 $src = "C:\path\to\game"                 # 原版游戏目录 — 绝不修改
@@ -142,6 +147,11 @@ python $tk\pipeline.py deliver $out          # 写回存储侧（见 §6a）
 - **MZ 根部署**：游戏根目录有 `index.html` + `js/`（NW.js 打包 MZ 的常态）。
 - **MV**：通常是 `www/` 子目录，含 `index.html` + `js/rpg_core.js`。
 - 如果根目录本身就是网页根，原样使用。
+- **launcher 打包件（没有 `data/`）**：`index.html` + `js/` 齐全但数据库不在
+  磁盘上 —— 它被 Enigma Virtual Box 打进 `<Game>.exe`（PE 段
+  `.enigma1`/`.enigma2`），运行时由 packer 的虚拟文件系统供给，所以游戏能玩
+  但不是一个网页根。先 `pipeline.py unpack-data <游戏目录>` 还原 `data/`
+  （见 `docs/experience-decrypt.md`）。
 
 `pipeline build` 打印检测到的引擎与网页根。
 
@@ -423,6 +433,13 @@ powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<g
   就删文件 + `plugins.js` 条目。
 - RPG Maker MZ 默认加密密钥 `d41d8cd98f00b204e9800998ecf8427e`
   （空字符串 MD5）非常常见 — `decrypt` 当普通密钥处理。
+- **别把「没有 `data/`」当成不可转换：** 先看 `Game.exe` 的段表有没有
+  `.enigma1` / `.enigma2`（特征：某段 `raw` 远大于 `vsize`，如 7.5 MB / 4 KB）。
+  有就是 launcher 打包件 —— `pipeline.py unpack-data <src>` 能把数据库完整
+  还原（实测 57 文件 / 5.1 MB 一次成功，逐文件 JSON 校验通过），之后
+  build/decrypt/audio 照常。打包工具自身的容器不是数据：`version.dll` 的
+  100 MB 尾巴是预分配填充、`Tool/www` 是它的 UI 资源、`TrsData*.bin` 已加密
+  不可 harvest。
 - MTool repack 垃圾：repack 在游戏根目录带 `Dictionaries/`、`MTool/`、
   `locales/`、`swiftshader/`（`build` 自动跳过 — 不在 `WEB_DIRS`）。
   根级 repack 文件 — `reo.json`、`与工具一同启动.bat`、

@@ -88,6 +88,8 @@ GameTranslation/
 │   ├── config.py        #   工具发现（ffmpeg/7z/git...）+ 阈值 + 路径/平台转换
 │   ├── runtime.py       #   环境感知调优：CPU/内存/磁盘类型探测 + 自动并行度
 │   ├── detect.py        #   引擎 / 网页根目录检测（MZ 根部署 vs MV www/）
+│   ├── evb.py           #   launcher 打包件：从 <Game>.exe 的 Enigma Virtual Box
+│   │                    #   容器里还原 data/（命令 unpack-data）
 │   ├── build.py         #   拷贝网页文件，剥离 NW.js 运行时（asyncio + 并行拷贝）
 │   ├── plugincompat.py  #   JoiPlay 兼容：已知 NW.js-only 插件检查的定点维修 +
 │   │                    #   模块顶层 process/require 预扫（命令 compat）
@@ -183,6 +185,7 @@ $src = "C:\path\to\game"
 $out = Join-Path $env:TEMP 'game'              # 工作目录（Temp，可删）
 $g   = "<交付目录>"   # 成品放这里，和以往每个游戏一致
 
+python $tk\pipeline.py unpack-data $src      # 仅 launcher 打包件：把 data/ 从 <Game>.exe 还原出来
 python $tk\pipeline.py build   $src -o $out
 python $tk\pipeline.py compat  $out          # 插件加载期崩溃：定点维修 + 预扫（见 docs/workflow.md §4）
 python $tk\pipeline.py decrypt $out          # 仅 RPGM + easy 加密；否则跳过
@@ -197,6 +200,12 @@ python $tk\pipeline.py deliver $out            # 写回存储侧（压缩→压�
 `decrypt` 默认只在 RPG Maker MZ/MV 且为 **easy** 加密（每个加密资源都带
 标准 RPGMV 头）时运行。复杂/自定义加密游戏里它保持原样并跳过。总原则：
 如果解密不会改变游戏在 JoiPlay 下的运行方式，就不运行。
+
+有些 repack 把数据库整个塞进 `<Game>.exe`（Enigma Virtual Box 打包件）：
+磁盘上没有 `data/`，游戏照样能玩，但 `build` 会拒绝这种目录。先跑
+`pipeline.py unpack-data $src` 把 `data/` 还原回源目录，再按上面顺序构建——
+该命令只做「按容器表切片 + 逐文件 JSON 校验」，非 JSON 的打包残留
+（repacker 推广标记）会报出并跳过。
 
 `build`/`decrypt`/`audio` 并行运行（asyncio + 线程池）；每步可用
 `--workers N` 调整。**默认自动调优**（`rpgmaker/runtime.py`）：按当前机器的
@@ -256,7 +265,8 @@ venv 解释器按平台取：POSIX `.venv/bin/python`，Windows
 <venv-python> -m pytest tests/ -q       # 静默模式
 ```
 
-- **单元测试**：config/runtime（自动并行度）、detect、decrypt（RPGMV 头
+- **单元测试**：config/runtime（自动并行度）、detect、evb（打包件 `data/`
+  还原 + 切片自检）、decrypt（RPGMV 头
   XOR）、verify、build、clean、audio（位率策略）、plain_io（双文件块转义）、
   plugins_io、rvdata2（Ruby Marshal 解码）、merge_plain_chunks（QC 规则）、
   downscale_images、dxarchive（LZ/Huffman 往返 + 合成 .wolf 全包解包）。
@@ -332,6 +342,7 @@ $out = "$(cfg temp_dir)/game"                 # 系统临时文件夹（工作�
 $g   = "$(cfg games_dir)"                     # 成品游戏目录
 $ga  = "$(cfg archives_dir)"                  # 成品压缩包目录
 
+python3 "$tk/pipeline.py" unpack-data "$src"   # 仅 launcher 打包件：还原 <Game>.exe 里的 data/
 python3 "$tk/pipeline.py" build   "$src" -o "$out"
 python3 "$tk/pipeline.py" decrypt "$out"          # 仅 RPGM + easy 加密；否则跳过
 python3 "$tk/pipeline.py" audio   "$out"

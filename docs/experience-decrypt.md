@@ -34,10 +34,10 @@
   - **容器布局**：`.enigma1` = 明文 UTF-16LE 文件名表（ASCII 字母序）+
     payload；每条记录的名字后面 `+5` 字节处是 `u32` 文件尺寸；payload 从表
     之后开始，按表序**明文拼接、未压缩**。
-  - **取回**：按「表序 + 各记录尺寸」切片 payload 并逐个 `json.loads` 校验；
-    非 JSON 的 payload 项（推广 `.ini`/`.txt`，以及后面的打包器二进制）会
-    插在中间/末尾，切片解不出 JSON 时向后小范围搜索即可（本次只插了 23 字
-    节的推广 ini）。
+  - **取回**：`pipeline.py unpack-data <游戏目录>`（`rpgmaker/evb.py`）按
+    「表序 + 各记录尺寸」切片 payload 并逐个 `json.loads` 校验；非 JSON 的
+    payload 项（推广 `.ini`/`.txt`，以及后面的打包器二进制）会被报出并跳过
+    （本次只插了 23 字节的推广 ini；实测 57 文件 / 5.1 MB 一次成功）。
   - 恢复出的 `System.json` 里有 `hasEncryptedImages/Audio` 与
     `encryptionKey` → 紧接着 `decrypt` 能正常解 `*.png_`/`*.ogg_`，之后
     build/audio/clean/verify 全部照常（本次 57 个文件 5.8 MB 全数取回，

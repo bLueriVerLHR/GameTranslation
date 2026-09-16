@@ -5,7 +5,8 @@
 One definition per command, two apps:
 
   * ``app``      - RPG Maker MZ/MV: build / compat / decrypt / audio / clean /
-                   verify / doctor / serve / compress / deliver
+                   verify / doctor / serve / compress / deliver /
+                   unpack-data (launcher-packed data/)
   * ``tyrano``   - TyranoScript: build / audio / clean / fix-autoplay /
                    verify / serve / compress / deliver
 
@@ -24,6 +25,7 @@ non-zero via ``typer.Exit``.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -33,7 +35,7 @@ from rpgmaker import audio as audio_mod
 from rpgmaker import build as build_mod
 from rpgmaker import clean as clean_mod
 from rpgmaker import compress as compress_mod
-from rpgmaker import decrypt, deliver, detect, doctor, logsetup, plugincompat
+from rpgmaker import decrypt, deliver, detect, doctor, evb, logsetup, plugincompat
 from rpgmaker import serve as serve_mod
 from rpgmaker import verify as verify_mod
 
@@ -83,6 +85,30 @@ def _test_archive(archive: str) -> None:
 
 
 # --------------------------------------------------------------- RPG Maker
+
+@app.command("unpack-data")
+def cmd_unpack_data(
+    game: str = typer.Argument(..., help="game folder whose <Game>.exe packs the database"),
+    out: str = typer.Option(None, "-o", "--out", help="target data folder (default: <game>/data)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="list the packed files, write nothing"),
+):
+    """Restore data/ packed inside <Game>.exe (launcher repack: Enigma Virtual Box).
+
+    Such a folder plays fine but has no data/ on disk, so `build` refuses it.
+    Run this first, then the normal pipeline.
+    """
+    target = out or os.path.join(game, "data")
+    try:
+        summary = evb.unpack(game, target, dry_run=dry_run)
+    except evb.EvbError as exc:
+        log.error("unpack-data: %s", exc)
+        raise typer.Exit(1)
+    if summary["skipped"]:
+        log.warning("unpack-data: %d non-JSON payload item(s) skipped (repacker leftovers)",
+                    len(summary["skipped"]))
+    if not summary.get("dry_run"):
+        log.info("unpack-data: %s is now a web root - continue with `build`", game)
+
 
 @app.command("build")
 def cmd_build(

@@ -197,7 +197,7 @@ def load_cdp():
             "error: the CDP helper (cdp_shot.py) is not available.\n"
             "  looked in: %s\n"
             "  set VISUAL_CHECK_SCRIPTS to the directory that holds it "
-            "(the scripts dir of whatever provides the screenshot helper), "
+            "(the scripts dir of whatever provides it), or drop it in "
             "tools/cdp/ - this gate needs it to read the page over CDP."
             % (scripts or "<none>"))
     if scripts not in sys.path:

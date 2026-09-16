@@ -327,19 +327,29 @@ class TestGalleryReplayUX:
         assert "title_jump" in open(os.path.join(REPO, "kirikiri", "kag", "cli.py"),
                                     encoding="utf-8").read()
 
-    def test_scene_change_consumes_the_triggering_click(self):
+    def test_scene_change_consumes_the_triggering_gesture_tail(self):
         raw = open(os.path.join(JS_DIR, "runtime_shim.js"), encoding="utf-8").read()
-        # The click that triggers a jump must not be consumed again by the screen
+        # The input that triggers a jump must not be consumed again by the screen
         # it opens: measured with a jump+click in one tick, the replay lost its
         # first line and the flow ran on into name.ks (owner: "进回想以后，第一句
         # 话会被自动跳过" / "进画廊后，会自动点第一个 CG 鉴赏").
-        assert "__kag3_click_lock_until" in raw
-        assert "__kag3_lock_clicks" in raw
-        # capture guard (before the map engine's lazy hook) + bubble twin
-        assert raw.count("Date.now() < window.__kag3_click_lock_until") >= 3
+        #
+        # The barrier is a state boundary -- armed on the scene change, released
+        # once the new screen has painted -- not a guessed duration.  The old
+        # 300 ms window covered mousedown+click only, so a touch/pointer path
+        # (WebView/JoiPlay) or a screen that takes longer to set up slipped
+        # through it; it also ate fast legitimate clicks.
+        assert "__kag3_input_barrier" in raw
+        assert "__kag3_arm_input_barrier" in raw
+        assert "requestAnimationFrame" in raw
+        # released by the next frame, never by a millisecond constant
+        assert "Date.now() + (ms || 300)" not in raw
+        # the whole input tail is covered, not just the mouse pair
+        for ev in ("pointerup", "touchend", "mouseup", "keyup", "touchstart"):
+            assert "'%s'" % ev in raw
         assert "stopImmediatePropagation" in raw
-        # jump/call arm the lock and drop inherited weak-stop state
-        assert "['jump', 'call'].forEach" in raw
+        # jump/call/load arm the barrier and drop inherited weak-stop state
+        assert "['jump', 'call', 'load'].forEach" in raw
         assert "cancelWeakStop" in raw
 
     def test_style_align_is_deferred_while_the_dialog_layer_is_empty(self):

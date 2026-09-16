@@ -58,50 +58,65 @@ tyrano.plugin.kag.tag['ch'] = {
   },
 };
 // __KAG3_INCLUDE:MAP_ENGINE_JS__
-// Click lock: the click that triggers a scene change must not be consumed a
-// second time by the screen it just opened.  KAG3 jumps run synchronously, so
-// the same DOM event finishes bubbling after the new screen has armed its own
-// clickable map / [p] wait - the gallery then opened the entry the pointer
-// happened to land on (owner: "进画廊后，会自动点第一个 CG 鉴赏") and a replay
-// lost its first line (owner: "进回想以后，第一句话会被自动跳过").
-// A jump/call arms a short window during which clicks are swallowed in the
-// capture phase, so no later handler sees a click that belonged to the
-// previous screen.  Registered before the map engine's own hook (which is
-// installed lazily on the first [mapaction]) so the guard runs first.
-window.__kag3_click_lock_until = 0;
-var __kag3_lock_clicks = function (ms) {
-  window.__kag3_click_lock_until = Date.now() + (ms || 300);
+// Input barrier: the gesture that triggered a scene change must not advance
+// the screen it just opened.  KAG3 jumps run synchronously, so the same input
+// keeps bubbling after the new screen has armed its own clickable map / [p]
+// wait - the gallery then opened the entry the pointer happened to land on
+// (owner: "进画廊后，会自动点第一个 CG 鉴赏") and a replay lost its first line
+// (owner: "进回想以后，第一句话会被自动跳过").
+//
+// Arming is a *state* boundary, not a duration: it stands until the new screen
+// has painted (next animation frame, plus one task boundary).  Everything the
+// old gesture still has to deliver - mouseup, click, touchend, pointerup,
+// keyup - is dispatched before that frame, so its whole tail is swallowed
+// instead of the mousedown+click pair the previous 300 ms window happened to
+// cover.  A touch path (WebView/JoiPlay) or a screen that takes longer to set
+// up slipped through that window, and it ate fast legitimate clicks besides.
+window.__kag3_input_barrier = 0;
+var __kag3_barrier_release = function () { window.__kag3_input_barrier = 0; };
+var __kag3_arm_input_barrier = function () {
+  window.__kag3_input_barrier = 1;
+  var frame = window.requestAnimationFrame || window.webkitRequestAnimationFrame;
+  if (frame) {
+    frame.call(window, function () {
+      // one more task boundary: the tail events of the old gesture (click
+      // after mouseup, pointerup after touchend) are dispatched before the
+      // next frame, never after it
+      setTimeout(__kag3_barrier_release, 0);
+    });
+  }
+  // Backstop for a hidden/background tab, where no frame is ever produced:
+  // holding the barrier would block a legitimate click, so cap it.
+  setTimeout(__kag3_barrier_release, 1000);
 };
-document.addEventListener('click', function (e) {
-  if (Date.now() < window.__kag3_click_lock_until) {
+// Capture phase swallows the event before any handler sees it; the bubble
+// twins cover the event that is *already* dispatching when the scene changes
+// (its capture phase has passed by then).  Deliberately not enumerating
+// advance paths: this covers every input type, including the ones Tyrano's own
+// core owns.  keydown stays out - it opens the system menu and picks choices
+// rather than advancing text, so a stray one must not be dropped.
+(function () {
+  var swallow = function (e) {
+    if (!window.__kag3_input_barrier) return;
     e.stopPropagation();
     e.stopImmediatePropagation();
     if (e.preventDefault) e.preventDefault();
-  }
-}, true);
-// Bubble-phase twin: a jump that started from inside this same click already
-// passed the capture guard, so the event must not reach later handlers either.
-document.addEventListener('click', function (e) {
-  if (Date.now() < window.__kag3_click_lock_until) {
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-  }
-}, false);
-document.addEventListener('mousedown', function (e) {
-  if (Date.now() < window.__kag3_click_lock_until) {
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-  }
-}, true);
+  };
+  ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick',
+   'touchstart', 'touchend', 'touchmove', 'keyup', 'keypress'].forEach(
+    function (t) { document.addEventListener(t, swallow, true); });
+  ['click', 'mouseup', 'pointerup', 'touchend'].forEach(
+    function (t) { document.addEventListener(t, swallow, false); });
+})();
 (function () {
   var T = tyrano.plugin.kag.tag;
-  ['jump', 'call'].forEach(function (name) {
+  ['jump', 'call', 'load'].forEach(function (name) {
     var t = T[name];
-    if (!t || !t.start || t.__kag3_click_lock) return;
-    t.__kag3_click_lock = true;
+    if (!t || !t.start || t.__kag3_input_barrier_wrapped) return;
+    t.__kag3_input_barrier_wrapped = true;
     var orig = t.start;
     t.start = function (pm) {
-      __kag3_lock_clicks(300);
+      __kag3_arm_input_barrier();
       // The new scene must not inherit half-satisfied click state from the
       // click that got us here (Tyrano clears weak stops on click, so a
       // pending one otherwise consumes the new screen's first [p]/[s]).

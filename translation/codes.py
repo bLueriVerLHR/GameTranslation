@@ -37,8 +37,14 @@ CODE_RE = re.compile(r"\\[A-Za-z]+(?:<[^<>]*>|\[[^\[\]]*\])?|\\[{}.|^!$~]")
 #: A dispatcher arm in engine/plugin JS: ``case 'PX':`` / ``case '{':``.
 DISPATCH_RE = re.compile(r"case\s+'([^']{1,3})'\s*:")
 
-#: Kana (hiragana + katakana, including the prolonged-sound mark).
-KANA_RE = re.compile(r"[\u3040-\u309f\u30a0-\u30ff]")
+#: Kana (hiragana + katakana, including the prolonged-sound mark) **and the
+#: halfwidth katakana letters**.  Halfwidth katakana matters: a line written
+#: only in halfwidth (`ﾌﾞﾂﾌﾞﾂ……`) is still Japanese text, and without the class
+#: it looks like "no kana" and is dropped as non-text (a real build lost those
+#: lines that way).  The halfwidth punctuation (`｡｢｣､･`) and the halfwidth
+#: prolonged-sound mark (`ｰ`, used as a dash decoration in the Chinese text)
+#: are deliberately excluded.
+KANA_RE = re.compile(r"[\u3040-\u309f\u30a0-\u30ff\uff66-\uff6f\uff71-\uff9d]")
 
 #: Han characters (used to spot kanji-only UI labels such as "攻撃").
 CJK_RE = re.compile(r"[\u3005\u3006\u3400-\u4dbf\u4e00-\u9fff]")

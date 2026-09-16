@@ -70,6 +70,26 @@ def _params_of(command):
     return None
 
 
+def _nested_texts(value, trail=""):
+    """Strings inside a plugin parameter object/list, with their trail.
+
+    Plugin command parameters are structured: an option object like
+    ``{"windowId": 1, "messageText": "叫び声が響く……」}`` carries displayed text
+    in a *field*, which an extractor that only looks at top-level strings never
+    sees (a real build lost its popup messages and a keyboard hint that way).
+    """
+    out = []
+    if isinstance(value, str):
+        out.append((trail, value))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            out.extend(_nested_texts(item, "%s[%d]" % (trail, index)))
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            out.extend(_nested_texts(item, "%s.%s" % (trail, key)))
+    return out
+
+
 def extra_text_codes(command):
     """Displayed strings the base ``text_codes`` does not cover.
 
@@ -95,8 +115,13 @@ def extra_text_codes(command):
     elif code in (PLUGIN_CMD_CODE, PLUGIN_CONT_CODE):
         first = PLUGIN_IDENTIFIER_PARAMS if code == PLUGIN_CMD_CODE else 0
         for index, value in enumerate(params[first:], first):
-            if isinstance(value, str) and is_candidate(value, "plugin"):
-                out.append((index, "", value))
+            if isinstance(value, str):
+                if is_candidate(value, "plugin"):
+                    out.append((index, "", value))
+                continue
+            for suffix, text in _nested_texts(value):
+                if is_candidate(text, "plugin"):
+                    out.append((index, suffix, text))
     return out
 
 

@@ -9,6 +9,7 @@ any game's data.
 import io
 import json
 import os
+import re
 
 import pytest
 
@@ -199,7 +200,8 @@ def test_extract_covers_name_plates_branch_labels_and_plugin_text(tmp_path):
             {"code": 357, "indent": 0,
              "parameters": ["LL_VariableWindow", "hideWindow",
                             "\u30a6\u30a3\u30f3\u30c9\u30a6\u3092\u6d88\u53bb",
-                            {"windowId": "1"}]},
+                            {"windowId": "1",
+                             "messageText": "\u53eb\u3073\u58f0\u304c\u97ff\u304f\u2026\u2026\u3002"}]},
             {"code": 657, "indent": 0, "parameters": ["\u30a6\u30a3\u30f3\u30c9\u30a6\u756a\u53f7 = 1"]},
             {"code": 357, "indent": 0,
              "parameters": ["SomePlugin", "doThing", "hideWindow", "true"]},
@@ -216,6 +218,7 @@ def test_extract_covers_name_plates_branch_labels_and_plugin_text(tmp_path):
     assert prefix % 3 + ".parameters[1]" in entries          # branch label
     assert prefix % 4 + ".parameters[1]" in entries
     assert prefix % 5 + ".parameters[2]" in entries          # plugin prose
+    assert prefix % 5 + ".parameters[3].messageText" in entries   # nested field
     assert prefix % 6 + ".parameters[0]" in entries          # 657 continuation
     # identifiers and comments are not text
     assert prefix % 5 + ".parameters[0]" not in entries      # plugin name
@@ -249,6 +252,21 @@ def test_extract_covers_db_battle_messages_and_profile(tmp_path):
     assert "data/Skills.json#[1].message2" in entries
     assert "data/Actors.json#[1].profile" in entries
     assert "data/Animations.json#[1].name" not in entries   # editor-only
+
+
+def test_extract_covers_halfwidth_katakana_only_lines(tmp_path):
+    """A line written only in halfwidth katakana is still Japanese text."""
+    root = make_game(str(tmp_path / "game"))
+    path = os.path.join(root, "data", "Map004.json")
+    _dump(path, {"displayName": "", "events": [None, {"id": 1, "name": "Ev",
+        "pages": [{"list": [
+            {"code": 401, "indent": 0,
+             "parameters": ["\uff8c\uff9e\uff80\uff8c\uff9e\uff80\u2026\u2026\u3002"]},
+        ]}]}]})
+    work = str(tmp_path / "work")
+    mvkeys.extract(root, work)
+    entries = {entry["id"] for entry in mvkeys.load_keys(work) if "Map004" in entry["id"]}
+    assert "data/Map004.json#events[1].pages[0].list[0].parameters[0]" in entries
 
 
 def test_extract_tolerates_plugin_shaped_entries(tmp_path):
@@ -666,6 +684,48 @@ def test_gate_kana_residue_and_allowlist(work, game):
     _dump(os.path.join(work, "allow_kana.json"),
           {"items": [{"match": "re:[\u30c9\u30ad]{2,}", "reason": "\u62df\u58f0\u8bcd"}]})
     assert {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["kana"]["ok"] is True
+
+
+def test_gate_line_breaks_fails_on_truncated_multiline(work, game):
+    """A value that drops one of the source's lines is a gate failure.
+
+    Real defect this pins down: 42 skill descriptions shipped with only their
+    first line, invisible to both the kana gate (line 1 was translated) and the
+    control-code gate.
+    """
+    mvkeys.extract(game, work)
+    _fill_library(work, lambda entry, text:
+                  text.split("\n")[0] if "\n" in text else text)
+    report = rawlib.run_gates(work)
+    gate = {g["name"]: g for g in report["gates"]}["line_breaks"]
+    assert report["ok"] is False
+    assert gate["ok"] is False and gate["mismatched"] >= 1
+    assert "line breaks" in gate["detail"][0]["reason"]
+    assert "line count" in rawlib.gate_markdown(report)
+
+
+def test_append_rejects_truncated_multiline_batch(work, game):
+    """The append gate refuses a truncated value before it reaches the library."""
+    mvkeys.extract(game, work)
+    entry = next(e for e in mvkeys.load_keys(work) if "\n" in e["ja"])
+    batch = os.path.join(work, "batch.txt")
+    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@%s@@@\n%s\n" % (entry["id"], entry["ja"].split("\n")[0]))
+    report = rawlib.append_batch(work, batch)
+    assert report["added"] == 0
+    assert any("line breaks" in problem for _id, problem in report["problems"])
+
+
+def test_append_accepts_matching_line_breaks(work, game):
+    mvkeys.extract(game, work)
+    entry = next(e for e in mvkeys.load_keys(work) if "\n" in e["ja"])
+    kana = re.compile(r"[\u3040-\u30ff]")
+    value = "\n".join(kana.sub("\u4e2d", line) for line in entry["ja"].split("\n"))
+    batch = os.path.join(work, "batch.txt")
+    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@%s@@@\n%s\n" % (entry["id"], value))
+    report = rawlib.append_batch(work, batch)
+    assert report["problems"] == [] and report["added"] == 1
 
 
 def test_gate_pending_until_resolved(work, game):

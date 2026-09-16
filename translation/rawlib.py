@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""rawlib.py - the raw translation library, rewrites, and the four hard gates.
+"""rawlib.py - the raw translation library, rewrites, and the five hard gates.
 
 The translation subagent never touches JSON: it appends *raw* text to one file
 (design: `.tmp/TRANSLATION_WORKFLOW_V2.md`).  Escaping happens here and only
@@ -24,7 +24,7 @@ Operations:
 ``read_library`` / ``write_library`` / ``append_block``  - IO (last wins per id)
 ``apply_rewrites``   - execute the subagent's decided rewrites (old -> new)
 ``to_json``          - raw library + keys.jsonl -> translated.json (escaping)
-``run_gates``        - the four hard gates; baking is refused unless all pass
+``run_gates``        - the five hard gates; baking is refused unless all pass
 """
 import io
 import json
@@ -39,14 +39,14 @@ from .codes import (KANA_RE, has_text_parameter, parameter_of, parse_codes,
 __all__ = ["HEADER_RE", "read_library", "write_library", "append_block",
            "read_jsonl", "read_jsonl_report", "append_jsonl", "apply_rewrites",
            "to_json", "run_gates", "gate_markdown", "code_problems",
-           "readable_text", "kana_problem", "validate_blocks", "append_batch",
-           "leading_codes", "fix_leading_codes"]
+           "line_problems", "readable_text", "kana_problem", "validate_blocks",
+           "append_batch", "leading_codes", "fix_leading_codes"]
 
 #: ``@@@<id>@@@`` on a line of its own; the id may contain anything but ``@``.
 HEADER_RE = re.compile(r"^@@@([^@\n]+?)@@@[ \t]*$")
 
 LIBRARY_NAME = "translations.raw.txt"
-GATE_ORDER = ("coverage", "control_codes", "kana", "pending")
+GATE_ORDER = ("coverage", "control_codes", "kana", "line_breaks", "pending")
 
 
 def read_library(path):
@@ -317,6 +317,22 @@ def readable_text(text):
     return "\n".join(piece for piece in parts if piece)
 
 
+def line_problems(source_text, target_text):
+    """A value whose explicit line breaks differ from its source.
+
+    MZ window text and DB descriptions use real ``\\n`` as *author* line
+    breaks (one per window line, deliberate layout), so a value carrying fewer
+    breaks is a silently truncated translation.  Neither the kana gate nor the
+    control-code gate can see that - the missing line is simply gone, which is
+    exactly how 42 skill descriptions lost their second line in a real run.
+    """
+    source_lines = source_text.count("\n")
+    target_lines = target_text.count("\n")
+    if source_lines == target_lines:
+        return []
+    return ["line breaks: source %d -> value %d" % (source_lines, target_lines)]
+
+
 def kana_problem(text, items):
     """Kana left in the readable part of `text`, unless the allowlist covers it."""
     visible = readable_text(text)
@@ -347,6 +363,8 @@ def validate_blocks(work_dir, values):
             problems.append((key_id, "empty translation"))
             continue
         for message in code_problems(entry["ja"], text):
+            problems.append((key_id, message))
+        for message in line_problems(entry["ja"], text):
             problems.append((key_id, message))
         residue, _allowed = kana_problem(text, items)
         if residue:
@@ -499,13 +517,34 @@ def _gate_pending(work_dir):
     }
 
 
+def _gate_lines(keys, values):
+    """Every value keeps its source's explicit line breaks (no silent loss)."""
+    mismatched = []
+    for entry in keys:
+        text = values.get(entry["id"])
+        if not text:
+            continue
+        for message in line_problems(entry["ja"], text):
+            mismatched.append({"id": entry["id"], "where": entry["where"],
+                               "reason": message, "source": entry["ja"][:80],
+                               "value": text[:80]})
+    return {
+        "name": "line_breaks",
+        "ok": not mismatched,
+        "checked": sum(1 for entry in keys if values.get(entry["id"])),
+        "mismatched": len(mismatched),
+        "detail": mismatched[:50],
+    }
+
+
 def run_gates(work_dir, out_path=None):
-    """Run the four hard gates.  Baking is refused unless all of them pass."""
+    """Run the hard gates.  Baking is refused unless all of them pass."""
     keys = mvkeys.load_keys(work_dir)
     values = read_library(os.path.join(work_dir, LIBRARY_NAME))
     items = _allowlist(work_dir)
     gates = [_gate_coverage(keys, values), _gate_codes(keys, values),
-             _gate_kana(keys, values, items), _gate_pending(work_dir)]
+             _gate_kana(keys, values, items), _gate_lines(keys, values),
+             _gate_pending(work_dir)]
     report = {
         "ok": all(gate["ok"] for gate in gates),
         "keys": len(keys),
@@ -535,6 +574,9 @@ def gate_markdown(report):
         elif gate["name"] == "kana":
             detail = "%d residue, %d allowlisted" % (gate["residue"],
                                                      gate["allowed"])
+        elif gate["name"] == "line_breaks":
+            detail = "%d of %d values differ from the source line count" % (
+                gate["mismatched"], gate["checked"])
         else:
             detail = "%d open of %d" % (gate["open"], gate["entries"])
             if gate.get("unparsable"):

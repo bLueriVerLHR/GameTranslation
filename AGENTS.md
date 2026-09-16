@@ -656,7 +656,7 @@ Android WebView/PixiJS 把 WebGL 贴图限制在**每边 4096 像素**；PNG 超
 ## 翻译流程 (v2 — 唯一流程)
 
 **翻译只走 `docs/translation.md` 的 v2：一个翻译执行者（单写者，磁盘状态为
-权威）+ 文件信箱 + 四道硬门禁。不按 chunk 并行分发、不派发多个翻译 agent。**
+权威）+ 文件信箱 + 五道硬门禁。不按 chunk 并行分发、不派发多个翻译 agent。**
 
 ```
 python -m translation.cli prepare <game_dir> <work_dir>   # 提取 keys.jsonl + 控制码表 + 骨架 + MISSION.md
@@ -669,8 +669,8 @@ python -m translation.cli bake  <game_dir> <work_dir>     # 按 id 写回 + 统�
 - **编排者只做机械活**：提取、跑门禁、转 JSON、烘焙；语言判断全在执行者，
   其任务书是 `prepare` 生成的 `MISSION.md`。
 - 唯一落盘入口是 `append`（逐条校验 id/非空/控制码逐字一致/假名残留，任何
-  一条不过则整批不写盘）；四道硬门禁（`gates`：覆盖 / 控制码 / 假名残留 /
-  待决清零）全绿才能 `bake`；烘焙前自动备份到 `<work>/backup/`。
+  一条不过则整批不写盘）；五道硬门禁（`gates`：覆盖 / 控制码 / 假名残留 /
+  换行数一致 / 待决清零）全绿才能 `bake`；烘焙前自动备份到 `<work>/backup/`。
 - 统一字体是烘焙的强制步骤（本地策略表 `docs/table/font_rollback.md`）。
 
 **体量协商（mandatory）**：启动翻译前先 `prepare` 量体量（键数 / 总字符数），

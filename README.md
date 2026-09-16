@@ -54,7 +54,7 @@ GameTranslation/
 ├── translation/         # 翻译工作流 v2：一个子智能体全权负责，主智能体只烘焙
 │   ├── codes.py         #   控制码解析 + 从游戏自身 JS 推导的码表（不硬编码）
 │   ├── mvkeys.py        #   故事序键提取（MV/MZ：地图→公共事件→敌群→DB→UI→插件）
-│   ├── rawlib.py        #   无转义译文库（@@@id@@@）+ 回改执行 + 四道硬门禁
+│   ├── rawlib.py        #   无转义译文库（@@@id@@@）+ 回改执行 + 五道硬门禁
 │   ├── bake.py          #   译文库按 id 写回游戏数据（数组/对象两种命令形态）+ 统一字体
 │   ├── workspace.py     #   工作区骨架 + 子智能体 MISSION（流程与规则写死）
 │   └── cli.py           #   命令行：prepare/extract/scaffold/codes/to-json/rewrite/gates/status
@@ -155,7 +155,7 @@ GameTranslation/
 │   └── ...               #   不参与构建/测试，仅供查阅
 └── docs/
     ├── workflow.md      # RPG Maker 转换工作流（JoiPlay 构建）
-    ├── translation.md   # 翻译工作流 v2（单译者 + 文件信箱 + 四道门禁；
+    ├── translation.md   # 翻译工作流 v2（单译者 + 文件信箱 + 五道门禁；
     │                    #   v1 切块流程仅存历史）
     ├── wolfrpg.md       # Wolf RPG 翻译指南（解包/提取/分块/编码/运行，含坑）
     ├── kirikiri.md      # KiriKiri 翻译指南（解包/提取/写回/patch.xp3/QC）
@@ -248,7 +248,7 @@ RPG Maker 静态翻译（提取 → 词表 → subagent 分块 → 精确匹配�
 subagent 翻译 → `translated.json` → 注入。
 
 - **Subagent**：**一个**翻译执行者（单写者）+ 文件信箱（`translation.cli`
-  的 slice/append），四道硬门禁全绿才烘焙。
+  的 slice/append），五道硬门禁全绿才烘焙。
 - **本地名词表 + 游戏特定特征**（`docs/table/`，gitignored，仅本地使用）：
   每游戏子目录的 `glossary.json`（术语/人名表）+ `tone.md`（语气/风格）+
   `notes.md`（该游戏经验、坑与特征）；分块时注入每个 chunk 的

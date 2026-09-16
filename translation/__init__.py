@@ -6,7 +6,7 @@ Design: `.tmp/TRANSLATION_WORKFLOW_V2.md`.  Shape of the system:
 
   * the parent (orchestrator) owns the *mechanical* half: extract a flat,
     story-ordered key list, derive the control-code table from the game itself,
-    turn the subagent's raw text library into JSON, run the four hard gates and
+    turn the subagent's raw text library into JSON, run the five hard gates and
     bake.  Nothing here makes a language decision.
   * the translation subagent owns the *semantic* half: name drafts, scene
     summaries, tone, the translations themselves, and the rewrite decisions.

@@ -15,7 +15,7 @@ the job:
     append    <work_dir> --batch F    validate a batch, then append it
     to-json   <work_dir>              raw library -> translated.json (escaping)
     rewrite   <work_dir>              execute rewrites.jsonl over the library
-    gates     <work_dir>              the four hard gates (bake needs all green)
+    gates     <work_dir>              the five hard gates (bake needs all green)
     pending   <work_dir> --why ...    record a question safely (escaped)
     decide    <work_dir> --all-open   close questions by appending a ruling
     bake      <game_dir> <work_dir>   write the library back into the game
@@ -150,7 +150,7 @@ def gates(
     quiet: cliutil.Quiet = False,
     log_file: cliutil.LogFile = None,
 ) -> int:
-    """Run the four hard gates; a non-zero exit means: do not bake."""
+    """Run the five hard gates; a non-zero exit means: do not bake."""
     cliutil.setup_logging(verbose, quiet, log_file)
     if not os.path.isfile(os.path.join(work_dir, "keys.jsonl")):
         return cliutil.fail("keys.jsonl missing in %s (run extract first)"

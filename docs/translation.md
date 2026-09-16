@@ -8,7 +8,7 @@
 
 | 角色 | 负责 | 不负责 |
 |---|---|---|
-| 主智能体（编排） | 机械活：提取键表、推导控制码表、转 JSON、跑四道硬门禁、烘焙、字体、交付 | 不做任何语言判断 |
+| 主智能体（编排） | 机械活：提取键表、推导控制码表、转 JSON、跑五道硬门禁、烘焙、字体、交付 | 不做任何语言判断 |
 | 翻译子智能体（**一个**） | 语义活：人名/语气草案与样章、分块翻译、二义记录、回改决定 | 不写 JSON、不做转义、不改构建 |
 | 工具（`translation/`） | 以上两者之外的重复劳动 | — |
 
@@ -23,7 +23,7 @@ python -m translation.cli append <work_dir> --batch <file> --fix-leading --note 
 python -m translation.cli pending <work_dir> --id X --why "..."        # 安全记录待决（转义由工具做）
 python -m translation.cli decide  <work_dir> --all-open --reason "..."  # 追加式裁定（历史保留）
 python -m translation.cli to-json <work_dir>            # raw 译文库 → translated.json（**唯一转义点**）
-python -m translation.cli gates   <work_dir>            # 四道硬门禁
+python -m translation.cli gates   <work_dir>            # 五道硬门禁
 python -m translation.cli rewrite <work_dir>            # 执行 rewrites.jsonl 全量回改
 python -m translation.cli bake    <game_dir> <work_dir> [--font-only]  # 按 id 写回 + 统一字体 + KV 归档
 ```
@@ -37,10 +37,13 @@ python -m translation.cli bake    <game_dir> <work_dir> [--font-only]  # 按 id 
 | `401`/`405` 正文 | 消息文本（含续行） |
 | `102` 选项 + `402` 分支标签 | 选项列表与它的分支重复标签（两处都要译，否则插件显出日文） |
 | **`101` 参数[4] 名牌** | Show Text 的**说话人名栏**——只取 `parameters[0]` 会静默丢掉全部名牌（实测一款游戏 1,800+ 条、10k 个 id） |
-| `357`/`657` 插件指令 | 只取**散文**参数：插件名/命令名/JSON 参数对象/路径/脚本片段一律丢弃 |
+| `357`/`657` 插件指令 | 只取**散文**参数：插件名/命令名/JSON 参数对象/路径/脚本片段一律丢弃。参数**对象内部**的字符串也算（`{"messageText": "叫び声が響く……"}` 是弹窗文本、`{"text": "Shift 键快进"}` 是界面提示）——只看顶层字符串会静默丢掉它们 |
 | DB | `name`/`nickname`/`profile`/`description`、Skills·Items·Weapons·Armors 的 `message1`/`message2`、States 的 `message1..4` |
 | System | `gameTitle`/`currencyUnit`/`types` 与 `terms` |
-| 不提取（有意） | 注释 `108`/`408`、`Animations`/`Tilesets` 内部名、`note`（插件命令）、`switches`/`variables` 名（插件可能按名查找，译了会断） |
+| 不提取（有意） | 注释 `108`/`408`、`Animations`/`Tilesets`/`CommonEvents`/`MapInfos` 的 `name`（编辑器内部名）、`note`（插件命令）、`switches`/`variables` 名（插件可能按名查找，译了会断） |
+
+文本判定用**假名字母类**（含半宽片假名 `U+FF66-FF6F`/`U+FF71-FF9D`），`・`(U+30FB)、
+`ー`/`ｰ`（长音符与破折装饰）不算——整行半宽写的台词若被当成「无假名」会当作非文本丢弃。
 
 **“gates 全绿”只证明已提取子集译完，不等于游戏里没有日文**：完工前必须在
 **最终构建**上跑假名残留扫描（扫 `data/*.json` 的每个字符串，假名字母类为
@@ -66,13 +69,18 @@ python -m translation.cli bake    <game_dir> <work_dir> [--font-only]  # 按 id 
 **状态文件**：`progress.jsonl` / `memory.md` / `decisions.md` / `pending.jsonl`（`rewrites.jsonl`、
 `allow_kana.json` 按需）。子智能体自管，磁盘为权威——重开一个全新上下文的执行者也能接着干。
 
-## 4. 四道硬门禁（全绿才能烘焙）
+## 4. 五道硬门禁（全绿才能烘焙）
 
 1. **覆盖**：每条键都有非空译文。
 2. **控制码**：控制码序列逐字一致；**数值参数必须逐字一致，文本型参数必须翻译**
    （`\nc<チンピラ>` 是名牌——玩家读到的就是它；`\px[200]`/`\N[1]` 是指令参数）。
 3. **假名残留**：只查**可读部分**（控制码之间 + 文本型参数），白名单需附理由。
-4. **待决清零**：`pending.jsonl` 每条都要有结论（追加式关闭，历史保留）。
+   假名类含**半宽片假名**（`U+FF66-FF6F`、`U+FF71-FF9D`）——整行半宽写的
+   台词（`ﾌﾞﾂﾌﾞﾂ……`）也是日文；半宽标点与 `ｰ`（中文里当破折装饰）不算。
+4. **换行数一致**：译文里的显式换行数必须等于原文。MZ 消息文本与 DB 描述里的
+   `\n` 是**作者排版**（一行一个窗口行），少一行就是静默截断——实测 42 个技能
+   描述只译了第一行，假名与控制码门禁都看不见。
+5. **待决清零**：`pending.jsonl` 每条都要有结论（追加式关闭，历史保留）。
 
 ## 5. 统一字体（交付硬要求）
 
@@ -106,7 +114,7 @@ python -m translation.cli bake    <game_dir> <work_dir> [--font-only]  # 按 id 
 
 # 附：v1 流程（已退役 — **历史归档，不要照它执行**）
 
-> ⚠️ **MZ/MV 翻译一律走上文的 v2**（`translation/` 模块 + MISSION.md + 四道门禁）。
+> ⚠️ **MZ/MV 翻译一律走上文的 v2**（`translation/` 模块 + MISSION.md + 五道门禁）。
 > 以下整节为历史归档，只在排查旧工具（非 MZ 引擎的 chunk 链）时查阅。
 >
 > 下文描述的是 v1（切块 → 逐行 ja/zh 对齐 → 合并 → 烘焙）。它的教训仍然有效
@@ -115,7 +123,7 @@ python -m translation.cli bake    <game_dir> <work_dir> [--font-only]  # 按 id 
 # RPG Maker 翻译指南（统一版）
 
 本工具库唯一的翻译指南。**当前流程 = 本文上半部分的 v2**（一个翻译执行者 /
-单写者 + 文件信箱 + 四道硬门禁）；下文保留 **v1 切块流程** 的完整教训
+单写者 + 文件信箱 + 五道硬门禁）；下文保留 **v1 切块流程** 的完整教训
 （**已退役，仅作历史参考**）：v1 按 90KB 上下文预算自动选档切块（标定值
 约 11,000 字符/块）。所有踩过的失败模式、QC 关卡、修复手法都记录在本文档。
 下文的具体数字（字符数、成功率）都是**某一套条件下的历史标定值**，换了

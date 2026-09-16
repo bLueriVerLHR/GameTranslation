@@ -619,7 +619,7 @@ EXACT 键**（与 `bake_translation.py` 查的完全一致）— 假名正则
   note 其余内容保持不动。
 - 烘焙器用 `indent=2` 重写所有 `data/*.json`（无害）。
 - 原版游戏保持不动；在 Temp 目录工作
-  （`%LOCALAPPDATA%\Temp\opencode\`），成品放交付目录
+  （系统临时目录下的工作区），成品放交付目录
   （见 `docs/workflow.md`）。
 - 若之后修复了值，构建里已经是旧值 — 按键匹配的补丁不会重新生效；
   用 旧→新 值映射反向打补丁。

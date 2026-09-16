@@ -177,7 +177,7 @@ def judge(snap):
 def cdp_helper_dir():
     """Directory that holds the external `cdp_shot.py` CDP helper, or None.
 
-    $VISUAL_CHECK_SCRIPTS wins (an installed visual-check skill, wherever it
+    $VISUAL_CHECK_SCRIPTS wins (a screenshot helper, wherever it
     lives); otherwise a repo-local tools/cdp/ is used.  A per-machine path
     must never be baked into this file - it leaks the author's home layout
     and breaks every other checkout.
@@ -197,7 +197,7 @@ def load_cdp():
             "error: the CDP helper (cdp_shot.py) is not available.\n"
             "  looked in: %s\n"
             "  set VISUAL_CHECK_SCRIPTS to the directory that holds it "
-            "(a visual-check skill's scripts/ dir), or drop it in "
+            "(the scripts dir of whatever provides the screenshot helper), "
             "tools/cdp/ - this gate needs it to read the page over CDP."
             % (scripts or "<none>"))
     if scripts not in sys.path:

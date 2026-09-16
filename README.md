@@ -169,7 +169,7 @@ GameTranslation/
     ├── experience-misc.md     # 经验：其他/杂项（服务卫生/CG解锁/运行兼容）
     ├── CONTRIBUTING.md  # 贡献指南（分支/提交/自查/测试/语言/合并推送）
     ├── screenshot.md    # WSL 互操作（WSLInterop binfmt 条目）的前提与排障；
-    │                    #   画面验证用 agent_browser
+    │                    #   画面验证走浏览器自动化截图 + 读图
     └── table/           # 本地名词表/翻译资料库/游戏特定特征记录（glossary/
                          #   tone/notes + 词表）— LOCAL ONLY, gitignored,
                          #   绝不推送（游戏名 + 成人词表留本地）
@@ -180,7 +180,7 @@ GameTranslation/
 ```powershell
 $tk  = "<本工具库路径>"
 $src = "C:\path\to\game"
-$out = "$env:LOCALAPPDATA\Temp\opencode\game"   # 工作目录（Temp，可删）
+$out = Join-Path $env:TEMP 'game'              # 工作目录（Temp，可删）
 $g   = "<交付目录>"   # 成品放这里，和以往每个游戏一致
 
 python $tk\pipeline.py build   $src -o $out

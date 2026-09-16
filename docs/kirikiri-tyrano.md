@@ -209,7 +209,7 @@ TyranoScript 的 `storage=` 是**按标签目录**解析的（`[bg]` 找 `bgimag
 网络受限时 GitHub 直连会间歇失败（重试即可，或走本机代理
 `http://127.0.0.1:7890`）。
 
-运行时验证（OCR/视觉复核）用 `visual-check`：
+运行时验证（OCR/视觉复核）用当前环境的浏览器自动化截图：
 `tyrano/pipeline.py serve` 起服务 → headless 浏览器截图 → 读图。
 注意转换出的构建**没有 `js/`**，因此不能用 `pipeline.py serve`。
 
@@ -1171,7 +1171,7 @@ if ($.userenv() === "pc") {
 `sound/rin_title.wav` → `fgimage/TITLE2.MA` → `bgimage/title2.png` →
 `fgimage/title2_P.png` → `fgimage/TITLE.MA`），标题画面渲染正常。
 
-因此：**验证“能否播放”必须发一次真实点击**（`visual-check` 技能的
+因此：**验证“能否播放”必须发一次真实点击**（截图脚本的
 手势阶梯默认会发，但“先截图看是否空白”那一步不会）—— 自动化测试里
 必须显式发一个早期手势，否则会把正常构建误判为卡死。注意 `--mute-audio`
 **不影响**解锁与播放（Howler 照常跑，只是没声音），所以静音测试是安全的。

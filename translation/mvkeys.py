@@ -138,8 +138,14 @@ DB_FIELDS = OrderedDict([
     ("States.json", ("name", "message1", "message2", "message3", "message4")),
 ])
 
+#: System.json fields holding displayed text.  `switches`/`variables` are here
+#: because variable/switch *names* are drawn by variable-window plugins (a real
+#: build shows `${$dataSystem.variables[id]}` in a UI window).  References to
+#: switches/variables are by **id**, and no plugin in the surveyed builds looks
+#: one up by name, so translating the names is safe.
 _SYSTEM_KEYS = ("gameTitle", "currencyUnit", "armorTypes", "elements",
-                "skillTypes", "weaponTypes", "equipTypes")
+                "skillTypes", "weaponTypes", "equipTypes",
+                "switches", "variables")
 
 _PATH_RE = re.compile(
     r"\.(?:png|jpg|jpeg|bmp|webp|ogg|m4a|mp3|wav|webm|mp4|json|js|txt|ttf|otf"

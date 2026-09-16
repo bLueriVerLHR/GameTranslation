@@ -113,6 +113,16 @@ verify + serve --test。别假设"repack = 已烘焙"。
   所以残留扫描的假名类要与提取器**同一个定义**（`translation/codes.py` 的 `KANA_RE`），
   并把残留分成「有意跳过的内部字段」与「意外残留」两类——后者非零就是真缺口；
   该脚本以退出码表达结论，可当门禁跑。
+- **「有意跳过」清单本身就是风险源：每一类都要到插件代码里核实（第三轮教训）。**
+  同一款游戏交付后复核时发现：被归为「编辑器内部名、跳过」的 `System.json`
+  `switches`/`variables` **名字**，被变量窗口插件 `drawText($dataSystem.variables[id])`
+  画在界面上——是玩家能看到的日文。核实方法（可复用）：在成品 `js/`（含插件）里
+  搜索该字段的读取模式（`MapInfos` / `CommonEvents[..].name` / `$dataSystem.variables`），
+  命中的再读上下文看是 `drawText`/赋值到可见对象，还是仅按 id 取数据。
+  结论：`MapInfos`/`CommonEvents`/`Tilesets` 的 `name` 在实测构建中**无任何插件读取**
+  （确为内部名），而 `switches`/`variables` 名字**要提取**（引用一律走 id，全库无
+  按名查找，译名安全）。残留扫描脚本的跳过清单必须随提取器同步收紧——否则
+  “0 意外残留”会是假阴性。
 
 ## 3. 残留翻译批次（v1 时代的历史记录）
 

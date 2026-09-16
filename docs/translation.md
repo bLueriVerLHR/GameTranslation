@@ -39,8 +39,8 @@ python -m translation.cli bake    <game_dir> <work_dir> [--font-only]  # 按 id 
 | **`101` 参数[4] 名牌** | Show Text 的**说话人名栏**——只取 `parameters[0]` 会静默丢掉全部名牌（实测一款游戏 1,800+ 条、10k 个 id） |
 | `357`/`657` 插件指令 | 只取**散文**参数：插件名/命令名/JSON 参数对象/路径/脚本片段一律丢弃。参数**对象内部**的字符串也算（`{"messageText": "叫び声が響く……"}` 是弹窗文本、`{"text": "Shift 键快进"}` 是界面提示）——只看顶层字符串会静默丢掉它们 |
 | DB | `name`/`nickname`/`profile`/`description`、Skills·Items·Weapons·Armors 的 `message1`/`message2`、States 的 `message1..4` |
-| System | `gameTitle`/`currencyUnit`/`types` 与 `terms` |
-| 不提取（有意） | 注释 `108`/`408`、`Animations`/`Tilesets`/`CommonEvents`/`MapInfos` 的 `name`（编辑器内部名）、`note`（插件命令）、`switches`/`variables` 名（插件可能按名查找，译了会断） |
+| System | `gameTitle`/`currencyUnit`/`types` 与 `terms`；**`switches`/`variables` 的名字**（变量窗口插件会把 `$dataSystem.variables[id]` 画在界面上，实测某款游戏的变量名就显示在那里） |
+| 不提取（有意） | 注释 `108`/`408`、`Animations`/`Tilesets`/`CommonEvents`/`MapInfos` 的 `name`（**编辑器内部名**，核实过无任何插件读取）、`note`（插件命令） |
 
 文本判定用**假名字母类**（含半宽片假名 `U+FF66-FF6F`/`U+FF71-FF9D`），`・`(U+30FB)、
 `ー`/`ｰ`（长音符与破折装饰）不算——整行半宽写的台词若被当成「无假名」会当作非文本丢弃。

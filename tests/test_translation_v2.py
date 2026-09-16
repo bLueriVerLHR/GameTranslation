@@ -254,6 +254,21 @@ def test_extract_covers_db_battle_messages_and_profile(tmp_path):
     assert "data/Animations.json#[1].name" not in entries   # editor-only
 
 
+def test_extract_covers_switch_and_variable_names(tmp_path):
+    """Variable/switch names are displayed by variable-window plugins."""
+    root = make_game(str(tmp_path / "game"))
+    path = os.path.join(root, "data", "System.json")
+    data = json.load(io.open(path, encoding="utf-8"))
+    data["switches"] = [None, "\u30a8\u30ed\u30a4\u30d9\u30f3\u30c8\uff11"]
+    data["variables"] = [None, "\u30de\u30f3\u30ba\u30ea\u306e\u56de\u6570"]
+    _dump(path, data)
+    work = str(tmp_path / "work")
+    mvkeys.extract(root, work)
+    entries = {entry["id"]: entry for entry in mvkeys.load_keys(work)}
+    assert entries["data/System.json#switches[1]"]["ja"] == "\u30a8\u30ed\u30a4\u30d9\u30f3\u30c8\uff11"
+    assert entries["data/System.json#variables[1]"]["ja"] == "\u30de\u30f3\u30ba\u30ea\u306e\u56de\u6570"
+
+
 def test_extract_covers_halfwidth_katakana_only_lines(tmp_path):
     """A line written only in halfwidth katakana is still Japanese text."""
     root = make_game(str(tmp_path / "game"))

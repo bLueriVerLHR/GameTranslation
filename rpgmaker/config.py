@@ -343,7 +343,7 @@ TOOLS = (
         exe=("powershell.exe", "pwsh.exe"), side="win32",
         probe=("System32/WindowsPowerShell/v1.0/powershell.exe",
                "PowerShell/*/pwsh.exe"),
-        purpose="run Windows-side operations from WSL (deliver, wsl_capture)",
+        purpose="run Windows-side operations from WSL (deliver, archive handling)",
         hint="install PowerShell on the Windows side / "
              "请在 Windows 侧安装 PowerShell",
     ),
@@ -571,7 +571,7 @@ def win_7z():
 def run_powershell(command, exe=None):
     """Run `command` in PowerShell (Windows-side operations only).
 
-    Shared by `rpgmaker/deliver.py` and `tools/wsl_capture.py` so the
+    Shared by the Windows-side bridge (`rpgmaker/deliver.py`) so the
     interpreter lookup and the failure message live in one place.  Fails
     fast with a cross-system hint when PowerShell is unavailable (e.g. a WSL
     image without WSLInterop installed).

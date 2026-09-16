@@ -141,10 +141,6 @@ GameTranslation/
 │   ├── unlock_gallery.py         # 可选：解锁 CG 回想（启动插件）
 │   ├── patch_names.py           # 用规则文件统一字典里的角色名写法
 │   ├── check_docs.py            # README 目录树 vs 实际仓库文件一致性校验
-│   ├── wsl_capture.py           # WSL 侧窗口级截图 CLI（互操作检查、脚本部署、
-│   │                            #   路径转换，见 docs/screenshot.md）
-│   ├── capture_window.ps1       # Windows 侧窗口捕获脚本（PrintWindow，窗口
-│   │                            #   自动移入可视区，被遮挡也能截）
 │   └── ...（旧版：translate_rpgmaker、extract_text、plain_to_translated、
 │           qc_translation_chunks、CSV 流程工具 — 旧块格式）
 ├── tests/                # 单元 + 集成测试（pytest，fake 工具，全流程无外部依赖）
@@ -153,6 +149,8 @@ GameTranslation/
 │   ├── fake_tools/       #   测试用假工具脚本（FFMPEG/SEVENZ 环境变量注入）
 │   ├── test_*.py         #   各模块单元测试 + pipeline 端到端集成测试
 │   └── test_integration.py  # build→decrypt→clean→verify→serve→compress→deliver
+├── superseded/           # 已移除对象的历史归档（工具 + 其单测一起搬家，不删）
+│   └── ...               #   不参与构建/测试，仅供查阅
 └── docs/
     ├── workflow.md      # RPG Maker 转换工作流（JoiPlay 构建）
     ├── translation.md   # 统一翻译工作流（全量 + 补翻，一套参数：10 并行、
@@ -170,8 +168,8 @@ GameTranslation/
     ├── experience-tyrano.md   # 经验：TyranoScript 构建/移植
     ├── experience-misc.md     # 经验：其他/杂项（服务卫生/CG解锁/运行兼容）
     ├── CONTRIBUTING.md  # 贡献指南（分支/提交/自查/测试/语言/合并推送）
-    ├── screenshot.md    # 截图验证流程（窗口级：指定 app 精确截图，交给
-    │                    #   当前 harness 的视觉路径读图）
+    ├── screenshot.md    # WSL 互操作（WSLInterop binfmt 条目）的前提与排障；
+    │                    #   画面验证用 agent_browser
     └── table/           # 本地名词表/翻译资料库/游戏特定特征记录（glossary/
                          #   tone/notes + 词表）— LOCAL ONLY, gitignored,
                          #   绝不推送（游戏名 + 成人词表留本地）

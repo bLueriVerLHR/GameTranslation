@@ -677,6 +677,17 @@ python -m translation.cli bake  <game_dir> <work_dir>     # 按 id 写回 + 统�
 把规模报给 owner 取得**明确授权**（授权逐次，不是常设豁免）；大任务在 work
 目录留 `TRANSLATION_PROJECT.md` 记录进度。绝不自动开始大型翻译任务。
 
+**派发翻译执行者（mandatory）**：
+
+- **一律 fresh 上下文，不 fork**——不把编排者的会话投影给执行者（`worker` 这类
+  内置代理的默认 context 是 `fork`，派发时**必须显式覆盖为 `context: "fresh"`**）。
+- **提示词由编排者自己写全**：工作区、cwd、命令、契约文件（`MISSION.md` /
+  `decisions.md` / `control_codes.md` / 本地词表）、**起点 seq**、每批流程
+  （`slice` → 写批次文件 → `append --fix-leading`）、硬规则、回报格式。
+  不要用“读某个任务书文件再照做”代替提示词，也不要把任务拆给多个执行者。
+- 提示词里明确写「**开始翻译、按批落盘**」；下一次续跑时先算出**第一个未译
+  seq** 写进提示词，不要让新执行者自己猜起点。
+
 **v1（切块 → 每块一个 subagent → ja/zh 双文件 → merge）已退役**，其工具仅剩
 非 MZ 引擎（Tyrano / Wolf / KiriKiri）的提取/写回链在用，**不得再用于 MZ 翻译**；
 失败模式教训见 `docs/experience-translation.md`。

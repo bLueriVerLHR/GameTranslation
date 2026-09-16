@@ -38,23 +38,77 @@ from collections import Counter, OrderedDict, defaultdict
 from . import codes as codes_mod
 from .codes import CJK_RE, KANA_RE, code_key, parse_codes
 
-__all__ = ["extract", "load_keys", "text_codes", "is_command",
-           "command_code", "speaker_of", "is_candidate"]
+__all__ = ["extract", "load_keys", "text_codes", "extra_text_codes",
+           "is_command", "command_code", "speaker_of", "is_candidate"]
 
 #: Command codes whose first parameter is displayed text.
 TEXT_CODES = (401, 405)
 #: Show Choices: parameters[0] is the list of choice texts.
 CHOICE_CODE = 102
+#: Show Text: parameters[4] is the **name plate** drawn above the window.  It is
+#: the game's speaker name and was invisible to an extractor that only looked at
+#: parameters[0] - a real build showed 1,800+ untranslated name plates.
+NAME_CODE = 101
+NAME_PARAM = 4
+#: Show Choices branch: parameters[1] repeats the chosen label, so it has to
+#: follow the choice text (a plugin may print it).
+BRANCH_CODE = 402
+BRANCH_PARAM = 1
+#: Plugin command (357) and its continuation (657).  The first two parameters
+#: are the plugin and command names - identifiers, never translated - and the
+#: rest is plugin data: only strings that read as prose are display text.
+PLUGIN_CMD_CODE = 357
+PLUGIN_CONT_CODE = 657
+PLUGIN_IDENTIFIER_PARAMS = 2
+
+def _params_of(command):
+    """The parameter list of either command shape (None when not a command)."""
+    if isinstance(command, dict):
+        return command.get("parameters") or []
+    if isinstance(command, (list, tuple)) and len(command) >= 3:
+        return list(command[2:])
+    return None
+
+
+def extra_text_codes(command):
+    """Displayed strings the base ``text_codes`` does not cover.
+
+    Returns ``[(param_index, suffix, text)]`` for name plates (101), choice
+    branch labels (402) and plugin-command prose (357/657).  Plugin parameters
+    are a mix of identifiers and prose, so a string counts only when
+    ``is_candidate`` accepts it - plugin/command names, the JSON parameter
+    object, paths and script fragments are dropped.
+    """
+    code = command_code(command)
+    params = _params_of(command)
+    if not params:
+        return []
+    out = []
+    if code == NAME_CODE:
+        if len(params) > NAME_PARAM and isinstance(params[NAME_PARAM], str) \
+                and is_candidate(params[NAME_PARAM]):
+            out.append((NAME_PARAM, "", params[NAME_PARAM]))
+    elif code == BRANCH_CODE:
+        if len(params) > BRANCH_PARAM and isinstance(params[BRANCH_PARAM], str) \
+                and is_candidate(params[BRANCH_PARAM]):
+            out.append((BRANCH_PARAM, "", params[BRANCH_PARAM]))
+    elif code in (PLUGIN_CMD_CODE, PLUGIN_CONT_CODE):
+        first = PLUGIN_IDENTIFIER_PARAMS if code == PLUGIN_CMD_CODE else 0
+        for index, value in enumerate(params[first:], first):
+            if isinstance(value, str) and is_candidate(value, "plugin"):
+                out.append((index, "", value))
+    return out
+
 
 #: Database files and the fields that hold displayed text.  `note` is
 #: deliberately absent: it carries plugin commands, not prose.
 DB_FIELDS = OrderedDict([
-    ("Actors.json", ("name", "nickname")),
+    ("Actors.json", ("name", "nickname", "profile")),
     ("Classes.json", ("name",)),
-    ("Skills.json", ("name", "description")),
-    ("Items.json", ("name", "description")),
-    ("Weapons.json", ("name", "description")),
-    ("Armors.json", ("name", "description")),
+    ("Skills.json", ("name", "description", "message1", "message2")),
+    ("Items.json", ("name", "description", "message1", "message2")),
+    ("Weapons.json", ("name", "description", "message1", "message2")),
+    ("Armors.json", ("name", "description", "message1", "message2")),
     ("Enemies.json", ("name",)),
     ("States.json", ("name", "message1", "message2", "message3", "message4")),
 ])
@@ -255,8 +309,8 @@ class _Collector:
         return self.entries
 
 
-def _cmd_id(rel, path, suffix):
-    return "%s#%s.parameters[0]%s" % (rel, path, suffix)
+def _cmd_id(rel, path, suffix, param=0):
+    return "%s#%s.parameters[%d]%s" % (rel, path, param, suffix)
 
 
 def _walk_list(collector, lst, rel, path, where, stream):
@@ -271,6 +325,12 @@ def _walk_list(collector, lst, rel, path, where, stream):
             window += 1
         for field, text in text_codes(command):
             collector.add(_cmd_id(rel, "%s[%d]" % (path, index), field),
+                          "map" if "Map" in rel else
+                          ("common" if "CommonEvents" in rel else "troop"),
+                          "%s/%s" % (where, command_code(command)),
+                          text, stream, window=window)
+        for param, field, text in extra_text_codes(command):
+            collector.add(_cmd_id(rel, "%s[%d]" % (path, index), field, param),
                           "map" if "Map" in rel else
                           ("common" if "CommonEvents" in rel else "troop"),
                           "%s/%s" % (where, command_code(command)),

@@ -179,6 +179,78 @@ def test_extract_reads_object_shaped_commands(tmp_path):
     assert stats["skipped"].get("malformed") is None
 
 
+def test_extract_covers_name_plates_branch_labels_and_plugin_text(tmp_path):
+    """The extended extractor: 101 name plates, 402 branch labels, 357/657 prose.
+
+    A build that only looked at parameters[0] silently lost ~1,800 name plates
+    and every plugin window label, so these paths are pinned here.
+    """
+    root = make_game(str(tmp_path / "game"))
+    path = os.path.join(root, "data", "Map003.json")
+    _dump(path, {"displayName": "", "events": [None, {"id": 1, "name": "Ev",
+        "pages": [{"list": [
+            {"code": 101, "indent": 0,
+             "parameters": ["", 0, 0, 2, "\u30c6\u30f3\u30b0"]},
+            {"code": 401, "indent": 0, "parameters": ["\u3064\u3044\u305f"]},
+            {"code": 102, "indent": 0,
+             "parameters": [["\u306f\u3044", "\u3044\u3044\u3048"], 0, 0]},
+            {"code": 402, "indent": 1, "parameters": [0, "\u306f\u3044"]},
+            {"code": 402, "indent": 1, "parameters": [1, "\u3044\u3044\u3048"]},
+            {"code": 357, "indent": 0,
+             "parameters": ["LL_VariableWindow", "hideWindow",
+                            "\u30a6\u30a3\u30f3\u30c9\u30a6\u3092\u6d88\u53bb",
+                            {"windowId": "1"}]},
+            {"code": 657, "indent": 0, "parameters": ["\u30a6\u30a3\u30f3\u30c9\u30a6\u756a\u53f7 = 1"]},
+            {"code": 357, "indent": 0,
+             "parameters": ["SomePlugin", "doThing", "hideWindow", "true"]},
+            {"code": 108, "indent": 0, "parameters": ["\u30b3\u30e1\u30f3\u30c8"]},
+            {"code": 408, "indent": 0, "parameters": ["\u3053\u306e\u5f8c"]},
+        ]}]}]})
+    work = str(tmp_path / "work")
+    mvkeys.extract(root, work)
+    entries = {entry["id"] for entry in mvkeys.load_keys(work)
+               if "Map003" in entry["id"]}
+
+    prefix = "data/Map003.json#events[1].pages[0].list[%d]"
+    assert prefix % 0 + ".parameters[4]" in entries          # name plate
+    assert prefix % 3 + ".parameters[1]" in entries          # branch label
+    assert prefix % 4 + ".parameters[1]" in entries
+    assert prefix % 5 + ".parameters[2]" in entries          # plugin prose
+    assert prefix % 6 + ".parameters[0]" in entries          # 657 continuation
+    # identifiers and comments are not text
+    assert prefix % 5 + ".parameters[0]" not in entries      # plugin name
+    assert prefix % 5 + ".parameters[1]" not in entries      # command name
+    assert prefix % 7 + ".parameters[2]" not in entries      # 'hideWindow'
+    assert prefix % 7 + ".parameters[3]" not in entries      # 'true'
+    assert prefix % 8 + ".parameters[0]" not in entries      # comment
+    assert prefix % 9 + ".parameters[0]" not in entries      # comment cont.
+
+
+def test_extract_covers_db_battle_messages_and_profile(tmp_path):
+    """Skills/Items messages and Actors.profile are displayed text."""
+    root = make_game(str(tmp_path / "game"))
+    _dump(os.path.join(root, "data", "Skills.json"), [None, {
+        "id": 1, "name": "\u653b\u6483", "description": "",
+        "message1": "%1\u306e\u653b\u6483\uff01",
+        "message2": "\u30ad\u30e2\u3044\u7c98\u6db2\u304c\u5439\u304d\u304b\u304b\u308b\uff01",
+        "note": "<TE:\u30c6\u30f3\u30d7\u30ec>",
+    }])
+    _dump(os.path.join(root, "data", "Actors.json"), [None, {
+        "id": 1, "name": "\u30e6\u30ad", "nickname": "",
+        "profile": "\u5929\u8cc7\u82f1\u9081\u306e\u4ed9\u4eba\u306b\u3057\u3066\u3001\u8056\u5fb3\u592a\u5b50\u2661",
+    }])
+    _dump(os.path.join(root, "data", "Animations.json"), [None, {
+        "id": 1, "name": "\u6253\u6483/\u30a8\u30d5\u30a7\u30af\u30c8",
+    }])
+    work = str(tmp_path / "work")
+    mvkeys.extract(root, work)
+    entries = {entry["id"] for entry in mvkeys.load_keys(work)}
+    assert "data/Skills.json#[1].message1" in entries
+    assert "data/Skills.json#[1].message2" in entries
+    assert "data/Actors.json#[1].profile" in entries
+    assert "data/Animations.json#[1].name" not in entries   # editor-only
+
+
 def test_extract_tolerates_plugin_shaped_entries(tmp_path):
     """Real data can hold non-command entries (plugins write their own)."""
     root = make_game(str(tmp_path / "game"))

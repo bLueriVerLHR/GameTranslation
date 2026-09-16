@@ -35,12 +35,33 @@ import shutil
 
 __all__ = ["BakeError", "UNIFIED_FONT", "parse_path", "set_by_path",
            "load_plugin_params", "save_plugin_params", "apply_font",
-           "unify_plugin_fonts", "bake"]
+           "apply_font_mz", "unify_plugin_fonts", "bake"]
 
 #: Unified Simplified-Chinese font (local private asset, never committed).
 UNIFIED_FONT = "GlowSansSC-Compressed-Regular.otf"
 FONT_SOURCE = os.path.join("docs", "table", "fonts", UNIFIED_FONT)
 FONT_CSS = os.path.join("fonts", "gamefont.css")
+
+# --- MZ unified-font strategy (docs/table/font_rollback.md) ---------------
+# MZ loads `fonts/<advanced.mainFontFilename>` as the `rmmz-mainfont` family,
+# so an MV-style css rewrite does nothing here.  The standard strategy instead
+# declares the faces in `css/game.css` - Han/Latin from the SC font, kana from
+# the JP font via `unicode-range` - and clears `mainFontFilename` so the
+# engine's own face never wins.  The original font files stay on disk, and
+# `numberFontFilename` is left alone (digit-only, still correct).
+UNIFIED_FONT_JP = "GlowSansJ-Compressed-Regular.otf"
+FONT_SOURCE_JP = os.path.join("docs", "table", "fonts", UNIFIED_FONT_JP)
+MZ_CSS = os.path.join("css", "game.css")
+MZ_SYSTEM = os.path.join("data", "System.json")
+MZ_MARKER = "/* unified-font-policy: MZ unicode-range split (translation bake) */"
+#: Families the engine and the unified plugin params ask for.
+MZ_FAMILIES = ("rmmz-mainfont", "GameFont")
+#: Kana + kana punctuation keep the Japanese face; everything else is Han.
+MZ_KANA_RANGE = "U+3040-30FF, U+31F0-31FF, U+30FB-30FC, U+FF66-FF9F"
+#: A font-switch plugin re-registers rmmz-mainfont at runtime, so the CSS
+#: split would be overwritten - those games get the System.json switch only.
+MZ_FONT_SWITCH_PLUGIN = re.compile(
+    r"(AnyTimeFontChange|FontChange|FontSwitch|FontLoader|FontChanger)", re.I)
 
 _PATH_TOKEN = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)|\[(\d+)\]")
 _PLUGINS_RE = re.compile(r"(\[\s*\{.*\}\s*\])", re.S)
@@ -219,12 +240,18 @@ def _backup_for(game_dir, path, old_text, backup_dir=None):
 
 
 def apply_font(game_dir, font_path=None, repo_root=None):
-    """Point the game's single MV font face at a Simplified-Chinese font.
+    """Switch the game's font faces to a Simplified-Chinese font.
 
-    Returns ``(changed_files, warnings)``.  A missing font asset is a warning,
-    never a silent skip: shipping a Chinese build with a kana-only font means
-    every Chinese character renders as a box.
+    Dispatches on the deploy layout: an MV build has `fonts/gamefont.css` (a
+    single face to repoint), an MZ build has `data/System.json` (see
+    ``apply_font_mz``).  Returns ``(changed_files, warnings)``.  A missing font
+    asset is a warning, never a silent skip: shipping a Chinese build with a
+    kana-only font means every Chinese character renders as a box.
     """
+    if os.path.isfile(os.path.join(game_dir, MZ_SYSTEM)) \
+            and not os.path.isfile(os.path.join(game_dir, FONT_CSS)):
+        return apply_font_mz(game_dir, font_path=font_path,
+                             repo_root=repo_root)
     warnings = []
     css_path = os.path.join(game_dir, FONT_CSS)
     if not os.path.isfile(css_path):
@@ -247,6 +274,94 @@ def apply_font(game_dir, font_path=None, repo_root=None):
     with io.open(css_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(replaced)
     return [FONT_CSS, os.path.join("fonts", UNIFIED_FONT)], warnings
+
+
+def apply_font_mz(game_dir, font_path=None, repo_root=None, jp_path=None):
+    """MZ unified-font policy: unicode-range split faces in ``css/game.css``.
+
+    Returns ``(changed_files, warnings)``.  A font-switch plugin is honoured by
+    switching only ``data/System.json`` (its runtime ``FontFace`` registration
+    would override any CSS split) - that is the documented rule in
+    ``docs/table/font_rollback.md``.
+    """
+    root = repo_root or os.getcwd()
+    system_path = os.path.join(game_dir, MZ_SYSTEM)
+    if not os.path.isfile(system_path):
+        return [], ["no %s (not an MZ build?)" % MZ_SYSTEM.replace(os.sep, "/")]
+    font_path = font_path or os.path.join(root, FONT_SOURCE)
+    if not os.path.isfile(font_path):
+        return [], ["unified font asset missing: %s" % font_path]
+    jp_path = jp_path or os.path.join(root, FONT_SOURCE_JP)
+    jp_asset = os.path.isfile(jp_path)
+
+    plugins_path = os.path.join(game_dir, "js", "plugins.js")
+    font_plugin = False
+    if os.path.isfile(plugins_path):
+        with io.open(plugins_path, encoding="utf-8", errors="replace") as h:
+            font_plugin = bool(MZ_FONT_SWITCH_PLUGIN.search(h.read()))
+
+    with io.open(system_path, encoding="utf-8-sig") as handle:
+        system = json.load(handle)
+    advanced = system.setdefault("advanced", {})
+    warnings = []
+    changed = []
+
+    fonts_dir = os.path.join(game_dir, "fonts")
+    os.makedirs(fonts_dir, exist_ok=True)
+
+    def install(source, name):
+        """Copy the asset in unless it is already there byte-for-byte."""
+        destination = os.path.join(fonts_dir, name)
+        if os.path.isfile(destination) \
+                and os.path.getsize(destination) == os.path.getsize(source):
+            return
+        shutil.copyfile(source, destination)
+        changed.append("fonts/" + name)
+
+    install(font_path, UNIFIED_FONT)
+    if jp_asset:
+        install(jp_path, UNIFIED_FONT_JP)
+
+    if font_plugin:
+        warnings.append(
+            "a font-switch plugin is enabled: switching only "
+            "data/System.json (its runtime FontFace would override a CSS "
+            "split) - see docs/table/font_rollback.md")
+        target = UNIFIED_FONT
+    else:
+        target = ""
+        css_path = os.path.join(game_dir, MZ_CSS)
+        if not os.path.isfile(css_path):
+            warnings.append("no css/game.css: could not declare the split faces")
+        else:
+            with io.open(css_path, encoding="utf-8", errors="replace") as h:
+                css = h.read()
+            if MZ_MARKER not in css:
+                blocks = [MZ_MARKER]
+                for family in MZ_FAMILIES:
+                    blocks.append('@font-face {\n    font-family: %s;\n'
+                                  '    src: url("../fonts/%s");\n}'
+                                  % (family, UNIFIED_FONT))
+                    if jp_asset:
+                        blocks.append('@font-face {\n    font-family: %s;\n'
+                                      '    src: url("../fonts/%s");\n'
+                                      '    unicode-range: %s;\n}'
+                                      % (family, UNIFIED_FONT_JP, MZ_KANA_RANGE))
+                with io.open(css_path, "w", encoding="utf-8",
+                             newline="\n") as h:
+                    h.write(css.rstrip("\n") + "\n\n" + "\n".join(blocks) + "\n")
+                changed.append(MZ_CSS.replace(os.sep, "/"))
+            if not jp_asset:
+                warnings.append("JP fallback font missing: %s (kana face "
+                                "not declared)" % jp_path)
+
+    old_name = advanced.get("mainFontFilename")
+    if old_name != target:
+        advanced["mainFontFilename"] = target
+        with io.open(system_path, "w", encoding="utf-8", newline="\n") as h:
+            h.write(json.dumps(system, ensure_ascii=False, separators=(",", ":")))
+        changed.append(MZ_SYSTEM.replace(os.sep, "/"))
+    return changed, warnings
 
 
 def _backup(work_dir, game_dir, rel):

@@ -251,6 +251,75 @@ def test_apply_font_switches_single_face(tmp_path):
     assert bake_mod.apply_font(game, font_path=str(asset)) == ([], [])
 
 
+def test_apply_font_mz_splits_faces_and_clears_main_filename(tmp_path):
+    game = make_mz_game(str(tmp_path / "game"))
+    sc, jp = make_font_assets(tmp_path)
+    files, warnings = bake_mod.apply_font_mz(game, font_path=sc, jp_path=jp)
+
+    assert warnings == []
+    assert "css/game.css" in files and "data/System.json" in files
+    css = io.open(os.path.join(game, "css", "game.css"),
+                  encoding="utf-8").read()
+    assert bake_mod.MZ_MARKER in css
+    for family in bake_mod.MZ_FAMILIES:
+        assert "font-family: %s" % family in css
+    assert "../fonts/%s" % bake_mod.UNIFIED_FONT in css     # prefix kept
+    assert "../fonts/%s" % bake_mod.UNIFIED_FONT_JP in css
+    assert bake_mod.MZ_KANA_RANGE in css                    # kana -> JP face
+    assert os.path.isfile(os.path.join(game, "fonts", bake_mod.UNIFIED_FONT))
+    assert os.path.isfile(os.path.join(game, "fonts", bake_mod.UNIFIED_FONT_JP))
+    advanced = _load(os.path.join(game, "data", "System.json"))["advanced"]
+    assert advanced["mainFontFilename"] == ""               # engine face off
+    assert advanced["numberFontFilename"] == "mplus-2p-bold-sub.woff"
+    assert os.path.isfile(os.path.join(game, "fonts",
+                                       "mplus-1m-regular.woff"))  # kept
+    # re-running changes nothing
+    assert bake_mod.apply_font_mz(game, font_path=sc, jp_path=jp) == ([], [])
+
+
+def test_apply_font_dispatches_to_mz_without_gamefont_css(tmp_path):
+    game = make_mz_game(str(tmp_path / "game"))
+    sc, jp = make_font_assets(tmp_path)
+    files, warnings = bake_mod.apply_font(game, font_path=sc, repo_root=None)
+    # JP asset is resolved from the repo root, so pass it through the MZ entry
+    assert "data/System.json" in files
+    assert not any("not an MV build" in w for w in warnings)
+
+
+def test_apply_font_mz_honours_font_switch_plugin(tmp_path):
+    game = make_mz_game(str(tmp_path / "game"), plugin="Keke_AnyTimeFontChange")
+    sc, jp = make_font_assets(tmp_path)
+    files, warnings = bake_mod.apply_font_mz(game, font_path=sc, jp_path=jp)
+
+    css = io.open(os.path.join(game, "css", "game.css"),
+                  encoding="utf-8").read()
+    assert bake_mod.MZ_MARKER not in css                    # CSS untouched
+    advanced = _load(os.path.join(game, "data", "System.json"))["advanced"]
+    assert advanced["mainFontFilename"] == bake_mod.UNIFIED_FONT
+    assert any("font-switch plugin" in w for w in warnings)
+
+
+def test_apply_font_mz_warns_when_asset_missing(tmp_path):
+    game = make_mz_game(str(tmp_path / "game"))
+    files, warnings = bake_mod.apply_font_mz(
+        game, font_path=str(tmp_path / "nope.otf"))
+    assert files == [] and warnings and "missing" in warnings[0]
+    advanced = _load(os.path.join(game, "data", "System.json"))["advanced"]
+    assert advanced["mainFontFilename"] == "mplus-1m-regular.woff"
+
+
+def test_apply_font_mz_without_jp_font_declares_han_face_only(tmp_path):
+    game = make_mz_game(str(tmp_path / "game"))
+    sc, _jp = make_font_assets(tmp_path)
+    files, warnings = bake_mod.apply_font_mz(
+        game, font_path=sc, jp_path=str(tmp_path / "missing-jp.otf"))
+    css = io.open(os.path.join(game, "css", "game.css"),
+                  encoding="utf-8").read()
+    assert "../fonts/%s" % bake_mod.UNIFIED_FONT in css
+    assert bake_mod.UNIFIED_FONT_JP not in css
+    assert any("JP fallback font missing" in w for w in warnings)
+
+
 def test_apply_font_warns_when_asset_missing(tmp_path):
     game = make_game(str(tmp_path / "game"))
     files, warnings = bake_mod.apply_font(game, font_path=str(tmp_path / "no.otf"))
@@ -258,6 +327,42 @@ def test_apply_font_warns_when_asset_missing(tmp_path):
     css = io.open(os.path.join(game, "fonts", "gamefont.css"),
                   encoding="utf-8").read()
     assert "mplus-1m-regular.ttf" in css          # left untouched
+
+
+def make_font_assets(tmp_path):
+    """Fake SC + JP font assets; returns (sc_path, jp_path)."""
+    sc = tmp_path / bake_mod.UNIFIED_FONT
+    sc.write_bytes(b"fake-sc-font")
+    jp = tmp_path / bake_mod.UNIFIED_FONT_JP
+    jp.write_bytes(b"fake-jp-font")
+    return str(sc), str(jp)
+
+
+def make_mz_game(root, main_font="mplus-1m-regular.woff", plugin="P",
+                 plugin_params=None):
+    """An MZ-shaped tree: data/System.json + css/game.css, no gamefont.css."""
+    data = os.path.join(root, "data")
+    _dump(os.path.join(data, "System.json"), {
+        "gameTitle": "\u30c6\u30b9\u30c8",
+        "advanced": {"mainFontFilename": main_font,
+                     "numberFontFilename": "mplus-2p-bold-sub.woff",
+                     "fallbackFonts": "Verdana, sans-serif"},
+    })
+    os.makedirs(os.path.join(root, "css"), exist_ok=True)
+    with io.open(os.path.join(root, "css", "game.css"), "w",
+                 encoding="utf-8", newline="\n") as handle:
+        handle.write("#errorPrinter { color: #fff; }\n")
+    os.makedirs(os.path.join(root, "fonts"), exist_ok=True)
+    with io.open(os.path.join(root, "fonts", main_font), "wb") as handle:
+        handle.write(b"original-font")
+    os.makedirs(os.path.join(root, "js"), exist_ok=True)
+    with io.open(os.path.join(root, "js", "plugins.js"), "w",
+                 encoding="utf-8", newline="\n") as handle:
+        handle.write("var $plugins =\n[\n" + json.dumps(
+            {"name": plugin,
+             "parameters": plugin_params or {"Label": "\u30e9\u30d9\u30eb"}},
+            ensure_ascii=False) + "\n];\n")
+    return root
 
 
 def test_cli_bake_end_to_end(tmp_path, capsys):

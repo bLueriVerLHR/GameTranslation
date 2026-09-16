@@ -28,6 +28,26 @@ python -m translation.cli rewrite <work_dir>            # 执行 rewrites.jsonl 
 python -m translation.cli bake    <game_dir> <work_dir> [--font-only]  # 按 id 写回 + 统一字体 + KV 归档
 ```
 
+### 提取覆盖范围（改提取器前先看这里）
+
+`prepare`/`extract` 写入 `keys.jsonl` 的范围是**引擎里真正显示给玩家的字符串**：
+
+| 覆盖 | 说明 |
+|---|---|
+| `401`/`405` 正文 | 消息文本（含续行） |
+| `102` 选项 + `402` 分支标签 | 选项列表与它的分支重复标签（两处都要译，否则插件显出日文） |
+| **`101` 参数[4] 名牌** | Show Text 的**说话人名栏**——只取 `parameters[0]` 会静默丢掉全部名牌（实测一款游戏 1,800+ 条、10k 个 id） |
+| `357`/`657` 插件指令 | 只取**散文**参数：插件名/命令名/JSON 参数对象/路径/脚本片段一律丢弃 |
+| DB | `name`/`nickname`/`profile`/`description`、Skills·Items·Weapons·Armors 的 `message1`/`message2`、States 的 `message1..4` |
+| System | `gameTitle`/`currencyUnit`/`types` 与 `terms` |
+| 不提取（有意） | 注释 `108`/`408`、`Animations`/`Tilesets` 内部名、`note`（插件命令）、`switches`/`variables` 名（插件可能按名查找，译了会断） |
+
+**“gates 全绿”只证明已提取子集译完，不等于游戏里没有日文**：完工前必须在
+**最终构建**上跑假名残留扫描（扫 `data/*.json` 的每个字符串，假名字母类为
+`[\u3041-\u3096\u30a1-\u30fa\uff66-\uff9d]`——`・`/`ー` 是允许项），
+否则会交出“看着绿、实际半日文”的构建（见
+[翻译经验](experience-translation.md)）。
+
 ## 3. 数据契约
 
 **`keys.jsonl`**（主智能体产出，子智能体只读）：每行 = `id`（JSON 路径，**跨次提取稳定**）、`seq`（故事序）、

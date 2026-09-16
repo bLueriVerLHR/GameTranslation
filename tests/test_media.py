@@ -61,7 +61,74 @@ def make_video(path, frames=5, width=32, height=32, rate=5):
     return str(path)
 
 
+def ogg_crc(data):
+    """Ogg page CRC (poly 0x04C11DB7, no reflection, no final xor)."""
+    crc = 0
+    for byte in data:
+        crc ^= byte << 24
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x04C11DB7) if crc & 0x80000000 else (crc << 1)
+            crc &= 0xFFFFFFFF
+    return crc
+
+
+def ogg_with_bad_utf8_tags(src, dst):
+    """Copy `src`, writing Shift-JIS bytes into a Vorbis comment value.
+
+    Length-preserving, so only that one page's CRC has to be recomputed.
+    Returns the new path.
+    """
+    data = bytearray(Path(src).read_bytes())
+    pos = 0
+    while pos < len(data):
+        assert data[pos:pos + 4] == b"OggS", f"not an Ogg page at {pos}"
+        nsegs = data[pos + 26]
+        seg_table = data[pos + 27:pos + 27 + nsegs]
+        body = pos + 27 + nsegs
+        body_len = sum(seg_table)
+        if data[body:body + 7] == b"\x03vorbis":
+            vlen = struct.unpack_from("<I", data, body + 7)[0]
+            count_at = body + 11 + vlen
+            first_at = count_at + 4
+            clen = struct.unpack_from("<I", data, first_at)[0]
+            key, sep, value = bytes(data[first_at + 4:first_at + 4 + clen]).partition(b"=")
+            assert sep and len(value) >= 2, "fixture comment has no value to corrupt"
+            eq_at = first_at + 4 + len(key) + 1
+            data[eq_at:eq_at + 2] = b"\x82\xa0"
+            struct.pack_into("<I", data, pos + 22, 0)
+            struct.pack_into("<I", data, pos + 22,
+                             ogg_crc(bytes(data[pos:body + body_len])))
+            break
+        pos = body + body_len
+    else:  # pragma: no cover - the fixture always carries a comment header
+        raise AssertionError("no Vorbis comment header found")
+    Path(dst).write_bytes(bytes(data))
+    return str(dst)
+
+
 class TestProbeAudio:
+    def test_non_utf8_vorbis_tags_do_not_break_probe(self, tmp_path):
+        """Shift-JIS Vorbis comments must not make valid audio look broken.
+
+        Japanese doujin tools write comments in Shift-JIS; PyAV decodes tag
+        values as UTF-8 and used to raise UnicodeDecodeError, which made the
+        probe fail and `verify --decode` report the file as corrupt.
+        """
+        src = ogg_with_bad_utf8_tags(REAL_OGG, tmp_path / "sjis.ogg")
+        import av
+
+        with pytest.raises(UnicodeDecodeError):
+            av.open(src)  # documents what the toolkit has to tolerate
+        info = media.probe(src)
+        assert "error" not in info, info
+        assert info["codec"] == "vorbis"
+        assert 1.9 < info["duration"] < 2.1
+
+    def test_non_utf8_vorbis_tags_do_not_break_decode_check(self, tmp_path):
+        src = ogg_with_bad_utf8_tags(REAL_OGG, tmp_path / "sjis.ogg")
+        ok, reason = media.decode_ok(src)
+        assert ok is True, reason
+
     def test_real_ogg_reports_every_field(self):
         info = media.probe(REAL_OGG)
         assert info["codec"] == "vorbis"

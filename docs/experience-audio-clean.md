@@ -39,6 +39,14 @@
 - **`clean.py`（后续会话）**：含目录前缀的字体引用（FontLoad 插件在
   `js/plugins.js` 里写 `fonts/ship.otf`）现在按**basename**匹配 — 之前
   完整 token 永远不等于磁盘文件名，字体被删。
+- **`media.py`（2026-09）**：PyAV 开容器一律带
+  `metadata_errors="replace"`。有些日本同人游戏的 Ogg 用 **Shift-JIS 写
+  Vorbis 注释**，PyAV 按 UTF-8 解码标记值会抛 `UnicodeDecodeError` —
+  完全正常的音频被当成坏文件（probe 报 error、`verify --decode` 报
+  3/365 错误，音频步骤也只能 keep 不动）。标记里只用得上
+  LOOPSTART/LOOPLENGTH（ASCII），替换不可解码字节是安全的；修后
+  `verify --decode` 0/365。单测用真 Ogg 固件改写注释值 + 重算页 CRC
+  复现（`tests/test_media.py`）。
 
 ## 3. 这些游戏上 `clean` 很危险
 

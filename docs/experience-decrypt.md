@@ -30,6 +30,22 @@
   自 2026-08 起要求 `data/` 或 `data_encrypted/`，因此它会**明确报
   "no web root found"**（以前会静默构建出一个没有数据库的坏成品）。
   遇到这种包直接向 owner 报告，不要尝试解 MTool 的 pack。
+- **第二次遇到同型包（2026-09）——把 MTool 的容器翻了一遍，结论是里面
+  真的没有数据库，不是「藏在 pack 里」：**
+  - `Tool/www/data/<数字>`（约 140 个）是 MTool 自己的 UI 资源（html/css/
+    js/wasm/i18n html 模板），整个 `Tool/www`（168 文件）里 MZ 数据标记
+    （`"events"`/`"MapInfos"`/`RPGMV` 等）**命中 0**。
+  - 根目录 `version.dll` = 真 PE（节表到 ~0.9 MB 结束）+ **末尾拼接的
+    ~102 MB 预分配填充**（99.8% 是同一个重复字节，稀疏数据只有几百 KB）
+    —— 不是游戏数据库。
+  - `TrsData*.bin`（~2.4 MB ×2，两份逐字节相同）= 机翻字典，但已加密/
+    混淆：可读假名/汉字命中接近 0，**不能当 prefill 词典 harvest**。
+  - 全包清单（2012 文件 / 161 目录）里既无 `data/` 也无 `data_encrypted/`。
+  所以这类包**在 MTool 下也跑不起来**（引擎必须有 `data/*.json`），只能向
+  owner 要干净原版；`pipeline.py build` 的守卫会按设计报 exit 2
+  「no web root found」。另：此类包的资源仍带 MZ easy 加密形态
+  （`*.png_`/`*.ogg_` + 16 字节 RPGMV 头）而 `js/` 未被改名 —— 后缀
+  `_` 是**引擎加密**，不是 repacker 改名，别按改名逻辑去剥。
 - 某开发者的 MV 游戏**加密**资源（`.rpgmvp`/`.rpgmvo`，密钥在
   `data/System.json`）。它们跨游戏共享**公共资源库**（
   `img/faces/main_cha.png`、`img/tilesets/001_Particle.png`、`fsm_*`

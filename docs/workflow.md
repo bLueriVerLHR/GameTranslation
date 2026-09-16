@@ -493,9 +493,8 @@ powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<g
     （写进 `data/*.json`，向 `css/game.css` 加 CJK 字体回退）。
   - 字典是 **MTool 运行时替换文件**（键是 `\n` 拼接的整条消息 + 片段键）
     → **不可静态烘焙**；贪心片段回退会毁句子（「のはいいが」→「的
-    いいが」）。用静态工作流：`tools/build_translation.py` → 词表 →
-    `tools/gen_translation_shards.py` → subagent →
-    `tools/bake_translation.py`（见 `docs/translation.md`）。
+    いいが」）。用 v2 翻译流程：`python -m translation.cli prepare` →
+    执行者 `slice`/`append` → `gates` → `bake`（见 `docs/translation.md`）。
   字典文件本身可留在构建根目录（引擎忽略）。
 - **从不随包的默认 MV 音频名无害：** `System.json` 常仍列着原装 MV 名
   （`Attack3`、`Collapse1..4`、`Equip1`、`Run`、`Ship1/2/3`、`Victory1`、

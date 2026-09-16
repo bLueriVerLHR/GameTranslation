@@ -155,8 +155,8 @@ GameTranslation/
 │   └── ...               #   不参与构建/测试，仅供查阅
 └── docs/
     ├── workflow.md      # RPG Maker 转换工作流（JoiPlay 构建）
-    ├── translation.md   # 统一翻译工作流（全量 + 补翻，一套参数：10 并行、
-    │                    #   auto 分块约 11k 字符/块）
+    ├── translation.md   # 翻译工作流 v2（单译者 + 文件信箱 + 四道门禁；
+    │                    #   v1 切块流程仅存历史）
     ├── wolfrpg.md       # Wolf RPG 翻译指南（解包/提取/分块/编码/运行，含坑）
     ├── kirikiri.md      # KiriKiri 翻译指南（解包/提取/写回/patch.xp3/QC）
     ├── kirikiri-html.md # KiriKiri→HTML5 移植调研（JoiPlay 插件 / TyranoScript 转换 / WASM 对比）
@@ -247,8 +247,8 @@ RPG Maker 静态翻译（提取 → 词表 → subagent 分块 → 精确匹配�
 `docs/kirikiri.md`、`AGENTS.md`）。共同路线：解包/提取 → 标准工作包 →
 subagent 翻译 → `translated.json` → 注入。
 
-- **Subagent**：每轮 10 个并行，分批追加 prompt 契约，auto 分块
-  （约 11,000 字符）配 90KB 上下文预算。
+- **Subagent**：**一个**翻译执行者（单写者）+ 文件信箱（`translation.cli`
+  的 slice/append），四道硬门禁全绿才烘焙。
 - **本地名词表 + 游戏特定特征**（`docs/table/`，gitignored，仅本地使用）：
   每游戏子目录的 `glossary.json`（术语/人名表）+ `tone.md`（语气/风格）+
   `notes.md`（该游戏经验、坑与特征）；分块时注入每个 chunk 的

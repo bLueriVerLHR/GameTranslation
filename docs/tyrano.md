@@ -71,7 +71,7 @@ python3 tyrano/pipeline.py deliver <work>/build          # 写回存储侧
 ```
 python3 tools/build_tyrano_translation.py <work>/build <work> \
     [--entry first.ks]          # 标准工作包（template/kinds/structure/context）
-# → gen_translation_shards → 10 并行 subagent（分批追加契约）
+# → gen_translation_shards → subagent 分块翻译（非 MZ 引擎仍用 chunk 工具链）
 # → merge_plain_chunks → merge_translation → translated.json
 python3 tools/apply_tyrano_translation.py <work>          # 写回 <work>/patch/
 ```

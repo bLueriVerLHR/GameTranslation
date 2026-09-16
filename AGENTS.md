@@ -653,175 +653,33 @@ Android WebView/PixiJS 把 WebGL 贴图限制在**每边 4096 像素**；PNG 超
 - 曾试行运行时检测贴图上限并即时缩放（插件方案）以省去缩放步骤 —
   维护成本高于收益，已放弃，一律构建期缩放。
 
-## 翻译体量协商 (mandatory)
+## 翻译流程 (v2 — 唯一流程)
 
-启动任何 subagent 翻译任务前，**先量体量并与用户协商**：
+**翻译只走 `docs/translation.md` 的 v2：一个翻译执行者（单写者，磁盘状态为
+权威）+ 文件信箱 + 四道硬门禁。不按 chunk 并行分发、不派发多个翻译 agent。**
 
-- 先跑 `tools/extract_remaining_text.py`（或全量用
-  `build_translation.py`）；报告剩余键数、总字符数、估算块数
-  （`chars / 11000`，auto 分片会最终确认）。
-- 估算约 10+ 块属于大任务：**先问用户是否翻译**（范围：全部 / 子集 /
-  跳过）再启动任何 subagent。绝不自动开始超大翻译任务。
-- **>30 块 → 不要自行开始。** 块数超过 30 时，任何情况下都不要自行启动
-  subagent：**等用户明确指示再翻译**（历史上 50～130 块的全量任务都是
-  owner 明确授权后才跑的——授权是逐次的，不是一次性的常设豁免）。
-  该任务留作批处理项目，并准备 work 目录的 `TRANSLATION_PROJECT.md`
-  状态文件（已完成步骤、剩余任务、下一步、并行策略）。
-- 小任务（少量块）一行确认即可。
+```
+python -m translation.cli prepare <game_dir> <work_dir>   # 提取 keys.jsonl + 控制码表 + 骨架 + MISSION.md
+python -m translation.cli slice <work_dir> --start N --count M --lean --out <file>
+python -m translation.cli append <work_dir> --batch <file> --fix-leading --note "..."
+python -m translation.cli pending|decide|status|rewrite|to-json|gates <work_dir>
+python -m translation.cli bake  <game_dir> <work_dir>     # 按 id 写回 + 统一字体 + KV 归档
+```
 
-## 翻译并行度 (mandatory — 统一，2026-08 验证)
+- **编排者只做机械活**：提取、跑门禁、转 JSON、烘焙；语言判断全在执行者，
+  其任务书是 `prepare` 生成的 `MISSION.md`。
+- 唯一落盘入口是 `append`（逐条校验 id/非空/控制码逐字一致/假名残留，任何
+  一条不过则整批不写盘）；四道硬门禁（`gates`：覆盖 / 控制码 / 假名残留 /
+  待决清零）全绿才能 `bake`；烘焙前自动备份到 `<work>/backup/`。
+- 统一字体是烘焙的强制步骤（本地策略表 `docs/table/font_rollback.md`）。
 
-**默认每轮 10 个并行 subagent**（历史标定值：9-11 都稳定；首轮成功率
-主要取决于 prompt 质量而非并行度）。并行度上限受当前 harness 限制，
-当 harness 装不下 10 个时就按实际上限降低并保持其余策略不变。策略：
+**体量协商（mandatory）**：启动翻译前先 `prepare` 量体量（键数 / 总字符数），
+把规模报给 owner 取得**明确授权**（授权逐次，不是常设豁免）；大任务在 work
+目录留 `TRANSLATION_PROJECT.md` 记录进度。绝不自动开始大型翻译任务。
 
-- **默认：每轮 10 个 agent**（受 harness 并发上限限制，取小者）；
-  轮次数量由实际块数 ÷ 并行度决定，不固定。
-- **一次失败** → 先在**同一个 subagent 会话**里重试（"立即写文件"）；
-  ~90% 可恢复。同一会话失败两次后，新开会话试一次。
-- **三次重试仍失败 → 编排者亲自翻译（mandatory）**：同一块累计三次
-  重试（同会话两次 + 新会话一次）仍无文件，编排者**必须自己翻译该块**
-  （或至少翻译其开头/结尾一段），从中分析失败原因（context 过大、
-  键含特殊内容、输出超限、prompt 误导等），把原因和修复记入
-  `docs/experience-*.md`（索引见 `docs/experience.md`）。不要无限重试——失败模式往往在亲自翻译时
-  一眼看出。
-- **反复失败（多块同因）** → 先修因再继续：简化 prompt（去掉读上下文
-  步骤，直接下令写文件）、拆小块（~300 键）、词表内联等；仍失败的块
-  累积到最后由编排者统一处理。
-- **轮次间不向 owner 汇报** — 全部完成后一次汇报。
-- 只有需要 owner 决策（范围 / 术语 / 是否继续）时才中途交流。
-
-## Subagent 分块 & prompt 契约 (mandatory — 2026-08 验证)
-
-**统一翻译流程见 `docs/translation.md`**（全量/补翻合并为一套参数：10
-并行、auto 分块 ~11,000 字符/块、90KB context 预算、分批追加契约）——
-完整失败模式目录、术语一致性审计清单、QC 关卡清单、修复脚本用法都在
-里面。
-
-### Chunk 双文件布局(2026-08 定案,取代旧 JSON chunk)
-
-`gen_translation_shards.py` / `gen_completion_shards.py` 每个 chunk 产出:
-- `chunks/chunk_NN.ja.txt` — **键专用,agent 绝不改动**:每行一个日文 key,
-  无引号、非 JSON。转义:文件里 `\n` = 消息内真实换行,`\\` = 单个反斜杠
-  (控制码前缀),两者无歧义。
-- `chunks/chunk_NN.zh.txt` — **agent 唯一输出**:每行一个译文,与 ja.txt
-  逐行 1:1(行数、顺序必须一致)。
-- `chunks/chunk_NN.context.md` — 规则 + 语气 + 词表 + 人名宏表 + 场景上下文。
-- `chunks/chunk_NN.meta.json` — 该 chunk 覆盖的地图(并行度参考)。
-
-合并: `merge_plain_chunks.py` 把 ja/zh 两文件合并成 `chunks_translated.json`
-(含行数/假名残留/控制码 QC),`merge_translation.py --chunks ...` 再叠加
-prefilled 命中与 sweep 规则出最终 `translated.json`。
-
-### chunk 尺寸自动选档 (2026-08 定案,默认行为)
-
-`gen_translation_shards.py <work> [--target-chunks N] [--context-budget-kb 90]`:
-脚本按每键的 context 行实际长度(含控制码行/窗口行)估算各 chunk 的
-context.md 体积,**二分搜索最大的 --max-chars**,使 chunk 数 ≤ N 且最大
-context.md ≤ 预算(90KB+ 的 context 是 no-file 失败温床;该估算只在短键
-游戏上接近实际,长日文/大量控制码的游戏实测可达估算的 2 倍以上——见
-`docs/experience-translation.md`,所以以生成器**打印的实际 context 大小**
-为准,不要相信估算百分比)。默认(不传 --max-chars/--per-chunk)即走 auto:
-**90KB 预算下的最大 chunk (~11,000 字符,历史标定值)**。
-`gen_completion_shards.py` 同款默认(--max-chars 11000,且同样注入
-`<work>/tone.md`)。用法示例: `gen_translation_shards.py <work>
---target-chunks 55 --context-budget-kb 90 --window 1`。
-
-### 术语/人名词表 = 单文件,只读
-
-- 词表文件 `glossary.json`(work 目录;收尾同步到本地
-  `docs/table/<Game>/`,**该目录不入库**,见 `docs/translation.md` §6):
-  首次与 owner 商定后,**此后只能用 edit 工具修改**(避免并发写坏);
-  agent 只读 chunk 的 context.md 里的词表快照,绝不写 glossary。
-- 人名宏是控制码,不是文本:`\N[1]`/`\P[1]` 等是 C++/LaTeX 式替换引用 —
-  agent 要"理解成角色名",但绝不翻译/改动宏本身;名字在 Actors.json DB 里译。
-  context.md 提供 Name macros 对照表(`\N[1] = 角色名 (词表: 中文名)`)。
-
-### 上下文 = 独立产物,不翻译
-
-`build_translation.py`/`extract_remaining_text.py`/`extract_rvdata2.py`
-产出 `context.json`(key → 位置 + 前后文窗口),分片时注入各 chunk 的
-context.md 场景时间线;上下文本身不参与翻译,只为 agent 提供语境。
-
-### 对话连续性(强制,每次分片后必须检查)
-
-**跨 chunk 的场景翻译必须保持对话连续**,这是验收硬标准,分片时始终注意:
-
-1. **故事顺序分片**: chunk 内键严格按 故事序(MapInfos `@order`/MZ
-   MapInfos 顺序 → 地图 → 事件 → 页 → 命令位置 → CommonEvents → UI/DB)
-   排列,绝不按字母/类别乱序。
-2. **每键 ±2 句窗口**: context.md 的场景时间线给每个 [K] 键附带上下文行
-   (| 行),相邻键窗口去重,45 字符截断。
-3. **跨 chunk carry-over**: 每个故事 chunk 的 context.md 开头注入**上一个
-   故事 chunk 的尾部对话(最多 8 条)**,场景被切成相邻 chunk 时 agent 能
-   看到前文。全局/UI/DB chunk 不产生 carry。
-4. **顺序执行**: 线性场景的相邻故事 chunk **必须串行处理**,只能并行无
-   叙事依赖的 chunk(不同地图/DB);乱序并行会把场景译得前后不连贯。
-5. 分片生成后抽查: 相邻 chunk 的 context.md 应能对上(前一个的尾部 ≈
-   后一个的 Carry-over 段),对不上就是分片 bug。
-6. 术语/人名一致性: 靠 `glossary.json` 单文件(只用编辑工具改)+ 每 chunk
-   词表快照;新名词在翻译中首次出现时,编排者必须把它补进词表并通知后续
-   chunk。
-
-### 菜单插件文本
-
-`build_translation.py`/`extract_remaining_text.py` 默认提取
-`js/plugins.js` 插件参数里含日文的字符串(kind=`plugin`,`--no-plugins`
-关闭),`bake_translation.py` 精确匹配写回(解析失败时降级为字面量文本
-替换)。插件参数可能是功能性值 — 只有整串精确命中才替换,绝不片段替换。
-
-### 名称查找型引用(note/备注里的功能性引用,2026-08 定案)
-
-**bake 后必须检查按名称查找的引用是否成对翻译**:
-事件 note 里的 `<TE:模板名>`(TemplateEvent 模板引用)、插件按名称
-`callEventByName`/`searchDataItem(...,'name',...)` 的查找键、BalloonPlus
-气泡名、MPP_ChoiceEX 标签文本等 — 若只翻译了被查方(模板地图事件名)而
-引用方(note)没翻,查找失败,模板不生效,无条件 autorun 事件每帧重触发、
-永不擦除 → `isEventRunning()` 恒 true → 玩家无法移动。
-`bake_translation.py` 已内置 `_translate_note_refs()` 同步翻译
-`<TE:name>`/`<namePop:name>`(跳过含 `\v[n]` 等控制码的引用),并在烘焙
-尾部**自动做 dangling 对照**(每个 ref 必须命中某个事件名;含"ref 因带
-控制码没翻而事件名被翻"的失配类)——失配逐一 WARN,无需再手工
-`rg -o "<TE:[^>]+>" data/` 抽查(可作二次确认)。
-
-### 分批追加 prompt 契约 (mandatory — 2026-08 定案, 取代旧 Write-first)
-
-旧 Write-first 契约("先写,后思考,再改"、一次性 Write 全文件)在
-700+ 行的大 chunk 上失败率高(一轮 10 个 agent 常 3-5 个死于无文件;
-同会话重试基本全恢复)。**2026-08 定案: 分批追加 + 分步自检**,
-一轮 10 个 agent 首轮成功率实测 ~100%(连续 3 轮 0 失败;该数字是"prompt +
-工具链 + 分批追加契约均正常"时的上限,不是任何情况的保证——同一流程也
-出现过 ~90% 的首轮成功率,差异在 prompt, 不在并行度)。
-
-**执行顺序必须明写为"先写,后思考,再改",且整块拆成小批** —
-每个 agent prompt 原样包含(用**意图**描述而不是某个 harness 的工具名:
-"创建文件" / "在文件末尾追加";换 harness 时工具名不同,但契约不变):
-
-1. Read rules once, read chunk_NN.ja.txt keys once.
-2. **分批翻译**: 每批约 100-130 行(键数更少的 chunk 可一批全译)。
-   第一批创建 `chunk_NN.zh.txt`(写文件工具); 后续每批把新译文追加到
-   文件末尾(编辑工具: 以当前最后一行作为匹配串,替换为"最后一行 +
-   新批译文")。每批译文行数必须与该批 ja 行数一致。
-3. **分步自检 (per-batch)**: 每追加一批后读回 zh.txt 对应段, 核对:
-   ① 行数与 ja 对应段一致 ② 字面 `\n` 数量一致 ③ 控制码原样保留且
-   数量一致 ④ 无假名残留。发现错误立即在批内修正再继续下一批。
-4. 全部批次完成后最终读回全文核对行数 = ja.txt 行数。
-5. Final reply = file path + entry count only.
-Plus: "Never end before the file exists. 先写文件, 再推敲内容。"
-prompt 里再加三条明令:
-值必须是译文(不得把日文原文写进值)、zh.txt 每行一个译文且行数与 ja.txt
-一致(键内嵌真实换行在文件里以字面 `\n` 表示,勿写真实换行)、
-控制码写完要数。
-
-- **每个返回的 zh.txt 立即用 `merge_plain_chunks.py` 验证**;可恢复滑落:
-  缺行(行数不匹配)、把字面 `\n` 写成真实换行、agent 漏掉个别键
-  (行数少 1 时从 `chunks_translated.json` 重建该文件再对齐)。
-- **agent 结束后跑值卫生修复**:折叠双反斜杠、剥离 `【?...】`、diff
-  控制码 token 键值两侧、按词表替换残留的【日文人名】前缀。
-- **若之后修复了值,构建里已经是旧值** — 按键匹配的补丁不会重新生效;
-  用 旧→新 值映射反向打补丁。
-- **残留检测**:在**最终构建**上测假名;walker 必须让顶层列表 JSON
-  (CommonEvents.json) 走事件 walker,否则静默漏掉它全部对话。
+**v1（切块 → 每块一个 subagent → ja/zh 双文件 → merge）已退役**，其工具仅剩
+非 MZ 引擎（Tyrano / Wolf / KiriKiri）的提取/写回链在用，**不得再用于 MZ 翻译**；
+失败模式教训见 `docs/experience-translation.md`。
 
 ## 顺序
 

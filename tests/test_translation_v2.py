@@ -181,7 +181,7 @@ def test_extract_reads_object_shaped_commands(tmp_path):
 
 
 def test_extract_covers_name_plates_branch_labels_and_plugin_text(tmp_path):
-    """The extended extractor: 101 name plates, 402 branch labels, 357/657 prose.
+    """The extended extractor: 101 name plates, 402 branch labels, 357 args.
 
     A build that only looked at parameters[0] silently lost ~1,800 name plates
     and every plugin window label, so these paths are pinned here.
@@ -217,9 +217,12 @@ def test_extract_covers_name_plates_branch_labels_and_plugin_text(tmp_path):
     assert prefix % 0 + ".parameters[4]" in entries          # name plate
     assert prefix % 3 + ".parameters[1]" in entries          # branch label
     assert prefix % 4 + ".parameters[1]" in entries
-    assert prefix % 5 + ".parameters[2]" in entries          # plugin prose
     assert prefix % 5 + ".parameters[3].messageText" in entries   # nested field
-    assert prefix % 6 + ".parameters[0]" in entries          # 657 continuation
+    # parameters[2] is the command's @text and 657 is the editor's echo of the
+    # 357 arguments: command357 passes the plugin parameters[3] only, and no
+    # engine version implements command657, so neither is ever displayed.
+    assert prefix % 5 + ".parameters[2]" not in entries
+    assert prefix % 6 + ".parameters[0]" not in entries
     # identifiers and comments are not text
     assert prefix % 5 + ".parameters[0]" not in entries      # plugin name
     assert prefix % 5 + ".parameters[1]" not in entries      # command name
@@ -227,6 +230,49 @@ def test_extract_covers_name_plates_branch_labels_and_plugin_text(tmp_path):
     assert prefix % 7 + ".parameters[3]" not in entries      # 'true'
     assert prefix % 8 + ".parameters[0]" not in entries      # comment
     assert prefix % 9 + ".parameters[0]" not in entries      # comment cont.
+
+
+def test_extract_skips_editor_only_plugin_command_text(tmp_path):
+    """357's ``@text`` and the 657 echo are editor-only - never displayed.
+
+    ``Game_Interpreter.prototype.command357`` calls
+    ``PluginManager.callCommand(this, pluginName, params[1], params[3])``: the
+    @text slot (index 2) is not handed on, and an unhandled code is skipped by
+    ``executeCommand``, so 657 - the editor's wrapped "argName = value" echo,
+    one entry per argument - never reaches the player either.  Extracting them
+    cost 26,355 of 55,811 keys (47%) in a real MZ build, and a translation of
+    an argument *name* would misdirect the plugin's argument lookup.  A build
+    without the @text slot (an object at index 2) still has to be scanned.
+    """
+    root = make_game(str(tmp_path / "game"))
+    choices = "[" + json.dumps(
+        json.dumps({"label": "\u3044\u3044\u3048"}, ensure_ascii=False),
+        ensure_ascii=False) + "]"
+    path = os.path.join(root, "data", "Map005.json")
+    _dump(path, {"displayName": "", "events": [None, {"id": 1, "name": "Ev",
+        "pages": [{"list": [
+            {"code": 357, "indent": 0,
+             "parameters": ["LL_GalgeChoiceWindow", "showChoice",
+                            "\u9078\u629e\u80a2\u306e\u8868\u793a",
+                            {"messageText": "\u958b\u304f\uff1f",
+                             "choices": choices}]},
+            {"code": 657, "indent": 0,
+             "parameters": ["\u30ad\u30e3\u30f3\u30bb\u30eb\u8a31\u53ef = true"]},
+            {"code": 357, "indent": 0,
+             "parameters": ["NoLabelPlugin", "doThing",
+                            {"text": "\u3053\u3093\u306b\u3061\u306f"}]},
+        ]}]}]})
+    work = str(tmp_path / "work")
+    stats = mvkeys.extract(root, work)
+    ids = {entry["id"] for entry in mvkeys.load_keys(work)}
+
+    prefix = "data/Map005.json#events[1].pages[0].list[%d]"
+    assert prefix % 0 + ".parameters[3].messageText" in ids
+    assert prefix % 0 + ".parameters[3].choices" in ids
+    assert prefix % 0 + ".parameters[2]" not in ids          # command @text
+    assert prefix % 1 + ".parameters[0]" not in ids          # 657 editor echo
+    assert prefix % 2 + ".parameters[2].text" in ids         # no @text slot
+    assert stats["skipped"]["plugin-continuation"] == 1
 
 
 def test_extract_covers_db_battle_messages_and_profile(tmp_path):
@@ -510,6 +556,72 @@ def test_safe_replace_is_idempotent_when_old_sits_inside_new():
     # never shrink a value (and the old form no longer matches once converted)
     assert rawlib.safe_replace("\u5ae9\u7a74\u6479\u672c", "\u5ae9\u7a74\u6479\u672c", "\u5ae9\u7a74") == "\u5ae9\u7a74"
     assert rawlib.safe_replace("x", "a", "a") == "x"
+
+
+def test_structure_problems_guards_nested_json_parameters():
+    """A JSON-valued plugin parameter may only change its strings.
+
+    LL_GalgeChoiceWindow-style choice lists are a JSON array whose items are
+    JSON objects serialised as strings (``["{\\"label\\":...}"]``).  A
+    translation that drops a bracket makes the plugin's ``JSON.parse`` throw and
+    the event stops there - the player never sees the choice window.  Numbers,
+    keys and nesting have to survive; only the string leaves may change.
+    """
+    def wrap(inner):
+        return json.dumps([json.dumps(inner, ensure_ascii=False)],
+                          ensure_ascii=False)
+
+    source = wrap({"label": "\u6226\u3046", "switchId": "0"})
+    good = wrap({"label": "\u6218\u6597", "switchId": "0"})
+    assert rawlib.structure_problems(source, good) == []
+    # a lost bracket, a renamed key and a retyped value are all caught
+    assert rawlib.structure_problems(source, good[:-1]) != []
+    assert rawlib.structure_problems(
+        source, wrap({"label": "\u6218\u6597", "switchID": "0"})) != []
+    assert rawlib.structure_problems(
+        source, wrap({"label": "\u6218\u6597", "switchId": 0})) != []
+    # prose is never judged, and text that merely starts with a bracket but is
+    # not JSON stays out of this gate as well
+    assert rawlib.structure_problems("\u3053\u3093\u306b\u3061\u306f", "\u4f60\u597d") == []
+    assert rawlib.structure_problems("[\u6ce8\u610f]\u3053\u3093\u306b\u3061\u306f",
+                                     "[\u6ce8\u610f]\u4f60\u597d") == []
+    assert rawlib.structure_problems("123", "123") == []
+
+
+def test_append_batch_rejects_a_broken_json_value(tmp_path):
+    """The library cannot receive a structurally broken parameter value."""
+    root = make_game(str(tmp_path / "game"))
+    inner = json.dumps({"label": "\u3044\u3044\u3048", "switchId": "0"},
+                       ensure_ascii=False)
+    choices = json.dumps([inner], ensure_ascii=False)
+    _dump(os.path.join(root, "data", "Map006.json"),
+          {"displayName": "", "events": [None, {"id": 1, "name": "Ev",
+              "pages": [{"list": [
+                  {"code": 357, "indent": 0,
+                   "parameters": ["LL_GalgeChoiceWindow", "showChoice",
+                                  "\u9078\u629e\u80a2\u306e\u8868\u793a",
+                                  {"messageText": "\u958b\u304f\uff1f",
+                                   "choices": choices}]},
+              ]}]}]})
+    work = str(tmp_path / "work")
+    mvkeys.extract(root, work)
+    entry = next(e for e in mvkeys.load_keys(work)
+                 if e["id"].endswith(".choices"))
+
+    batch = os.path.join(work, "_batch.txt")
+    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@%s@@@\n%s\n" % (entry["id"], choices[:-1]))
+    report = rawlib.append_batch(work, batch)
+    assert report["added"] == 0
+    assert any("JSON structure" in problem for _, problem in report["problems"])
+    library = os.path.join(work, rawlib.LIBRARY_NAME)
+    assert not os.path.isfile(library) or rawlib.read_library(library) == {}
+
+    # the same value with only the label rewritten is accepted
+    fixed = choices.replace("\u3044\u3044\u3048", "\u4e0d\u8981")
+    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@%s@@@\n%s\n" % (entry["id"], fixed))
+    assert rawlib.append_batch(work, batch)["added"] == 1
 
 
 def test_apply_rewrites_rerun_is_a_no_op(work, game):

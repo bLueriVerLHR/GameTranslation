@@ -26,8 +26,10 @@ Outputs, all inside the work dir:
 
 Never mixed in: `note` fields (plugin commands, functional), script lines
 (355/655), comment lines (108/408), editor-only names (MapInfos/event/
-CommonEvent names) and file paths in plugin parameters.  Those are reported in
-``stats.json`` under ``skipped``.
+CommonEvent names), file paths in plugin parameters, the 657 plugin-command
+continuation (an editor echo the engine never executes) and the 357's
+``parameters[2]`` (@text - the engine hands the plugin ``parameters[3]`` only).
+Those are reported in ``stats.json`` under ``skipped``.
 """
 import io
 import json
@@ -54,10 +56,21 @@ NAME_PARAM = 4
 #: follow the choice text (a plugin may print it).
 BRANCH_CODE = 402
 BRANCH_PARAM = 1
-#: Plugin command (357) and its continuation (657).  The first two parameters
-#: are the plugin and command names - identifiers, never translated - and the
-#: rest is plugin data: only strings that read as prose are display text.
+#: Plugin command.  Its parameters are ``[plugin name, command name, @text,
+#: args]``: the first two are identifiers and the display text lives in the
+#: arg object at index 3.
 PLUGIN_CMD_CODE = 357
+#: Index of the command's ``@text`` inside a 357 - the label the *editor* shows
+#: (「選択肢の表示」).  ``Game_Interpreter.prototype.command357`` calls
+#: ``PluginManager.callCommand(this, pluginName, params[1], params[3])``, so
+#: index 2 reaches neither the plugin nor the player.
+PLUGIN_LABEL_PARAM = 2
+#: Editor-only continuation of a plugin command.  The editor writes one 657 per
+#: argument holding a wrapped ``"argName = value"`` echo of the 357's args, and
+#: **no** engine version implements ``command657`` - an unhandled code is
+#: skipped by ``executeCommand`` - so its text is never read or displayed.
+#: Extracting it costs one key per plugin argument (23,864 in one MZ build,
+#: 47% of the whole key list) and risks rewriting editor bookkeeping.
 PLUGIN_CONT_CODE = 657
 PLUGIN_IDENTIFIER_PARAMS = 2
 
@@ -112,16 +125,22 @@ def extra_text_codes(command):
         if len(params) > BRANCH_PARAM and isinstance(params[BRANCH_PARAM], str) \
                 and is_candidate(params[BRANCH_PARAM]):
             out.append((BRANCH_PARAM, "", params[BRANCH_PARAM]))
-    elif code in (PLUGIN_CMD_CODE, PLUGIN_CONT_CODE):
-        first = PLUGIN_IDENTIFIER_PARAMS if code == PLUGIN_CMD_CODE else 0
-        for index, value in enumerate(params[first:], first):
+    elif code == PLUGIN_CMD_CODE:
+        for index, value in enumerate(params[PLUGIN_IDENTIFIER_PARAMS:],
+                                        PLUGIN_IDENTIFIER_PARAMS):
             if isinstance(value, str):
+                # index 2 is the command's @text (editor label, dropped by the
+                # engine).  A *dict* at that index means the build has no @text
+                # slot, so it is scanned like any other parameter object.
+                if index == PLUGIN_LABEL_PARAM:
+                    continue
                 if is_candidate(value, "plugin"):
                     out.append((index, "", value))
                 continue
             for suffix, text in _nested_texts(value):
                 if is_candidate(text, "plugin"):
                     out.append((index, suffix, text))
+    # PLUGIN_CONT_CODE (657) is intentionally absent: see the constant's note.
     return out
 
 
@@ -354,6 +373,10 @@ def _walk_list(collector, lst, rel, path, where, stream):
             # Show Text starts a message window; a name box only labels lines
             # inside its own window.
             window += 1
+        elif command_code(command) == PLUGIN_CONT_CODE:
+            # Editor echo of a 357's arguments; counted so the report shows why
+            # the key list is smaller than the raw command count.
+            collector.skipped["plugin-continuation"] += 1
         for field, text in text_codes(command):
             collector.add(_cmd_id(rel, "%s[%d]" % (path, index), field),
                           "map" if "Map" in rel else

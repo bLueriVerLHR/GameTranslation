@@ -40,7 +40,34 @@ python -m translation.cli bake    <game_dir> <work_dir> [--font-only]  # 按 id 
 | `357`/`657` 插件指令 | 只取**散文**参数：插件名/命令名/JSON 参数对象/路径/脚本片段一律丢弃。参数**对象内部**的字符串也算（`{"messageText": "叫び声が響く……"}` 是弹窗文本、`{"text": "Shift 键快进"}` 是界面提示）——只看顶层字符串会静默丢掉它们 |
 | DB | `name`/`nickname`/`profile`/`description`、Skills·Items·Weapons·Armors 的 `message1`/`message2`、States 的 `message1..4` |
 | System | `gameTitle`/`currencyUnit`/`types` 与 `terms`；**`switches`/`variables` 的名字**（变量窗口插件会把 `$dataSystem.variables[id]` 画在界面上，实测某款游戏的变量名就显示在那里） |
-| 不提取（有意） | 注释 `108`/`408`、`Animations`/`Tilesets`/`CommonEvents`/`MapInfos` 的 `name`（**编辑器内部名**，核实过无任何插件读取）、`note`（插件命令） |
+| 不提取（有意） | 注释 `108`/`408`、`Animations`/`Tilesets`/`CommonEvents`/`MapInfos` 的 `name`（**编辑器内部名**，核实过无任何插件读取）、`note`（插件命令）、**657 插件命令续行**、**357 的 `parameters[2]`**（见下） |
+
+**357/657 —— 只取真正交给插件/玩家看的那一份（2026-09 定案）。** MZ 的
+插件命令在数据里存成三层：`357`（`[插件名, 命令名, @text, 参数对象]`）、
+每个参数一条 `657`，以及参数对象本身。其中：
+
+- `Game_Interpreter.prototype.command357` 的实现是
+  `PluginManager.callCommand(this, pluginName, params[1], params[3])` ——
+  **只有 `parameters[3]`（参数对象）会到插件手里**；`parameters[2]` 是命令的
+  `@text`（编辑器里的按钮名，如「選択肢の表示」）。
+- **引擎没有 `command657`**（未注册的 code 在 `executeCommand` 里被直接跳过）：
+  `657` 是编辑器为了把长插件命令折行显示而写入的 `argName = value` 回显，
+  一个参数一条，**运行时既不读也不显示**。
+
+两者都不是玩家能看到的文本，所以**一律不提取**：某一款 MZ 实测里它们占了
+55,811 键中的 26,355 条（47%），而且若被翻译，把参数**名**（`選択肢リスト`）
+译成中文会让插件按名查参数失败 —— 这不是"多翻了一点"，是会改坏行为。
+真正要译的是参数对象里的字符串字段（`messageText`/`choices`/`message`…），
+它们按 `parameters[3].<字段>` 的 id 照常提取。
+
+**参数对象里的 JSON 值不得改结构。** 有些插件的参数是**装在字符串里的
+JSON**，而且可能套两层（`["{\\"label\\":\\"戦う\\"}"]`，写回时
+要当整体）。这类键翻译时**只能改字符串字面量**，键名/数字/嵌套一律不动 ——
+少一个方括号，插件的 `JSON.parse` 就抛异常，事件当场卡住（玩家看到的是
+"选择肢窗口不出现"）。机器门禁会替你把这一关：`structure_problems()`
+对**源头是 JSON 容器**的键要求译文解析成**同构**的 JSON（字符串叶子按类型
+比较、可自由翻译；叶子自身是 JSON 的会再递归比对），不符就在 `append`
+阶段整批拒绝、在 `control_codes` 门禁里报出。
 
 文本判定用**假名字母类**（含半宽片假名 `U+FF66-FF6F`/`U+FF71-FF9D`），`・`(U+30FB)、
 `ー`/`ｰ`（长音符与破折装饰）不算——整行半宽写的台词若被当成「无假名」会当作非文本丢弃。
@@ -73,7 +100,9 @@ python -m translation.cli bake    <game_dir> <work_dir> [--font-only]  # 按 id 
 
 1. **覆盖**：每条键都有非空译文。
 2. **控制码**：控制码序列逐字一致；**数值参数必须逐字一致，文本型参数必须翻译**
-   （`\nc<チンピラ>` 是名牌——玩家读到的就是它；`\px[200]`/`\N[1]` 是指令参数）。
+   （`\nc<チンピラ>` 是名牌——玩家读到的就是它；`\px[200]`/`\N[1]` 是指令参数）；
+   源头是 JSON 容器的值（插件参数里的 `choices` 等）另外要求**结构同构**
+   （见 §2「参数对象里的 JSON 值不得改结构」）。
 3. **假名残留**：只查**可读部分**（控制码之间 + 文本型参数），白名单需附理由。
    假名类含**半宽片假名**（`U+FF66-FF6F`、`U+FF71-FF9D`）——整行半宽写的
    台词（`ﾌﾞﾂﾌﾞﾂ……`）也是日文；半宽标点与 `ｰ`（中文里当破折装饰）不算。

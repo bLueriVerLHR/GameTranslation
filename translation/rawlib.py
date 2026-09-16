@@ -39,7 +39,8 @@ from .codes import (KANA_RE, has_text_parameter, parameter_of, parse_codes,
 __all__ = ["HEADER_RE", "read_library", "write_library", "append_block",
            "read_jsonl", "read_jsonl_report", "append_jsonl", "apply_rewrites",
            "to_json", "run_gates", "gate_markdown", "code_problems",
-           "line_problems", "readable_text", "kana_problem", "validate_blocks",
+           "line_problems", "structure_problems", "readable_text",
+           "kana_problem", "validate_blocks",
            "append_batch", "leading_codes", "fix_leading_codes"]
 
 #: ``@@@<id>@@@`` on a line of its own; the id may contain anything but ``@``.
@@ -360,6 +361,62 @@ def line_problems(source_text, target_text):
     return ["line breaks: source %d -> value %d" % (source_lines, target_lines)]
 
 
+def _shape_of(payload):
+    """Recursive signature: containers exact, string leaves type-only."""
+    if isinstance(payload, dict):
+        return ("dict", tuple(sorted(
+            (key, _shape_of(value)) for key, value in payload.items())))
+    if isinstance(payload, list):
+        return ("list", tuple(_shape_of(item) for item in payload))
+    if isinstance(payload, str):
+        return ("str", _json_shape(payload))
+    return ("scalar", payload)
+
+
+def _json_shape(text):
+    """Structural signature of `text` when it is JSON, else ``None``.
+
+    Plugin command arguments are JSON held in *strings*, often nested twice:
+    ``['{"label": "戦う", "switchId": "0"}']`` is a JSON list whose items are
+    JSON objects serialised as strings.  A translation may rewrite the strings
+    inside, but every list, object, key and number has to survive: a lost
+    bracket makes the plugin's ``JSON.parse`` throw and the event stops right
+    there (the player gets a choice window that never appears).
+
+    String leaves are compared by *type only* - that is the part being
+    translated - but a string leaf that is itself ``{...}``/``[...]`` is decoded
+    and compared structurally too, so the nesting is checked as well.  Text
+    that merely starts with a bracket without being JSON yields ``None`` (no
+    check), which keeps ordinary dialogue out of this gate.
+    """
+    stripped = text.strip()
+    if not stripped.startswith(("{", "[")):
+        return None
+    try:
+        payload = json.loads(stripped)
+    except ValueError:
+        return None
+    return _shape_of(payload)
+
+
+def structure_problems(source_text, target_text):
+    """A JSON-valued parameter whose structure the translation broke.
+
+    Only JSON *containers* are judged: when the source is not JSON there is
+    nothing to protect, and a value that stopped parsing is reported once
+    instead of as a long shape diff.
+    """
+    source_shape = _json_shape(source_text)
+    if source_shape is None:
+        return []
+    target_shape = _json_shape(target_text)
+    if target_shape is None:
+        return ["JSON structure: value no longer parses as JSON"]
+    if target_shape != source_shape:
+        return ["JSON structure: shape differs from the source"]
+    return []
+
+
 def kana_problem(text, items):
     """Kana left in the readable part of `text`, unless the allowlist covers it."""
     visible = readable_text(text)
@@ -390,6 +447,8 @@ def validate_blocks(work_dir, values):
             problems.append((key_id, "empty translation"))
             continue
         for message in code_problems(entry["ja"], text):
+            problems.append((key_id, message))
+        for message in structure_problems(entry["ja"], text):
             problems.append((key_id, message))
         for message in line_problems(entry["ja"], text):
             problems.append((key_id, message))
@@ -458,6 +517,8 @@ def _gate_codes(keys, values):
         if not text:
             continue
         problems = code_problems(entry["ja"], text)
+        if not problems:
+            problems = structure_problems(entry["ja"], text)
         if not problems:
             if any(source_token != target_token for (_, source_token),
                    (_, target_token)

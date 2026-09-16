@@ -634,12 +634,17 @@ def load_keys(work_dir):
     return out
 
 
-def slice_keys(work_dir, start=0, count=None, kind=None):
+def slice_keys(work_dir, start=0, count=None, kind=None, skip_ids=None):
     """A slice of the key list, streamed - the translator reads one at a time.
 
     The whole list is far too large for one context (tens of thousands of
     keys), so the subagent works scene by scene: this returns ``start`` to
     ``start + count`` in story order, optionally filtered by kind.
+
+    ``skip_ids`` drops keys that already have a translation (ids whose value
+    came from a harvested dictionary), applied **before** ``count`` so a slice
+    is always ``count`` keys of real work.  ``start`` still counts positions in
+    the full list, so a resume can be expressed either way.
     """
     out = []
     path = os.path.join(work_dir, "keys.jsonl")
@@ -652,6 +657,8 @@ def slice_keys(work_dir, start=0, count=None, kind=None):
                 break
             entry = json.loads(line)
             if kind and entry.get("kind") != kind:
+                continue
+            if skip_ids and entry["id"] in skip_ids:
                 continue
             out.append(entry)
     return out

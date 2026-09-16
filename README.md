@@ -54,10 +54,12 @@ GameTranslation/
 ├── translation/         # 翻译工作流 v2：一个子智能体全权负责，主智能体只烘焙
 │   ├── codes.py         #   控制码解析 + 从游戏自身 JS 推导的码表（不硬编码）
 │   ├── mvkeys.py        #   故事序键提取（MV/MZ：地图→公共事件→敌群→DB→UI→插件）
+│   ├── prefill.py       #   从随包的运行时字典（MTool/AI）按精确匹配预填译文库
 │   ├── rawlib.py        #   无转义译文库（@@@id@@@）+ 回改执行 + 五道硬门禁
 │   ├── bake.py          #   译文库按 id 写回游戏数据（数组/对象两种命令形态）+ 统一字体
 │   ├── workspace.py     #   工作区骨架 + 子智能体 MISSION（流程与规则写死）
-│   └── cli.py           #   命令行：prepare/extract/scaffold/codes/to-json/rewrite/gates/status
+│   └── cli.py           #   命令行：prepare/extract/scaffold/codes/slice/prefill/append/
+│                        #     to-json/rewrite/gates/status/pending/decide/bake
 ├── wolfrpg/             # Wolf RPG（ウディタ）工具包
 │   └── dxarchive.py     #   DXArchive v8 解包器（LZ/Huffman/KeyConv，从 UberWolf 移植）
 ├── tyrano/              # TyranoScript / TyranoBuilder 工具包

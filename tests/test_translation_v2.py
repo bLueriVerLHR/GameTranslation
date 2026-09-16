@@ -13,7 +13,7 @@ import re
 
 import pytest
 
-from translation import cli, codes, mvkeys, rawlib, workspace
+from translation import cli, codes, mvkeys, prefill, rawlib, workspace
 
 MAP_TEXT = "\u3010\u30e6\u30ad\u3011\u304a\u306f\u3088\u3046\\c[1]\u3002\n\u4e8c\u884c\u76ee\u3067\u3059\u3002"
 SECOND_TEXT = "\\nc<\u30df\u30ab>\u3084\u3042\\{\u5927\u304d\u3044\\}"
@@ -586,6 +586,131 @@ def test_structure_problems_guards_nested_json_parameters():
     assert rawlib.structure_problems("[\u6ce8\u610f]\u3053\u3093\u306b\u3061\u306f",
                                      "[\u6ce8\u610f]\u4f60\u597d") == []
     assert rawlib.structure_problems("123", "123") == []
+
+
+def test_prefill_harvests_only_exact_matches(tmp_path):
+    """A runtime dictionary seeds the library by exact match, never by fragment.
+
+    MTool dictionaries key on displayed text: control codes are gone and the
+    entries include bare fragments.  Harvesting a fragment into a longer line is
+    the documented way to destroy sentences, so only (a) the exact key and
+    (b) the key with its outer codes stripped are accepted - and the value is
+    re-wrapped in those codes so the control-code gate still passes.
+    """
+    root = make_game(str(tmp_path / "game"))
+    path = os.path.join(root, "data", "Map007.json")
+    _dump(path, {"displayName": "", "events": [None, {"id": 1, "name": "Ev",
+        "pages": [{"list": [
+            {"code": 401, "indent": 0, "parameters": ["\u304a\u306f\u3088\u3046"]},
+            {"code": 401, "indent": 0,
+             "parameters": ["\\C[27]\u3042\u3063\\C[0]"]},
+            {"code": 401, "indent": 0,
+             "parameters": ["\u3068\u3066\u3082\u9577\u3044\u53f0\u8a5e\u3067\u3059"]},
+        ]}]}]})
+    work = str(tmp_path / "work")
+    mvkeys.extract(root, work)
+    mine = {entry["id"] for entry in mvkeys.load_keys(work)
+            if "Map007" in entry["id"]}
+    dictionary = tmp_path / "runtime.json"
+    body = json.dumps({
+        "\u304a\u306f\u3088\u3046": "\u65e9\u4e0a\u597d",
+        "\u3042\u3063": "\u554a\u554a",
+        "\u53f0\u8a5e": "\u53f0\u8bcd",
+    }, ensure_ascii=False, indent=1).split("\n")[1:-1]
+    with io.open(dictionary, "w", encoding="utf-8", newline="\n") as handle:
+        # MTool dictionaries carry leading ``//`` comments - not valid JSON
+        handle.write("{\n// a repacker's comment line\n" + "\n".join(body) + "\n}\n")
+
+    values, report = prefill.harvest(work, str(dictionary), allow_ids=mine)
+    by_id = {entry["id"]: entry["ja"] for entry in mvkeys.load_keys(work)}
+    got = {by_id[key_id]: text for key_id, text in values.items()}
+    assert got["\u304a\u306f\u3088\u3046"] == "\u65e9\u4e0a\u597d"
+    assert got["\\C[27]\u3042\u3063\\C[0]"] == "\\C[27]\u554a\u554a\\C[0]"
+    # the fragment entry must NOT be spliced into the longer line
+    assert "\u3068\u3066\u3082\u9577\u3044\u53f0\u8a5e\u3067\u3059" not in got
+    assert report["harvested"] == 2 and report["missed"] == 1
+    assert report["lookup"]["stripped"] == 1
+
+    batch = prefill.write_batch(os.path.join(work, "prefill.batch.txt"), values)
+    assert rawlib.append_batch(work, batch)["added"] == 2
+
+
+def test_prefill_rejects_candidates_that_break_a_gate(tmp_path):
+    """A harvested value that fails a gate is dropped, not pushed into the batch.
+
+    A dictionary is machine output: some entries leave kana behind, and a
+    mid-line control code cannot be re-wrapped at all.  Both are filtered here
+    (so a 25,000-entry harvest does not fail as one all-or-nothing batch) and
+    reported for the translator to pick up.
+    """
+    root = make_game(str(tmp_path / "game"))
+    path = os.path.join(root, "data", "Map008.json")
+    _dump(path, {"displayName": "", "events": [None, {"id": 1, "name": "Ev",
+        "pages": [{"list": [
+            {"code": 401, "indent": 0, "parameters": ["\u3053\u3093\u306b\u3061\u306f"]},
+            {"code": 401, "indent": 0,
+             "parameters": ["\u3055\u3088\u3046\u306a\u3089\\C[1]\u307e\u305f\u306d"]},
+        ]}]}]})
+    work = str(tmp_path / "work")
+    mvkeys.extract(root, work)
+    mine = {entry["id"] for entry in mvkeys.load_keys(work)
+            if "Map008" in entry["id"]}
+    values, report = prefill.harvest(
+        work, str(_write_dict(tmp_path, {
+            "\u3053\u3093\u306b\u3061\u306f": "\u3053\u3093\u306b\u3061\u306f\u3067\u3059",
+            "\u3055\u3088\u3046\u306a\u3089\u307e\u305f\u306d": "\u518d\u89c1",
+        })), allow_ids=mine)
+    assert "\u3053\u3093\u306b\u3061\u306f" not in values        # kana residue
+    assert report["rejected_by"]["kana residue"] == 1
+    assert report["missed"] == 1                             # mid-line code
+
+
+def _write_dict(directory, payload):
+    """A runtime dictionary file (UTF-8, flat ``{source: translation}``)."""
+    path = os.path.join(str(directory), "dict.json")
+    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(payload, handle, ensure_ascii=False)
+    return path
+
+
+def test_slice_todo_skips_translated_keys(tmp_path):
+    """``--todo`` returns the next *untranslated* keys, count applied after."""
+    root = make_game(str(tmp_path / "game"))
+    path = os.path.join(root, "data", "Map009.json")
+    lines = [{"code": 401, "indent": 0, "parameters": [text]}
+             for text in ("\u3042\u3044\u3046", "\u304b\u304d\u304f",
+                          "\u3055\u3057\u3059", "\u305f\u3061\u3064")]
+    _dump(path, {"displayName": "", "events": [None, {"id": 1, "name": "Ev",
+        "pages": [{"list": lines}]}]})
+    work = str(tmp_path / "work")
+    mvkeys.extract(root, work)
+    entries = [entry for entry in mvkeys.load_keys(work)
+               if "Map009" in entry["id"]]
+    assert len(entries) == 4
+    rawlib.append_block(os.path.join(work, rawlib.LIBRARY_NAME), entries[0]["id"],
+                        "\u554a")
+    rawlib.append_block(os.path.join(work, rawlib.LIBRARY_NAME), entries[2]["id"],
+                        "\u55ef")
+
+    done = set(rawlib.read_library(os.path.join(work, rawlib.LIBRARY_NAME)))
+    mine = {entry["id"] for entry in entries}
+    others = {entry["id"] for entry in mvkeys.load_keys(work)
+              if entry["id"] not in mine}
+    todo = mvkeys.slice_keys(work, count=2, skip_ids=done | others)
+    assert [entry["ja"] for entry in todo] == ["\u304b\u304d\u304f", "\u305f\u3061\u3064"]
+    # count applies to the filtered list, not to the raw position
+    assert [entry["ja"] for entry in
+            mvkeys.slice_keys(work, count=2, skip_ids=others)] == \
+        ["\u3042\u3044\u3046", "\u304b\u304d\u304f"]
+
+    out = os.path.join(work, "slice.jsonl")
+    assert cli.main(["slice", work, "--count", "2", "--lean", "--todo",
+                     "--out", out]) == 0
+    sliced = [json.loads(line) for line in io.open(out, encoding="utf-8")]
+    assert len(sliced) == 2
+    assert not [entry for entry in sliced if entry["id"] in done]
+    assert all(set(entry) == {"id", "ja", "speaker", "where"}
+               for entry in sliced)
 
 
 def test_append_batch_rejects_a_broken_json_value(tmp_path):

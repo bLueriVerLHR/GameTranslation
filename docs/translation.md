@@ -19,6 +19,8 @@
 ```
 python -m translation.cli prepare <game_dir> <work_dir>      # 提取 keys.jsonl + 控制码表 + 骨架 + MISSION.md
 python -m translation.cli slice  <work_dir> --start N --count M --lean --out <file>   # 取一批（lean=无前后文）
+python -m translation.cli slice  <work_dir> --count M --lean --todo --out <file>      # 只取还没译的键（预填后必用）
+python -m translation.cli prefill <work_dir> <runtime.json> [--out <batch>]            # 从随包运行时字典精确匹配预填
 python -m translation.cli append <work_dir> --batch <file> --fix-leading --note "..."  # 校验后原子追加
 python -m translation.cli pending <work_dir> --id X --why "..."        # 安全记录待决（转义由工具做）
 python -m translation.cli decide  <work_dir> --all-open --reason "..."  # 追加式裁定（历史保留）
@@ -27,6 +29,28 @@ python -m translation.cli gates   <work_dir>            # 五道硬门禁
 python -m translation.cli rewrite <work_dir>            # 执行 rewrites.jsonl 全量回改
 python -m translation.cli bake    <game_dir> <work_dir> [--font-only]  # 按 id 写回 + 统一字体 + KV 归档
 ```
+
+### 预填（repack 自带运行时字典时先跑）
+
+repack 常带一个运行时替换字典（`<title>.json`、`AI翻译.json`、`…翻译文件.json`…）。
+**绝不直接烘焙**（键是运行时形态：控制码被剥、整条消息用 `\n` 拼接、还含片段键），
+但值本身就是 owner 已经看过的译文，可以安全地用来**预填**：
+
+```
+python -m translation.cli prefill <work_dir> "<游戏目录>\<字典>.json"
+python -m translation.cli append  <work_dir> --batch <work_dir>\prefill.batch.txt --fix-leading --note "harvest"
+python -m translation.cli status  <work_dir>     # 看还剩多少
+```
+
+- 只做**精确匹配**：先整串、再「剥掉首尾控制码后」匹配（命中则把值重新包回
+  那串控制码）；**绝不**做子串/逐步缩短的贪心匹配（那是毁句子的老路）。
+  控制码夹在行中间、字典值自带控制码等情形各自单独计数，留给执行者。
+- 预填结果写成**批次文件**而不是直写译文库：`append` 仍是唯一写入口，每个预填值
+  跟手写的一样过五道门禁；会撞门禁的候选在 `prefill` 阶段就被剔除并分类报告
+  （否则两万条的批次会因一条不合格而整体被拒）。
+- 预填后执行者用 `slice --todo`（跳过已有译文的键）取活，不用自己数 `--start`。
+- 报告里的 `harvested / missed / rejected_by` 就是「还剩多少活」的实话；
+  `missed` 很多通常是字典覆盖不足或键形不同，不是脚本坏了。
 
 ### 提取覆盖范围（改提取器前先看这里）
 

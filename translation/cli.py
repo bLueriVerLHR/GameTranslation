@@ -12,6 +12,8 @@ the job:
     scaffold  <work_dir>              state files + MISSION.md
     codes     <work_dir>              regenerate control_codes.md
     slice     <work_dir>              a slice of keys.jsonl for one scene
+                                      (``--todo`` skips already-translated keys)
+    prefill   <work_dir> <dict.json>  seed from a repack's runtime dictionary
     append    <work_dir> --batch F    validate a batch, then append it
     to-json   <work_dir>              raw library -> translated.json (escaping)
     rewrite   <work_dir>              execute rewrites.jsonl over the library
@@ -29,7 +31,7 @@ from typing import Annotated
 from rpgmaker import cliutil
 
 from . import bake as bake_mod
-from . import codes, mvkeys, rawlib, workspace
+from . import codes, mvkeys, prefill as prefill_mod, rawlib, workspace
 
 log = logging.getLogger(__name__)
 
@@ -195,6 +197,8 @@ def slice_(
         "--compact", help="drop where/kind/seq (cheaper to read)")] = False,
     lean: Annotated[bool, cliutil.Option(
         "--lean", help="only id/ja/speaker/where (no context lines)")] = False,
+    todo: Annotated[bool, cliutil.Option(
+        "--todo", help="skip keys the library already translates")] = False,
     out: Annotated[str, cliutil.Option(
         "--out", help="write the slice here (default: stdout)")] = None,
     verbose: cliutil.Verbose = False,
@@ -206,12 +210,25 @@ def slice_(
     The key list is far bigger than one context; the translator reads a slice,
     translates it, appends the batch (see ``append``) and asks for the next.
     ``--compact`` keeps only what a translator needs to read and write.
+    ``--todo`` drops the keys that already have a translation, which is what a
+    run that started from a harvested dictionary needs: 85% of the list can be
+    done before the translator reads its first key.
     """
     cliutil.setup_logging(verbose, quiet, log_file)
     if not os.path.isfile(os.path.join(work_dir, "keys.jsonl")):
         return cliutil.fail("keys.jsonl missing in %s (run extract first)"
                             % work_dir)
-    entries = mvkeys.slice_keys(work_dir, start=start, count=count, kind=kind)
+    done = None
+    if todo:
+        library = rawlib.read_library(
+            os.path.join(work_dir, rawlib.LIBRARY_NAME))
+        done = {key for key, text in library.items() if (text or "").strip()}
+        if not done:
+            # An empty library is a first run, not an error: --todo then simply
+            # means "from the beginning".
+            done = None
+    entries = mvkeys.slice_keys(work_dir, start=start, count=count, kind=kind,
+                                skip_ids=done)
     if lean:
         # Context lines cost more than they give: reading them is the real
         # bottleneck of a long run, and `speaker` plus the story order already
@@ -234,6 +251,47 @@ def slice_(
         print(payload, end="")
     return 0 if entries else cliutil.fail(
         "no keys in range (start=%d count=%d kind=%s)" % (start, count, kind))
+
+
+def prefill(
+    work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
+    dict_path: Annotated[str, cliutil.Argument(
+        help="runtime MTool/AI dictionary JSON shipped with the repack")],
+    out: Annotated[str, cliutil.Option(
+        "--out", help="batch file to write (default: <work>/prefill.batch.txt)")] = None,
+    verbose: cliutil.Verbose = False,
+    quiet: cliutil.Quiet = False,
+    log_file: cliutil.LogFile = None,
+) -> int:
+    """Seed the library from a runtime dictionary, then translate the rest.
+
+    Only *exact* matches are harvested (the raw key, or the key after its
+    control codes are stripped - the value is then re-wrapped in them).  A
+    runtime dictionary keys on displayed text, so fragment-based matching is
+    what destroys sentences and is deliberately not attempted here: whatever
+    is left is the translator's job, and the report says how much that is.
+
+    The result is written as a *batch file*, not into the library: ``append``
+    stays the single write path, so every harvested value passes the same
+    gates as a hand-written one.
+    """
+    cliutil.setup_logging(verbose, quiet, log_file)
+    if not os.path.isfile(os.path.join(work_dir, "keys.jsonl")):
+        return cliutil.fail("keys.jsonl missing in %s (run extract first)"
+                            % work_dir)
+    try:
+        values, report = prefill_mod.harvest(work_dir, dict_path)
+    except (ValueError, OSError) as error:
+        return cliutil.fail("cannot read %s: %s" % (dict_path, error))
+    path = prefill_mod.write_batch(
+        out or os.path.join(work_dir, "prefill.batch.txt"), values)
+    log.info("prefilled %d/%d keys (%.1f%%), %d missed -> %s",
+             report["harvested"], report["keys"],
+             100.0 * report["harvested"] / max(1, report["keys"]),
+             report["missed"], path)
+    report["batch"] = path
+    print(json.dumps(report, ensure_ascii=False, indent=1))
+    return 0 if values else cliutil.fail("no key could be prefilled")
 
 
 def append(
@@ -408,6 +466,7 @@ app.command()(extract)
 app.command()(scaffold)
 app.command(name="codes")(codes_)
 app.command(name="to-json")(to_json)
+app.command()(prefill)
 app.command()(rewrite)
 app.command()(gates)
 app.command()(status)

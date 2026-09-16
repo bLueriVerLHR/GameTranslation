@@ -144,6 +144,27 @@ def append_jsonl(path, record):
     return path
 
 
+def safe_replace(text, old, new):
+    """Replace ``old`` with ``new`` once, idempotently.
+
+    When ``old`` occurs inside ``new`` (``杂鱼`` -> ``杂鱼剑``) a plain
+    :meth:`str.replace` is *not* idempotent: re-applying the same rule to an
+    already-updated value yields ``杂鱼剑剑``.  Occurrences already in the new
+    form are protected with a sentinel character for the duration of the
+    replacement, so a second run is a no-op.  Rules where ``new`` is a
+    substring of ``old`` (``嫩穴摹本`` -> ``嫩穴``) stay plain replacements -
+    there the already-converted text no longer matches ``old`` at all, so
+    protecting it would silently block the conversion.
+    """
+    if old == new or old not in new:
+        return text.replace(old, new)
+    sentinel = "\x00"
+    while sentinel in text or sentinel in new or sentinel in old:
+        sentinel += "\x00"
+    return (text.replace(new, sentinel).replace(old, new)
+            .replace(sentinel, new))
+
+
 def apply_rewrites(work_dir, report_path=None):
     """Apply ``rewrites.jsonl`` to the library; report every affected key.
 
@@ -165,10 +186,15 @@ def apply_rewrites(work_dir, report_path=None):
         scope = rule.get("ids")
         targets = [k for k in (scope or values) if k in values]
         hits = []
+        matched = 0
         for key in targets:
             text = values[key]
-            if old in text:
-                values[key] = text.replace(old, new)
+            if old not in text:
+                continue
+            matched += 1
+            updated = safe_replace(text, old, new)
+            if updated != text:
+                values[key] = updated
                 hits.append(key)
         if hits:
             write_library(library_path, values)
@@ -176,6 +202,7 @@ def apply_rewrites(work_dir, report_path=None):
             "old": old, "new": new, "reason": rule.get("reason") or "",
             "scope": "ids" if scope else "all",
             "affected": len(hits),
+            "already_up_to_date": matched - len(hits),
             "ids": hits[:50],
         })
     report = {"rules": len(rewrites), "changed_keys":
@@ -487,27 +514,43 @@ def _gate_kana(keys, values, items):
 CLOSED_STATUS = ("resolved", "decided", "wontfix")
 
 
-def _gate_pending(work_dir):
-    """Every open question must have a conclusion.
+def read_pending(work_dir):
+    """Collapse ``pending.jsonl`` to the latest entry per key (last wins).
 
-    pending.jsonl is append-only like the library, so the *last* entry for an
-    id wins: appending ``{"id": ..., "status": "resolved"}`` closes the
-    earlier ``open`` entry for that id instead of requiring an edit.  Lines that
-    cannot be parsed fail the gate (they may hold an unreviewed question).
+    Returns ``(latest, entries, errors)``.  ``pending.jsonl`` is append-only,
+    so appending ``{"id": ..., "status": "resolved"}`` closes the earlier
+    ``open`` entry for that id instead of requiring an edit.  Every consumer
+    (the pending gate and ``status``) reads through this helper, so their
+    counts cannot drift apart.
     """
-    entries, errors = read_jsonl_report(os.path.join(work_dir,
+    records, errors = read_jsonl_report(os.path.join(work_dir,
                                                      "pending.jsonl"))
     latest = OrderedDict()
-    for item in entries:
+    for item in records:
         key = (item.get("id") or item.get("question") or item.get("why")
                or json.dumps(item, ensure_ascii=False, sort_keys=True))
         latest[key] = item
-    open_items = [item for item in latest.values()
-                  if (item.get("status") or "open") not in CLOSED_STATUS]
+    return latest, len(records), errors
+
+
+def pending_open(latest):
+    """Open questions among the collapsed pending records."""
+    return [item for item in latest.values()
+            if (item.get("status") or "open") not in CLOSED_STATUS]
+
+
+def _gate_pending(work_dir):
+    """Every open question must have a conclusion.
+
+    See :func:`read_pending` for the last-wins collapse.  Lines that cannot be
+    parsed fail the gate (they may hold an unreviewed question).
+    """
+    latest, entries, errors = read_pending(work_dir)
+    open_items = pending_open(latest)
     return {
         "name": "pending",
         "ok": not open_items and not errors,
-        "entries": len(entries),
+        "entries": entries,
         "open": len(open_items),
         "unparsable": len(errors),
         "detail": (["line %d: %s" % (number, message)

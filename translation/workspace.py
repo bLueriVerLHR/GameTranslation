@@ -94,7 +94,7 @@ def mission_text(work_dir, stats=None):
     codes = stats.get("codes") or {}
     code_top = ", ".join("\\%s %d" % (k, v) for k, v in
                          list(codes.items())[:8])
-    return """# 翻译任务书（MISSION）
+    return r"""# 翻译任务书（MISSION）
 
 你是**本次翻译的唯一负责人**：从工作区取出待译内容，翻译，产出可直接烘焙的译文库。
 主智能体只做机械收尾（转 JSON、跑门禁、烘焙），**不做任何语言判断**：所有措辞、语气、
@@ -105,7 +105,7 @@ def mission_text(work_dir, stats=None):
 1. **只写译文库 `translations.raw.txt`**（追加写入），以及你自己的状态文件（见 §3）。
    **不要写、不要改 `keys.jsonl`**，也不要输出 JSON —— JSON 转义是主智能体的活，你写的
    一切保持原样（真换行就是真换行，反斜杠就是反斜杠）。
-2. **控制码一字不动**：`\\c[1]`、`\\px[200]`、`\\nc<名字>`、`\\{`、`\\.` 等是引擎指令，
+2. **控制码一字不动**：`\c[1]`、`\px[200]`、`\nc<名字>`、`\{`、`\.` 等是引擎指令，
    必须原样、同序、同参数出现在译文里。数量/顺序/参数不一致 = 门禁失败。
 3. **原文是键，译文是值**：值必须是中文译文，**不得把日文原文当译文交上去**（除白名单，
    见 §5）。不确定就写进 `pending.jsonl`，不要留日文。
@@ -132,7 +132,7 @@ def mission_text(work_dir, stats=None):
 ```
 @@@data/Map003.json#events[2].pages[0].list[7].parameters[0]@@@
 这是译文，可以在这里换行，
-\\c[1]控制码原样照抄\\c[0]。
+\c[1]控制码原样照抄\c[0]。
 @@@<下一个 id>@@@
 ...
 ```
@@ -247,18 +247,14 @@ def status_summary(work_dir):
     ids = {entry["id"] for entry in keys}
     translated = sum(1 for key in ids if (values.get(key) or "").strip())
     progress = rawlib.read_jsonl(os.path.join(work_dir, "progress.jsonl"))
-    pending, pending_errors = rawlib.read_jsonl_report(
-        os.path.join(work_dir, "pending.jsonl"))
-    open_pending = [item for item in pending
-                    if (item.get("status") or "open") not in ("resolved",
-                                                             "decided",
-                                                             "wontfix")]
+    latest_pending, pending_count, pending_errors = rawlib.read_pending(work_dir)
+    open_pending = rawlib.pending_open(latest_pending)
     report = {"ready": True, "keys": len(keys), "translated": translated,
               "percent": round(100.0 * translated / max(1, len(keys)), 2),
               "library_blocks": len(values),
               "unknown_ids": len([k for k in values if k not in ids]),
               "progress_marks": len(progress),
-              "pending": len(pending), "pending_open": len(open_pending),
+              "pending": pending_count, "pending_open": len(open_pending),
               "pending_unparsable": len(pending_errors)}
     gate_path = os.path.join(work_dir, "gate_report.json")
     if os.path.isfile(gate_path):

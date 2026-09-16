@@ -133,7 +133,7 @@ def test_parse_codes_and_keys():
 
 
 def test_split_keep_codes_preserves_everything():
-    text = "\u3042\\c[1]\u3044\\{ok\}"
+    text = "\u3042\\c[1]\u3044\\{ok\\}"
     pieces = codes.split_keep_codes(text)
     assert "".join(piece for _, piece in pieces) == text
     assert [piece for is_code, piece in pieces if is_code] == ["\\c[1]", "\\{", "\\}"]
@@ -499,6 +499,39 @@ def test_to_json_escapes_and_reports_conflicts(work, game):
     assert rawlib.to_json(work)["conflicts"] == []
 
 
+def test_safe_replace_is_idempotent_when_old_sits_inside_new():
+    """The doubling guard: ``old`` occurring inside ``new`` must not re-apply."""
+    assert rawlib.safe_replace("\u6742\u9c7c", "\u6742\u9c7c", "\u6742\u9c7c\u5251") == "\u6742\u9c7c\u5251"
+    assert rawlib.safe_replace("\u6742\u9c7c\u5251", "\u6742\u9c7c", "\u6742\u9c7c\u5251") == "\u6742\u9c7c\u5251"
+    # only the names still in the old form are converted
+    assert (rawlib.safe_replace("\u6742\u9c7c\u5251\u548c\u6742\u9c7c", "\u6742\u9c7c", "\u6742\u9c7c\u5251")
+            == "\u6742\u9c7c\u5251\u548c\u6742\u9c7c\u5251")
+    # ``new`` inside ``old`` stays a plain replacement, else the rule could
+    # never shrink a value (and the old form no longer matches once converted)
+    assert rawlib.safe_replace("\u5ae9\u7a74\u6479\u672c", "\u5ae9\u7a74\u6479\u672c", "\u5ae9\u7a74") == "\u5ae9\u7a74"
+    assert rawlib.safe_replace("x", "a", "a") == "x"
+
+
+def test_apply_rewrites_rerun_is_a_no_op(work, game):
+    mvkeys.extract(game, work)
+    _fill_library(work, lambda entry, text: "\u6742\u9c7c")
+    rawlib.append_jsonl(os.path.join(work, "rewrites.jsonl"),
+                        {"old": "\u6742\u9c7c", "new": "\u6742\u9c7c\u5251",
+                         "reason": "test"})
+    first = rawlib.apply_rewrites(work)
+    values = rawlib.read_library(os.path.join(work, rawlib.LIBRARY_NAME))
+    assert set(values.values()) == {"\u6742\u9c7c\u5251"}
+    assert first["applied"][0]["affected"] == len(values)
+    assert first["applied"][0]["already_up_to_date"] == 0
+
+    second = rawlib.apply_rewrites(work)
+    values = rawlib.read_library(os.path.join(work, rawlib.LIBRARY_NAME))
+    assert "\u6742\u9c7c\u5251\u5251" not in set(values.values())
+    assert set(values.values()) == {"\u6742\u9c7c\u5251"}
+    assert second["applied"][0]["affected"] == 0
+    assert second["applied"][0]["already_up_to_date"] == len(values)
+
+
 def test_apply_rewrites_scope_and_report(work, game):
     mvkeys.extract(game, work)
     target_id = "data/Map001.json#events[1].pages[0].list[1].parameters[0]"
@@ -602,6 +635,29 @@ def test_cli_pending_escapes_text(work, game, capsys):
     gate = {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["pending"]
     assert gate["open"] == 0 and gate["entries"] == 2
     capsys.readouterr()
+
+
+def test_status_and_pending_gate_agree(work, game):
+    """``pending_open`` must match the gate: last entry per id wins."""
+    mvkeys.extract(game, work)
+    _fill_library(work, _neutral)
+    path = os.path.join(work, "pending.jsonl")
+    rawlib.append_jsonl(path, {"id": "x", "why": "\u6b67\u4e49", "status": "open"})
+    rawlib.append_jsonl(path, {"id": "x", "why": "\u6b67\u4e49", "status": "resolved"})
+    summary = workspace.status_summary(work)
+    gate = {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["pending"]
+    assert summary["pending"] == gate["entries"] == 2       # history kept
+    assert summary["pending_open"] == gate["open"] == 0     # but closed once
+
+    rawlib.append_jsonl(path, {"id": "y", "why": "\u65b0\u95ee\u9898"})
+    summary = workspace.status_summary(work)
+    gate = {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["pending"]
+    assert summary["pending_open"] == gate["open"] == 1
+    assert summary["pending"] == gate["entries"] == 3
+
+    latest, entries, errors = rawlib.read_pending(work)
+    assert (entries, errors) == (3, [])
+    assert rawlib.pending_open(latest) == list(latest.values())[-1:] != []
 
 
 def test_pending_status_summary_reports_parse_errors(work, game):

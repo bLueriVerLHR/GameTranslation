@@ -67,8 +67,10 @@ def resolve_web_root(game_dir: str) -> str:
     if not web_root:
         raise typer.BadParameter(
             "no web root found under %s (need index.html + js/ + data/, or "
-            "www/ with the same layout). An MTool-style launcher root keeps "
-            "the data in the tool's own pack and is not a web root." % game_dir)
+            "www/ with the same layout). A launcher repack keeps the database "
+            "packed inside <Game>.exe (Enigma Virtual Box: PE sections "
+            ".enigma1/.enigma2) - extract data/ from the exe first, then "
+            "build." % game_dir)
     log.info("engine: %s, web root: %s",
              "MZ" if detect.is_mz(web_root) else "MV", web_root)
     return web_root

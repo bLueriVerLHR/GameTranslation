@@ -20,32 +20,37 @@
   `docs/table/passwords.md`（gitignored）— 绝不入库。
 - 布局：根目录 NW.js 运行时 + `www/`（MV）或根网页部署（MZ）。
   `detect.py` 自动找网页根。
-- **MTool 运行时翻译 repack（2026-08，不可转换）：** 包里是根部署的
-  `index.html` + 完整 `js/`（引擎原封不动）+ `audio/`/`img/`（资源齐全）
-  **却没有 `data/`**；伴随 `Tool/`（MTool 自身：`Tool/www/data/` 是工具 UI
-  的 html/css/js/wasm，不是游戏数据）、`Tool/loaders/mzHook.dll` +
-  `inject.exe`、根目录 `与工具一同启动.bat` / `从游戏中移除工具文件.bat` /
-  `injectPath` / `version.dll` / `TrsData*.bin`（机翻字典）/ 推广 `.txt`。
-  这种包**没有可读的游戏数据库**，不能转 JoiPlay。`detect.is_web_root()`
-  自 2026-08 起要求 `data/` 或 `data_encrypted/`，因此它会**明确报
-  "no web root found"**（以前会静默构建出一个没有数据库的坏成品）。
-  遇到这种包直接向 owner 报告，不要尝试解 MTool 的 pack。
-- **第二次遇到同型包（2026-09）——把 MTool 的容器翻了一遍，结论是里面
-  真的没有数据库，不是「藏在 pack 里」：**
-  - `Tool/www/data/<数字>`（约 140 个）是 MTool 自己的 UI 资源（html/css/
-    js/wasm/i18n html 模板），整个 `Tool/www`（168 文件）里 MZ 数据标记
-    （`"events"`/`"MapInfos"`/`RPGMV` 等）**命中 0**。
-  - 根目录 `version.dll` = 真 PE（节表到 ~0.9 MB 结束）+ **末尾拼接的
-    ~102 MB 预分配填充**（99.8% 是同一个重复字节，稀疏数据只有几百 KB）
-    —— 不是游戏数据库。
-  - `TrsData*.bin`（~2.4 MB ×2，两份逐字节相同）= 机翻字典，但已加密/
-    混淆：可读假名/汉字命中接近 0，**不能当 prefill 词典 harvest**。
-  - 全包清单（2012 文件 / 161 目录）里既无 `data/` 也无 `data_encrypted/`。
-  所以这类包**在 MTool 下也跑不起来**（引擎必须有 `data/*.json`），只能向
-  owner 要干净原版；`pipeline.py build` 的守卫会按设计报 exit 2
-  「no web root found」。另：此类包的资源仍带 MZ easy 加密形态
-  （`*.png_`/`*.ogg_` + 16 字节 RPGMV 头）而 `js/` 未被改名 —— 后缀
-  `_` 是**引擎加密**，不是 repacker 改名，别按改名逻辑去剥。
+- **根部署 + 无 `data/` ≠ 不可转换（2026-09 更正，推翻 2026-08 的结论）：**
+  这种包装通常是 MTool「复制工具到游戏 / 封包」模式：**数据库被塞进
+  `Game.exe` 的 Enigma Virtual Box 容器**（PE 段名 `.enigma1`/`.enigma2`），
+  运行时由打包器虚拟文件系统供给，所以**游戏照样能玩**，只是磁盘上没有
+  `data/`。伴随特征：`Tool/`（工具自身，`Tool/www/data/<数字>` 只是工具
+  UI 资源）、`Tool/loaders/mzHook.dll` + `inject.exe`、`injectPath`、
+  `version.dll`、`TrsData*.bin`、推广 `.txt`/`.ini`。
+  正确处置：**先把 `data/` 从 `Game.exe` 里取出来，再进流水线**，不要直接
+  报「不可转换」。
+  - **判定**：`Game.exe` 段表含 `.enigma1`/`.enigma2`（特征：某段 `raw`
+    远大于 `vsize`，例如 `raw` 7.5 MB / `vsize` 4 KB）。
+  - **容器布局**：`.enigma1` = 明文 UTF-16LE 文件名表（ASCII 字母序）+
+    payload；每条记录的名字后面 `+5` 字节处是 `u32` 文件尺寸；payload 从表
+    之后开始，按表序**明文拼接、未压缩**。
+  - **取回**：按「表序 + 各记录尺寸」切片 payload 并逐个 `json.loads` 校验；
+    非 JSON 的 payload 项（推广 `.ini`/`.txt`，以及后面的打包器二进制）会
+    插在中间/末尾，切片解不出 JSON 时向后小范围搜索即可（本次只插了 23 字
+    节的推广 ini）。
+  - 恢复出的 `System.json` 里有 `hasEncryptedImages/Audio` 与
+    `encryptionKey` → 紧接着 `decrypt` 能正常解 `*.png_`/`*.ogg_`，之后
+    build/audio/clean/verify 全部照常（本次 57 个文件 5.8 MB 全数取回，
+    43 张地图与 `MapInfos` 完全对齐）。
+  - `detect.is_web_root()` 仍要求磁盘上有 `data/`（继续 fail loudly 是对
+    的），所以流程是「先 unpack EVB 还原 `data/`，再 build」。
+  - 别把工具自身的容器当成数据库：`version.dll` 的 102 MB 尾巴是预分配填
+    充（99.8% 同一重复字节）、`Tool/www`（168 文件）MZ 标记命中 0、
+    `TrsData*.bin`（两份逐字节相同）已加密不可当 prefill 字典 harvest ——
+    这些都不是 `data/`，真正的位置在 `Game.exe`。
+- 此类包的资源是 MZ easy 加密形态（`*.png_`/`*.ogg_` + 16 字节 RPGMV 头）
+  而 `js/` 未被改名 —— 后缀 `_` 是**引擎加密**，不是 repacker 改名，别按
+  改名逻辑去剥。
 - 某开发者的 MV 游戏**加密**资源（`.rpgmvp`/`.rpgmvo`，密钥在
   `data/System.json`）。它们跨游戏共享**公共资源库**（
   `img/faces/main_cha.png`、`img/tilesets/001_Particle.png`、`fsm_*`

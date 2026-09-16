@@ -27,8 +27,9 @@ class TestWebRootDetection:
         assert detect.find_web_root(str(tmp_path)) is None
 
     def test_engine_without_data_is_not_a_web_root(self, tmp_path):
-        # MTool-style launcher repack: index.html + js/ at the root, but the
-        # game database lives in the tool's own pack (Tool/www/data).
+        # Launcher repack: index.html + js/ at the root, but the game
+        # database is packed inside <Game>.exe (Enigma Virtual Box), so the
+        # folder is not a web root until it is extracted from the exe.
         root = tmp_path / "mtool_repack"
         (root / "js").mkdir(parents=True)
         (root / "index.html").write_text("<html></html>", encoding="utf-8")

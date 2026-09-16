@@ -62,7 +62,7 @@ class TestLocalize:
 
     def test_wsl_native_passthrough(self, monkeypatch):
         monkeypatch.setattr(config, "is_wsl", lambda: True)
-        assert config.localize("/tmp/opencode") == "/tmp/opencode"
+        assert config.localize("/tmp/gametrans") == "/tmp/gametrans"
         assert config.localize("3rd/7zz") == "3rd/7zz"
 
     def test_win32_mnt_form_converted(self, monkeypatch):
@@ -485,9 +485,9 @@ class TestDeliverable:
         assert config._probe_deliverable("games") is None
 
     def test_temp_native_posix(self, monkeypatch, tmp_path):
-        self._cfg(monkeypatch, tmp_path, {"temp": "/tmp/opencode"})
+        self._cfg(monkeypatch, tmp_path, {"temp": "/tmp/gametrans"})
         monkeypatch.setattr(config, "is_wsl", lambda: True)
-        assert config.temp_dir() == "/tmp/opencode"
+        assert config.temp_dir() == "/tmp/gametrans"
 
     def test_win_temp_localized(self, monkeypatch, tmp_path):
         self._cfg(monkeypatch, tmp_path,
@@ -498,7 +498,7 @@ class TestDeliverable:
     def test_temp_nested_dict_persist_on_wsl(self, monkeypatch, tmp_path):
         self._cfg(monkeypatch, tmp_path,
                   {"temp": {"persist": "/home/me/forge/tmp",
-                            "tmpfs": "/tmp/opencode",
+                            "tmpfs": "/tmp/gametrans",
                             "win32": "%LOCALAPPDATA%/Temp"}})
         monkeypatch.setattr(config, "is_wsl", lambda: True)
         assert config.temp_dir() == "/home/me/forge/tmp"
@@ -506,7 +506,7 @@ class TestDeliverable:
     def test_temp_nested_dict_win32_on_windows(self, monkeypatch, tmp_path):
         self._cfg(monkeypatch, tmp_path,
                   {"temp": {"persist": "/home/me/forge/tmp",
-                            "tmpfs": "/tmp/opencode",
+                            "tmpfs": "/tmp/gametrans",
                             "win32": "C:/Temp"}})
         monkeypatch.setattr(config, "is_wsl", lambda: False)
         assert config.temp_dir() == "C:/Temp"
@@ -514,7 +514,7 @@ class TestDeliverable:
     def test_temp_nested_dict_win_temp_dir(self, monkeypatch, tmp_path):
         self._cfg(monkeypatch, tmp_path,
                   {"temp": {"persist": "/home/me/forge/tmp",
-                            "tmpfs": "/tmp/opencode",
+                            "tmpfs": "/tmp/gametrans",
                             "win32": "C:/Temp"}})
         monkeypatch.setattr(config, "is_wsl", lambda: True)
         assert config.win_temp_dir() == "/mnt/c/Temp"
@@ -523,7 +523,7 @@ class TestDeliverable:
                                                       tmp_path):
         self._cfg(monkeypatch, tmp_path, {})
         monkeypatch.setattr(config, "is_wsl", lambda: True)
-        assert config.temp_dir() == "/tmp/opencode"
+        assert config.temp_dir() == "/tmp/gametrans"
 
 
 class TestLoadEnvConfig:

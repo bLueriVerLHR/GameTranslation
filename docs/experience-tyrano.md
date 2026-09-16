@@ -213,11 +213,21 @@ promise 被拒时挂一次性 click/touchstart/keydown 监听，首次用户交�
    `parse error`——而且 **HEAD 版本也报**），真正的语法门禁是**组装产物**
    `tyrano/plugins/kag/kag.tag_kag3shim.js`。别把片段文件的解析失败
    当成自己改错了（血泪：白查了一轮）。
-6. **触发跳转的那次点击会继续传播。** KAG3 `[jump]` 是同步的 `process()`：
-   点击事件还没走完，新场景已把点击层 / `[p]` 配好，于是同一次点击被新画面
-   又消费一遍（实观：进鉴赏自动进第一个 CG、进回想第一句被跳过）。固定做法：
-   跳转后给一个短冷却（垫片用 300 ms），在捕获 + 冒泡两个阶段吞掉点击，
-   并清掉继承来的 weak-stop 状态（`cancelWeakStop()` / `is_click_text`）。
+6. **换屏后第一条文本被吃掉：一次手势只能满足一个等待。** KAG3 `[jump]` 是
+   同步的 `process()`，点击事件还没走完，新场景已把点击层 / `[p]` 配好，于是
+   同一次点击被新画面又消费一遍（实观：进鉴赏自动进第一个 CG、进回想第一句
+   被跳过）。名字就写着语义：`nextOrder()` = 让当前 order 前进一格，**不是**
+   每个输入事件推进一次；被违反的不变量是「一次物理手势最多满足一个等待」。
+   正确做法是**状态边界**而非时长：跳转时升起输入屏障，新屏完成一次绘制
+   （`requestAnimationFrame` + 一个任务边界）后落下；屏障期间在捕获阶段
+   （关键事件再加冒泡）吞掉**该手势的整个尾巴**——mouseup / click / touchend
+   / pointerup / keyup 一律覆盖，因此**不必枚举事件类型**，也就没有毫秒常量。
+   `keydown` 有意排除：它负责开系统菜单与选选项，不推进文本。
+   反面证据：初版猜了个 300 ms 冷却且只覆盖 `mousedown`+`click`，于是触摸路径
+   （WebView/JoiPlay 的主路径）与初始化慢的屏漏了出去，还会吞掉玩家正常快速
+   点击。另：**推进的调用点不可枚举**（十余个模块、数百处，且含引擎内核自带
+   的 handler），所以屏障要么放在唯一收口，要么放在输入层——不要逐路径补。
+   顺带清掉继承来的 weak-stop 状态（`cancelWeakStop()` / `is_click_text`）。
 7. **`[rclick]` 的“系统菜单默认”原本是显式 no-op，现已补上浮层菜单。**
    原注释：Plain `[rclick enabled=true]`（无 jump）是系统菜单默认、注册成
    null —— “the port has no system menu overlay”，于是剧情里**根本没有

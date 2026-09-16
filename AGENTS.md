@@ -230,21 +230,16 @@ docs/table/
    处理，在 Windows 侧就用 Windows 处理，只搬运必要的最小数据（优先
    单个压缩包）。**当前研究重点：打造一套 WSL 内的工具链**（解包/
    解码/转换），减少对 Windows 侧工具的依赖。
-6. **截图 = WSL 内控制外部应用（mandatory）**：需要验证画面时，由 WSL
-   内脚本（如 `tools/wsl_capture.py`）控制外部浏览器/应用执行对应操作
-   （启动、点击、推进）后对窗口截图；**无法完成的截图/操作任务必须
+6. **截图 = agent_browser（mandatory）**：需要验证画面时用 `agent_browser`
+   打开并操作页面（点击/推进/填表）后截图；**无法完成的截图/操作任务必须
    停下请求 owner 参与**，不得假装完成。
 
-## 运行验证截图（窗口级，2026-08 定案）
+## 运行验证截图（2026-08 定案，2026-09 改用 agent_browser）
 
-需要截取**指定 app 窗口**（游戏运行画面、对话框、报错弹窗）时用
-`tools/wsl_capture.py`（自动部署 `tools/capture_window.ps1` 到 Windows
-临时目录；窗口自动移入可视区 + PrintWindow 捕获，被遮挡也能截）。
-**操作步骤（点击/推进/输入）由 WSL 内脚本控制外部应用执行**（如
-PowerShell `AppActivate` + SendKeys、浏览器 CDP/命令行参数），操作后
-再截图；无法自动化的步骤停下请 owner 手动完成并告知。
-完整流程/前提/排查见 `docs/screenshot.md`；截图后**用当前 harness 可用的
-视觉路径读图**（本工具库的主模型支持图片输入，可直接把 PNG 交给 `read`
+需要验证画面时用 `agent_browser`（打开、点击、填表、推进、截图一体），
+**不自建窗口截图工具**；无法自动化的步骤停下请 owner 手动完成并告知。
+截图后**用当前 harness 可用的视觉路径读图**（本工具库的主模型支持图片输入，
+可直接把 PNG 交给 `read`
 工具；若某次运行的模型确实没有视觉能力，就把路径交给 owner 并明确说明
 「未能完成视觉验证」，绝不得假装完成）。互操作失效（`WSLInterop` binfmt
 条目缺失）时的修复命令也写在 docs/screenshot.md。

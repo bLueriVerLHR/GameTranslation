@@ -120,7 +120,7 @@ def _run_powershell(command):
 
     Thin alias over config.run_powershell so the interpreter lookup, the
     cross-system failure hint and the exit-code handling live in one place
-    (shared with tools/wsl_capture.py).
+    (shared with the WSL bridge in rpgmaker/config.py).
     """
     return config.run_powershell(command)
 

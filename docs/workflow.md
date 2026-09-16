@@ -81,7 +81,7 @@
 ```powershell
 $tk  = "<本工具库路径>"                 # 如本仓库目录
 $src = "C:\path\to\game"                 # 原版游戏目录 — 绝不修改
-$out = "$env:LOCALAPPDATA\Temp\opencode\game"   # Temp 工作目录（之后可删）
+$out = Join-Path $env:TEMP 'game'              # Temp 工作目录（之后可删）
 
 python $tk\pipeline.py build   $src -o $out
 python $tk\pipeline.py compat  $out          # NW.js-only 插件检查定点维修 + 预扫

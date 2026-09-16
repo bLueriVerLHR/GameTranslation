@@ -143,3 +143,32 @@ class TestBuildKsSmoke:
         with pytest.raises(typer.Exit) as exc:
             ks.build(str(root), str(tmp_path / "w"), None, None)
         assert exc.value.exit_code == 1
+
+    def test_code_block_bodies_never_become_keys(self, tmp_path):
+        import build_ks_translation as ks
+        root = tmp_path / "g"
+        sc_dir = root / "scenario"
+        # Both dialects in one file, plus the line numbers of the surviving
+        # lines (the write-back step keys on them, so they must stay true to
+        # the source even when lines are dropped).
+        write(str(sc_dir / "start.ks"),
+              "*start\n"              # 1
+              "ようこそ。[l]\n"        # 2
+              "[iscript]\n"            # 3
+              "var x = 1;\t// 本文ではない\n"   # 4
+              "// コメント\n"           # 5
+              "[endscript]\n"          # 6
+              "@iscript\n"             # 7
+              "var y = 2;\t// @ 方言のコード\n"  # 8
+              "@endscript\n"           # 9
+              "本文の続き。[l]\n")     # 10
+        work = tmp_path / "w"
+        n = ks.build(str(root), str(work), None, None)
+        assert n == 2
+        tpl = json.load(open(str(work / "template.json"), encoding="utf-8"))
+        assert "ようこそ。[l]" in tpl and "本文の続き。[l]" in tpl
+        assert not [k for k in tpl if "var " in k or k.startswith("//")]
+        struct = json.load(open(str(work / "structure.json"), encoding="utf-8"))
+        items = [i for m in struct["maps"] for i in m["items"]
+                 if i["key"] == "本文の続き。[l]"]
+        assert items and items[0]["line"] == 10

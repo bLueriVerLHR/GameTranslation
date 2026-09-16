@@ -18,8 +18,9 @@ merge_plain_chunks -> merge_translation) translates it unchanged:
 Keys are the STRIPPED .ks lines with tags and text="..." attributes kept
 in place - translating a key means translating the Japanese fragments
 inside it and keeping every tag byte-for-byte (same contract as RPG Maker
-control codes).  Label lines ("*.."), comment lines (";..") and lines with
-unbalanced brackets are never extracted.
+control codes).  Label lines ("*.."), comment lines (";.."), raw TJS/JS
+code blocks ("[iscript]"/"@iscript" .. "[endscript]"/"@endscript") and
+lines with unbalanced brackets are never extracted.
 
 Story order: scenario files are traced from the entry file (default
 start.ks) through [call]/[jump]/[next] storage references; unreferenced
@@ -39,8 +40,9 @@ from typing import Annotated, Optional
 import typer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from kirikiri.ks_extract import (display_text, load_ks, scenario_storage_refs,
-                                 split_line, translatable_segments)  # noqa: E402
+from kirikiri.ks_extract import (display_text, iter_candidate_lines, load_ks,
+                                 scenario_storage_refs, split_line,
+                                 translatable_segments)  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import scenario_common  # noqa: E402
 
@@ -103,12 +105,12 @@ def extract_file(path, name, tpl, kinds, ctx, items):
     """One .ks file: fill template/kinds/context entries and structure items.
     Returns the count of extracted lines."""
     text, _enc = load_ks(path)
-    lines = text.splitlines()
     hits = []
-    for idx, raw in enumerate(lines, start=1):
+    # iter_candidate_lines owns the "what is text" rules (comments, `*`
+    # labels, [iscript]/@iscript code blocks); the per-line checks below only
+    # add tag-pairing and Japanese-content judgements.
+    for idx, raw in iter_candidate_lines(text, name):
         line = raw.strip()
-        if not line or line.startswith("*") or line.startswith(";"):
-            continue
         segments, balanced = split_line(line)
         if not balanced or not translatable_segments(segments):
             continue

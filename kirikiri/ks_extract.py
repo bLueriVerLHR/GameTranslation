@@ -8,6 +8,7 @@ treated as untranslatable so a broken key can never corrupt a jump target
 or a control code.
 """
 
+import logging
 import os
 import re
 import sys
@@ -15,6 +16,8 @@ import sys
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
 import japanese_utils  # noqa: E402
+
+log = logging.getLogger("kirikiri.ks_extract")
 
 # Kana (incl. half-width katakana) marks Japanese text.  CJK kanji alone is
 # not enough (Chinese shares the block), so residuals are checked with KANA.
@@ -56,17 +59,28 @@ CODE_STMT = re.compile(
     r"break|continue|console|delete|new|try|catch|finally|throw|do)\b"
     r"|^\s*(?:sf|f|tf|mp)\.[^\s=]*\s*=[^=]"
     r"|^\s*[}{]")
-CODE_BLOCK_OPEN = re.compile(r"\[(?:iscript|script|tb_start_tyrano_code)\b")
-CODE_BLOCK_CLOSE = re.compile(r"\[(?:endscript|_tb_end_tyrano_code)\b")
+# KAG3 also has a bracketless short-tag dialect that writes the very same
+# tags as `@iscript` / `@endscript` (alongside `@cg file=..`, `@playbgm ..`).
+# Measured on one KAG3 title: 1556 lines sit inside such blocks and 429 of
+# them carry Japanese (plugin comments, inline remarks, Japanese identifiers).
+# Recognising only the bracketed form fed that raw TJS straight into the
+# translation template while the QC - which shares this helper - scanned the
+# same code for "residual kana", i.e. both ends were wrong in opposite
+# directions.  Only 17 Japanese string literals live inside those blocks for
+# the same title (15 developer warnings from two plugins plus 2 volume-menu
+# labels), so dropping whole blocks loses no dialogue.
+CODE_BLOCK_OPEN = re.compile(r"(?:\[|@)(?:iscript|script|tb_start_tyrano_code)\b")
+CODE_BLOCK_CLOSE = re.compile(r"(?:\[|@)(?:endscript|_tb_end_tyrano_code)\b")
 
 
-def iter_display_lines(text):
-    """Yield (line_number, line) for every line that may carry display text.
+def iter_candidate_lines(text, where=None):
+    """Yield (line_number, line) for every line a translator could own.
 
-    Skips comments, `*` label lines, raw TJS/JS code blocks and code
-    statements, and strips variable references (`&f.name`) from what is
-    yielded.  A kana check built on this sees only text a translator is
-    allowed to touch, so identifiers never show up as false "residuals".
+    Shared by the extractor and the QC so both agree on what counts as text:
+    raw TJS/JS blocks (`[iscript]`/`@iscript` .. `[endscript]`/`@endscript`),
+    `;` comment lines and `*` label lines are dropped.  Line numbers are
+    1-based and match the source file, which is what the write-back step
+    keys on, so a dropped line is never renumbered.
     """
     in_code = False
     for idx, raw in enumerate(text.split("\n"), start=1):
@@ -75,12 +89,33 @@ def iter_display_lines(text):
             if CODE_BLOCK_CLOSE.search(s):
                 in_code = False
             continue
-        if CODE_BLOCK_OPEN.search(s):
-            in_code = True
-            continue
+        # A `;` line is a comment: it cannot open a code block even when it
+        # documents one (`;[iscript]`).  Checked before the opener so a
+        # commented-out tag can never swallow the rest of the file.
         if not s or s.startswith("*") or s.startswith(";"):
             continue
-        if CODE_STMT.match(s):
+        if CODE_BLOCK_OPEN.search(s):
+            # `[iscript] ... [endscript]` on one line opens and closes at once.
+            in_code = not CODE_BLOCK_CLOSE.search(s)
+            continue
+        yield idx, raw
+    if in_code:
+        log.warning("%s: unterminated code block (opened by [iscript] or "
+                    "@iscript); every line after the opener was skipped - "
+                    "check the file for an unclosed script block",
+                    where or "<text>")
+
+
+def iter_display_lines(text, where=None):
+    """Yield (line_number, line) for every line that may carry display text.
+
+    Skips comments, `*` label lines, raw TJS/JS code blocks and code
+    statements, and strips variable references (`&f.name`) from what is
+    yielded.  A kana check built on this sees only text a translator is
+    allowed to touch, so identifiers never show up as false "residuals".
+    """
+    for idx, raw in iter_candidate_lines(text, where):
+        if CODE_STMT.match(raw.strip()):
             continue
         yield idx, VAR_REF.sub("", raw)
 

@@ -46,10 +46,11 @@ def make_build(root, system=None, animation_name="Anim", note_body="",
     return root
 
 
-def make_map(root, commands, name="Map001.json"):
+def make_map(root, commands, name="Map001.json", display_name=None):
     """Write one map whose single page holds exactly ``commands``."""
     _dump(os.path.join(root, "data", name),
-          {"displayName": ZH_TEXT, "events": [
+          {"displayName": ZH_TEXT if display_name is None else display_name,
+           "events": [
               {"id": 1, "name": "Ev1", "note": "",
                "pages": [{"list": commands}]}]})
     return root
@@ -200,6 +201,37 @@ def test_placeholder_parity_ok_when_equal(tmp_path):
     source = make_build(str(tmp_path / "src"))
     make_map(source, [[401, 0, "\u30c0\u30e1\u30fc\u30b8 %1"]])
     assert qc.scan(build, source_dir=source)["placeholder"] == []
+
+
+def test_identical_kanji_only_values_are_review_only(tmp_path, capsys):
+    """A kanji-only Japanese word survives every kana check - review it."""
+    build = make_build(str(tmp_path))
+    make_map(build, [[401, 0, "\u8cfc\u8cb7"], [401, 0, "\u4f24\u5bb3 %1"]],
+             name="Map004.json", display_name="\u7b2c\u4e00\u8a71")
+    source = make_build(str(tmp_path / "src"), system={"gameTitle": "\u539f\u984c"})
+    make_map(source, [[401, 0, "\u8cfc\u8cb7"],
+                      [401, 0, "\u30c0\u30e1\u30fc\u30b8 %1"]], name="Map004.json",
+             display_name="\u8857")
+    findings = qc.scan(build, source_dir=source)
+    assert [entry[2] for entry in findings["identical"]] == ["\u8cfc\u8cb7"]
+    # never a failure: shared-form names are legitimately identical
+    assert qc.main([build, "--source", source]) == 0
+    assert "review only" in capsys.readouterr().out
+
+
+def test_identical_ignores_ascii_labelled_branch_names(tmp_path):
+    build = make_build(str(tmp_path))
+    text = "en(v[12]>=1)\u6839\u5cb8\u91cc\u7f8e\u3000if(!s[222])"
+    make_map(build, [[402, 0, 1, text]], name="Map005.json")
+    source = make_build(str(tmp_path / "src"), system={"gameTitle": "\u539f\u984c"})
+    make_map(source, [[402, 0, 1, text]], name="Map005.json", display_name="\u8857")
+    assert qc.scan(build, source_dir=source)["identical"] == []
+
+
+def test_identical_not_reported_without_source(tmp_path):
+    build = make_build(str(tmp_path))
+    make_map(build, [[401, 0, "\u8cfc\u8cb7"]], name="Map006.json")
+    assert qc.scan(build)["identical"] == []
 
 
 # ------------------------------------------------------- plugin inventory

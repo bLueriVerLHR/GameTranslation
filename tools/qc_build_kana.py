@@ -22,7 +22,13 @@ Classification of what **must** be translated is deliberate:
   ``name`` of Animations/CommonEvents/MapInfos/Tilesets, and every ``note``
   field (it carries plugin commands, not prose);
 * ``allow_kana.json`` from the translation workspace (author names, fixed
-  spellings) is honoured when ``--work`` is given.
+  spellings) is honoured when ``--work`` is given;
+* with ``--source``, build strings that are **byte-identical to the original
+  and kana-free** are listed as a *review* section, never as a failure: a
+  kanji-only Japanese word (``購買``, ``塩味``) survives both this scan and the
+  library kana gate, so an identity value is the only place an untranslated
+  word can hide.  Shared-form names (``根岸里美``) are legitimately identical,
+  which is why this list is reported rather than enforced.
 
 Plugin parameters (``js/plugins.js``) are reported as an **inventory**, never
 as a pass/fail: builds that exclude them from translation by decision must
@@ -50,12 +56,29 @@ log = logging.getLogger("qc_build_kana")
 #: katakana letters.  See the docstring for why the mark/dot stay out.
 KANA = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\u30fd"
                   r"\uff66-\uff6f\uff71-\uff9d]")
+CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
 PLACEHOLDER = re.compile(r"%\d")
 
 #: Command codes that never carry display text.
 COMMENT_CODES = (108, 408)
-#: Command codes whose string parameters are logic payload or raw script.
-LOGIC_CODES = (111, 355, 356, 655)
+#: Command codes whose string parameters are logic payload or raw script:
+#: 111 conditional branch (answer string / script operand), 355 script,
+#: 356 menu-command plugin text, 655 script continuation, 657 plugin-command
+#: parameter echo (the editor's own `key = value` dump; the engine reads the
+#: structured arguments of 357 instead, so translating it does nothing),
+#: 205 set movement route (``forceMoveRoute(params[1])``: route steps and
+#: script snippets) and 505 its editor echo.  Verified against the build's
+#: own rmmz_objects.js.
+LOGIC_CODES = (111, 205, 355, 356, 505, 655, 657)
+#: Commands whose string parameters are **look-up keys**, not text: a jump
+#: finds its label by exact name, so translating one breaks the jump.
+LOOKUP_CODES = (118, 119)                  # Label / Jump to Label
+#: Fields that hold asset names (file stems the engine resolves on disk).
+ASSET_FIELDS = frozenset(["characterName", "faceName", "battlerName"])
+#: Commands whose strings are asset names: play/change BGM, BGS, ME, SE, show
+#: picture (``parameters[1]``) and 284 Change Parallax (``parameters[0]`` is
+#: the parallax file name - verified in rmmz_objects.js).  None renders text.
+ASSET_CODES = (132, 133, 134, 231, 241, 245, 249, 250, 284)
 #: Fields that hold editor-internal names (never shown to the player).
 INTERNAL_NAME_FIELDS = frozenset([
     ("Animations.json", "name"), ("CommonEvents.json", "name"),
@@ -152,12 +175,30 @@ def classify(file_name, trail, text, code, allow_list):
     """``"allowed"`` / ``"by-design"`` / ``"unexpected"`` for one residue hit."""
     if is_allowed(text, allow_list):
         return "allowed"
-    if code is not None and (code in COMMENT_CODES or code in LOGIC_CODES):
+    if code is not None and (code in COMMENT_CODES or code in LOGIC_CODES
+                             or code in LOOKUP_CODES or code in ASSET_CODES):
         return "by-design"
     field = field_name(trail)
-    if (file_name, field) in INTERNAL_NAME_FIELDS or field == NOTE_FIELD:
+    if field in ASSET_FIELDS or (file_name, field) in INTERNAL_NAME_FIELDS \
+            or field == NOTE_FIELD:
         return "by-design"
     return "unexpected"
+
+
+def is_identity_display(text):
+    """Is this a kana-free CJK-only display string (so identity may be a miss)?
+
+    Branch labels carry a name plus ASCII code (``en(v[12]>=1)根岸里美``):
+    those are correctly identical and would drown the list, so a string with
+    ASCII letters is not reported.
+    """
+    if not CJK.search(text):
+        return False
+    if KANA.search(text):        # a kana hit is already reported as residue
+        return False
+    if re.search(r"[A-Za-z]", text):
+        return False
+    return len(re.sub(r"[\s\u3000]", "", text)) >= 2
 
 
 def source_strings(source_dir, file_name):
@@ -182,7 +223,7 @@ def scan(build_dir, source_dir=None, work_dir=None, plugin_scan=True):
             "not an MZ/MV build (no data/System.json): %s" % build_dir)
     allow_list = load_allow_list(work_dir)
     findings = {"unexpected": [], "by_design": [], "allowed": [],
-                "placeholder": [], "files": 0, "strings": 0}
+                "placeholder": [], "identical": [], "files": 0, "strings": 0}
     for file_name in sorted(os.listdir(data_dir)):
         if not file_name.endswith(".json"):
             continue
@@ -209,7 +250,11 @@ def scan(build_dir, source_dir=None, work_dir=None, plugin_scan=True):
             original = source_strings(source_dir, file_name)
             for trail, text, _code in strings:
                 key = original.get(trail)
-                if key is None or not PLACEHOLDER.search(key):
+                if key is None:
+                    continue
+                if is_identity_display(text) and key == text:
+                    findings["identical"].append((file_name, trail, text))
+                if not PLACEHOLDER.search(key):
                     continue
                 if sorted(PLACEHOLDER.findall(key)) != sorted(PLACEHOLDER.findall(text)):
                     findings["placeholder"].append((file_name, trail, key, text))
@@ -276,7 +321,9 @@ def report(findings, limit=25, stream=None):
         stream.write("      %s\n" % repr(text[:90]))
     if len(unexpected) > limit:
         stream.write("   ... %d more\n" % (len(unexpected) - limit))
-    stream.write("placeholder (%%N) mismatches: %d\n" % len(placeholders))
+        stream.write("placeholder (%%N) mismatches: %d\n" % len(placeholders))
+    stream.write("identical to source (kana-free CJK, review only): %d\n"
+                 % len(findings.get("identical", [])))
     for file_name, trail, japanese, translated in placeholders[:limit]:
         stream.write("   %s %s\n      ja=%s\n      zh=%s\n"
                      % (file_name, trail[-60:], repr(japanese[:70]),
@@ -287,6 +334,12 @@ def report(findings, limit=25, stream=None):
                      "%d kana string(s)\n" % plugins["strings"])
         for where, text in plugins["samples"][:limit]:
             stream.write("   INFO %s = %s\n" % (where, repr(text[:70])))
+    for file_name, trail, text in findings.get("identical", [])[:limit]:
+        stream.write("   IDENTICAL %s %s = %s\n"
+                     % (file_name, trail[-45:], repr(text[:70])))
+    if len(findings.get("identical", [])) > limit:
+        stream.write("   ... %d more\n"
+                     % (len(findings["identical"]) - limit))
     for file_name, message in findings.get("unreadable", []):
         stream.write("   UNREADABLE %s: %s\n" % (file_name, message))
     problems = len(unexpected) + len(placeholders) \

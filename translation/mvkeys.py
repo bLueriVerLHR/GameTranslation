@@ -41,7 +41,8 @@ from . import codes as codes_mod
 from .codes import CJK_RE, KANA_RE, code_key, parse_codes
 
 __all__ = ["extract", "load_keys", "text_codes", "extra_text_codes",
-           "is_command", "command_code", "speaker_of", "is_candidate"]
+           "is_command", "command_code", "speaker_of", "is_candidate",
+           "note_payloads", "DEFAULT_NOTE_TAGS"]
 
 #: Command codes whose first parameter is displayed text.
 TEXT_CODES = (401, 405)
@@ -145,7 +146,8 @@ def extra_text_codes(command):
 
 
 #: Database files and the fields that hold displayed text.  `note` is
-#: deliberately absent: it carries plugin commands, not prose.
+#: deliberately absent *as a whole*: it carries plugin commands and embedded
+#: JSON, not prose.  A few tags inside it are different - see `note_payloads`.
 DB_FIELDS = OrderedDict([
     ("Actors.json", ("name", "nickname", "profile")),
     ("Classes.json", ("name",)),
@@ -172,8 +174,46 @@ _PATH_RE = re.compile(
 _SCRIPTISH_RE = re.compile(
     r"=>|function\s*\(|\$data|\bthis\.|\breturn\b|;\s*$|\{\s*$", re.M)
 
+#: Plugin note tags whose payload is *display text* rather than configuration.
+#: Most ``note`` content is functional (plugin tags, embedded JSON, lookup
+#: keys), which is why the field is skipped - but some plugins render their tag
+#: payload verbatim, and those payloads are player-visible:
+#:   * ``<拡張説明:...>`` (DescriptionExtend) appends the text to the help window;
+#:   * ``<itemCategory:...>`` (TMItemCategoryEx) becomes an item-menu category
+#:     label - and is *matched* against a plugin parameter
+#:     (``Window_ItemList.includes`` compares ``item.meta.itemCategory`` with the
+#:     category tab symbol), so translating only one side makes the items
+#:     disappear from the menu altogether.
+#: The allowlist is passed in by the caller (``prepare --note-tags``); nothing
+#: game-specific is hardcoded here.
+DEFAULT_NOTE_TAGS = ()
+
+#: ``<tag:payload>`` - the tag name may not hold ``:``/``<``/``>``/space.
+_NOTE_TAG_RE = re.compile(r"<([^<>:\s][^<>:]*):([^<>]*)>")
+
 #: Version of the JSONL contract; bumped when a field's meaning changes.
 SCHEMA = 2
+
+
+def note_payloads(note, tags):
+    """The display payloads of allowlisted note tags.
+
+    Returns ``[(tag, occurrence, payload)]`` where ``occurrence`` counts
+    previous matches of the *same* tag in this note, so the derived id stays
+    unique and stable even when a note repeats a tag.
+    """
+    out = []
+    if not isinstance(note, str) or not note or not tags:
+        return out
+    seen = defaultdict(int)
+    wanted = set(tags)
+    for match in _NOTE_TAG_RE.finditer(note):
+        tag, payload = match.group(1), match.group(2)
+        if tag not in wanted:
+            continue
+        out.append((tag, seen[tag], payload))
+        seen[tag] += 1
+    return out
 
 
 def is_command(command):
@@ -426,7 +466,8 @@ def _read_json(path):
         return json.load(handle)
 
 
-def _collect_maps(collector, game_dir, data_dir):
+def _collect_maps(collector, game_dir, data_dir, note_tags=()):
+    note_tags = tuple(note_tags or ())
     for map_id in _map_order(data_dir):
         path = os.path.join(data_dir, "Map%03d.json" % map_id)
         if not os.path.isfile(path):
@@ -444,6 +485,15 @@ def _collect_maps(collector, game_dir, data_dir):
             if not event:
                 continue
             event_name = event.get("name") or "event%d" % event_index
+            # Event notes carry plugin tags too, and at least one of them
+            # (a map label drawn above the event) is displayed text.
+            for tag, occurrence, payload in note_payloads(event.get("note"),
+                                                          note_tags):
+                collector.add(
+                    "%s#events[%d].note#%s[%d]" % (rel, event_index, tag,
+                                                    occurrence),
+                    "ui", "%s / %s / note<%s>" % (title, event_name, tag),
+                    payload, "%s#events[%d]" % (rel, event_index))
             for page_index, page in enumerate(event.get("pages") or []):
                 base = "events[%d].pages[%d].list" % (event_index, page_index)
                 stream = "%s#%s" % (rel, base)
@@ -482,7 +532,8 @@ def _collect_troops(collector, data_dir):
                        "data/Troops.json#%s" % base)
 
 
-def _collect_db(collector, data_dir):
+def _collect_db(collector, data_dir, note_tags=()):
+    note_tags = tuple(note_tags or ())
     for filename, fields in DB_FIELDS.items():
         path = os.path.join(data_dir, filename)
         if not os.path.isfile(path):
@@ -495,6 +546,12 @@ def _collect_db(collector, data_dir):
             collector.note_db_name(record.get("name"))
             if filename == "Actors.json" and record.get("name"):
                 collector.actors[index + 1] = record["name"]
+            for tag, occurrence, payload in note_payloads(record.get("note"),
+                                                          note_tags):
+                collector.add(
+                    "%s#[%d].note#%s[%d]" % (rel, index, tag, occurrence),
+                    "db", "%s/note<%s>" % (label, tag), payload,
+                    "%s#[%d]" % (rel, index))
             for field in fields:
                 text = record.get(field)
                 if isinstance(text, list):
@@ -567,16 +624,22 @@ def _collect_plugins(collector, game_dir):
                           "js/plugins.js#[%d]" % index)
 
 
-def extract(game_dir, work_dir, window=2):
-    """Extract every translatable string, write the work dir, return stats."""
+def extract(game_dir, work_dir, window=2, note_tags=DEFAULT_NOTE_TAGS):
+    """Extract every translatable string, write the work dir, return stats.
+
+    ``note_tags`` opts *specific* plugin note tags into extraction (payload
+    only, tag name untouched) - see ``note_payloads``.  Empty keeps notes as
+    functional data, which is the safe default.
+    """
+    note_tags = tuple(note_tags or ())
     data_dir = os.path.join(game_dir, "data")
     if not os.path.isdir(data_dir):
         raise FileNotFoundError("no data/ directory under %s" % game_dir)
     collector = _Collector(window=window)
-    _collect_maps(collector, game_dir, data_dir)
+    _collect_maps(collector, game_dir, data_dir, note_tags)
     _collect_common(collector, data_dir)
     _collect_troops(collector, data_dir)
-    _collect_db(collector, data_dir)
+    _collect_db(collector, data_dir, note_tags)
     _collect_system(collector, data_dir)
     _collect_plugins(collector, game_dir)
     entries = collector.result()
@@ -614,6 +677,7 @@ def extract(game_dir, work_dir, window=2):
         "skipped": dict(sorted(collector.skipped.items())),
         "names": len(names),
         "window": window,
+        "note_tags": list(note_tags),
     }
     with io.open(os.path.join(work_dir, "stats.json"), "w", encoding="utf-8",
                  newline="\n") as handle:

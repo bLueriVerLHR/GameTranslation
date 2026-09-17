@@ -36,18 +36,29 @@ from . import codes, mvkeys, prefill as prefill_mod, rawlib, workspace
 log = logging.getLogger(__name__)
 
 
+def _note_tag_list(raw):
+    """Split ``--note-tags`` into a tuple (comma-separated, order kept)."""
+    return tuple(tag.strip() for tag in (raw or "").split(",") if tag.strip())
+
+
 def prepare(
     game_dir: Annotated[str, cliutil.Argument(help="game directory (data/, js/)")],
     work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
     window: Annotated[int, cliutil.Option(
         "--window", help="context lines kept on each side of a key")] = 2,
+    note_tags: Annotated[str, cliutil.Option(
+        "--note-tags", help="comma-separated plugin note tags whose payload is "
+        "displayed text (e.g. a help-window extender or an item-category "
+        "label); the payload is extracted, the tag itself stays untouched. "
+        "Empty (default) keeps note fields functional-only")] = "",
     verbose: cliutil.Verbose = False,
     quiet: cliutil.Quiet = False,
     log_file: cliutil.LogFile = None,
 ) -> int:
     """Extract the key list and scaffold the workspace in one go."""
     cliutil.setup_logging(verbose, quiet, log_file)
-    stats = mvkeys.extract(game_dir, work_dir, window=window)
+    stats = mvkeys.extract(game_dir, work_dir, window=window,
+                           note_tags=_note_tag_list(note_tags))
     created = workspace.scaffold(work_dir, stats)
     log.info("keys: %d (%s)", stats["keys"],
              ", ".join("%s %d" % (k, v) for k, v in stats["by_kind"].items()))
@@ -61,13 +72,17 @@ def extract(
     work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
     window: Annotated[int, cliutil.Option(
         "--window", help="context lines kept on each side of a key")] = 2,
+    note_tags: Annotated[str, cliutil.Option(
+        "--note-tags", help="comma-separated plugin note tags whose payload is "
+        "displayed text; see the prepare command")] = "",
     verbose: cliutil.Verbose = False,
     quiet: cliutil.Quiet = False,
     log_file: cliutil.LogFile = None,
 ) -> int:
     """Extract every translatable string, in story order, into keys.jsonl."""
     cliutil.setup_logging(verbose, quiet, log_file)
-    stats = mvkeys.extract(game_dir, work_dir, window=window)
+    stats = mvkeys.extract(game_dir, work_dir, window=window,
+                           note_tags=_note_tag_list(note_tags))
     print(json.dumps(stats, ensure_ascii=False, indent=1))
     return 0
 

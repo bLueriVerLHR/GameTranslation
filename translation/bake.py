@@ -35,7 +35,8 @@ import shutil
 
 __all__ = ["BakeError", "UNIFIED_FONT", "parse_path", "set_by_path",
            "load_plugin_params", "save_plugin_params", "apply_font",
-           "apply_font_mz", "unify_plugin_fonts", "bake"]
+           "apply_font_mz", "unify_plugin_fonts", "bake", "parse_note_id",
+           "set_note_payload"]
 
 #: Unified Simplified-Chinese font (local private asset, never committed).
 UNIFIED_FONT = "GlowSansSC-Compressed-Regular.otf"
@@ -72,6 +73,14 @@ MZ_FONT_SWITCH_PLUGIN = re.compile(
 _NAME_TOKEN = re.compile(r"[^.\[\]]+")
 _INDEX_TOKEN = re.compile(r"\[(\d+)\]")
 _PLUGINS_RE = re.compile(r"(\[\s*\{.*\}\s*\])", re.S)
+
+
+#: A note-payload id: ``<db path>.note#<tag>[<occurrence>]``.  Notes are
+#: functional data, so `bake` rewrites the payload of one allowlisted tag -
+#: never the note as a whole (see ``mvkeys.note_payloads`` for why a few tag
+#: payloads are displayed text).
+_NOTE_ID_RE = re.compile(r"^(?P<base>.+\.note)#(?P<tag>[^#\[\]]+)"
+                         r"\[(?P<index>\d+)\]$")
 
 
 class BakeError(Exception):
@@ -145,6 +154,70 @@ def set_by_path(root, tokens, value):
             node = node[name]
         position += 1
     return False
+
+
+def parse_note_id(sub_path):
+    """``[12].note#itemCategory[0]`` -> ``('[12].note', 'itemCategory', 0)``."""
+    match = _NOTE_ID_RE.match(sub_path)
+    if not match:
+        raise BakeError("cannot parse note path %r" % (sub_path))
+    return match.group("base"), match.group("tag"), int(match.group("index"))
+
+
+def _get_parent(root, tokens):
+    """The container and final token ``tokens`` addresses (None when absent).
+
+    Mirrors :func:`set_by_path`'s handling of the array/object command duality
+    so a note payload reached through ``parameters[N]`` resolves the same way.
+    """
+    node = root
+    for position, (name, index) in enumerate(tokens):
+        last = position == len(tokens) - 1
+        if name == "parameters" and isinstance(node, list) and not last:
+            offset = tokens[position + 1][1]
+            if offset is None:
+                return None
+            node = node[2 + offset]
+            continue
+        if index is not None:
+            if not isinstance(node, list) or index >= len(node):
+                return None
+            if last:
+                return node, index
+            node = node[index]
+        else:
+            if not isinstance(node, dict) or name not in node:
+                return None
+            if last:
+                return node, name
+            node = node[name]
+    return None
+
+
+def set_note_payload(root, sub_path, text):
+    """Rewrite one note tag payload in place; True when it was changed.
+
+    Only the payload moves: the tag name (the plugin's lookup key) and every
+    other tag in the same note stay byte-identical.  A translation holding
+    ``<``/``>`` is refused rather than corrupting the tag syntax.
+    """
+    if "<" in text or ">" in text:
+        return False
+    base, tag, occurrence = parse_note_id(sub_path)
+    holder = _get_parent(root, parse_path(base))
+    if not holder:
+        return False
+    container, key = holder
+    note = container[key]
+    if not isinstance(note, str):
+        return False
+    pattern = re.compile(r"<" + re.escape(tag) + r":([^<>]*)>")
+    matches = list(pattern.finditer(note))
+    if occurrence >= len(matches):
+        return False
+    match = matches[occurrence]
+    container[key] = note[:match.start(1)] + text + note[match.end(1):]
+    return True
 
 
 def _font_switch_text(game_dir):
@@ -481,7 +554,10 @@ def bake(game_dir, work_dir, apply_unified_font=True, repo_root=None,
         changed = False
         for sub_path, text in entries.items():
             try:
-                ok = set_by_path(payload, parse_path(sub_path), text)
+                if "#" in sub_path:
+                    ok = set_note_payload(payload, sub_path, text)
+                else:
+                    ok = set_by_path(payload, parse_path(sub_path), text)
             except BakeError as error:
                 skipped.append(("%s#%s" % (rel, sub_path), str(error)))
                 continue

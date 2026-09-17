@@ -660,6 +660,7 @@ Android WebView/PixiJS 把 WebGL 贴图限制在**每边 4096 像素**；PNG 超
 
 ```
 python -m translation.cli prepare <game_dir> <work_dir>   # 提取 keys.jsonl + 控制码表 + 骨架 + MISSION.md
+                                                          # 可选 --note-tags A,B：插件把 note 标签载荷当文本显示时打开（见 docs/translation.md）
 python -m translation.cli slice <work_dir> --start N --count M --lean --out <file>
 python -m translation.cli append <work_dir> --batch <file> --fix-leading --note "..."
 python -m translation.cli pending|decide|status|rewrite|to-json|gates <work_dir>

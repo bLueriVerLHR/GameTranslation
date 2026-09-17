@@ -18,6 +18,7 @@
 
 ```
 python -m translation.cli prepare <game_dir> <work_dir>      # 提取 keys.jsonl + 控制码表 + 骨架 + MISSION.md
+                                                            # 可选 --note-tags A,B：把这两个插件 note 标签的载荷也提取（见下）
 python -m translation.cli slice  <work_dir> --start N --count M --lean --out <file>   # 取一批（lean=无前后文）
 python -m translation.cli slice  <work_dir> --count M --lean --todo --out <file>      # 只取还没译的键（预填后必用）
 python -m translation.cli prefill <work_dir> <runtime.json> [--out <batch>]            # 从随包运行时字典精确匹配预填
@@ -61,10 +62,35 @@ python -m translation.cli status  <work_dir>     # 看还剩多少
 | `401`/`405` 正文 | 消息文本（含续行） |
 | `102` 选项 + `402` 分支标签 | 选项列表与它的分支重复标签（两处都要译，否则插件显出日文） |
 | **`101` 参数[4] 名牌** | Show Text 的**说话人名栏**——只取 `parameters[0]` 会静默丢掉全部名牌（实测一款游戏 1,800+ 条、10k 个 id） |
+| **note 标签载荷**（`--note-tags`） | 插件把标签载荷当**文本**显示的才提取（如帮助窗扩展、道具分类页签名）；标签名本身不进键。默认关闭，见下 |
 | `357`/`657` 插件指令 | 只取**散文**参数：插件名/命令名/JSON 参数对象/路径/脚本片段一律丢弃。参数**对象内部**的字符串也算（`{"messageText": "叫び声が響く……"}` 是弹窗文本、`{"text": "Shift 键快进"}` 是界面提示）——只看顶层字符串会静默丢掉它们 |
 | DB | `name`/`nickname`/`profile`/`description`、Skills·Items·Weapons·Armors 的 `message1`/`message2`、States 的 `message1..4` |
 | System | `gameTitle`/`currencyUnit`/`types` 与 `terms`；**`switches`/`variables` 的名字**（变量窗口插件会把 `$dataSystem.variables[id]` 画在界面上，实测某款游戏的变量名就显示在那里） |
 | 不提取（有意） | 注释 `108`/`408`、`Animations`/`Tilesets`/`CommonEvents`/`MapInfos` 的 `name`（**编辑器内部名**，核实过无任何插件读取）、`note`（插件命令）、**657 插件命令续行**、**357 的 `parameters[2]`**（见下） |
+
+**note 标签载荷是显式开关（`--note-tags`，2026-09 定案）。** `note` 仍然
+**默认整体不提取**——里面绝大多数是插件命令、内嵌 JSON、按名查找的功能键，
+翻了会改坏行为。但少数插件把标签**载荷**原样显示，那是玩家可见文本；而且
+其中一类**只翻一边就直接弄坏功能**：道具分类插件把 `<itemCategory:…>` 与
+插件参数 `categoryList` 里的分类**按名逐字比较**（`Window_ItemList.includes`
+拿 `item.meta.itemCategory` 与页签 symbol 比），参数翻了、note 没翻 → 那批
+道具在任何分类里都不显示（不是「少翻一点」，是整批东西从菜单里消失）。所以：
+
+```
+python -m translation.cli prepare <game_dir> <work_dir> --note-tags 拡張説明,itemCategory
+```
+
+- 标签白名单**由调用者给出**，工具不硬编码游戏数据；清单记进 `stats.json`
+  的 `note_tags`。
+- 每个标签**每次出现**一个键，id 形如 `data/Items.json#[12].note#itemCategory[0]`
+  （DB 记录与地图事件的 note 都支持，事件的是
+  `data/Map172.json#events[1].note#LB[0]`；出现序号保证唯一/稳定）；`ja` 只是载荷，
+  标签名不进键。载荷不含假名/汉字（数字、坐标）时自动跳过。
+- `bake` 只替换**该次出现**的载荷，标签名与同一 note 里的其它标签逐字节不动；
+  译文含 `<`/`>` 会拒写并报 skip（避免毁掉标签语法）。
+- 翻这类键前先 `rg` 那个插件参数值：它多半同时又出现在 `data/*.json`（含
+  note）/事件注释里，**两边必须同译或同不译**（详见
+  [翻译经验](experience-translation.md) §8）。
 
 **357/657 —— 只取真正交给插件/玩家看的那一份（2026-09 定案）。** MZ 的
 插件命令在数据里存成三层：`357`（`[插件名, 命令名, @text, 参数对象]`）、

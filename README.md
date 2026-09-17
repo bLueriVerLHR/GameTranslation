@@ -128,6 +128,10 @@ GameTranslation/
 │   │                          #   （单一构建策略，替代旧 LowRes 变体；自动并行）
 │   ├── fix_mojibake_names.py  # 修复「Shift-JIS 名被按 CP936 解出」的乱码文件名
 │   │                          #   （引擎按原名加载，改名后才找得到；默认 dry-run）
+│   ├── fit_texture_4096.py    # 超限贴图的保正确处理：Aseprite 图集重排
+│   │                          #   （PNG+JSON 帧矩形同步改写，像素级无损）
+│   │                          #   与 IconSet 行边界裁剪（32px 网格不变）；
+│   │                          #   这两类机械缩放会破坏帧/图标寻址
 │   ├── gen_translation_shards.py # 切成双文件块：ja.txt + zh.txt + context.md
 │   │                             #   （自动选档：90KB 上下文预算，约 11k 字符/块）
 │   ├── gen_completion_shards.py  # 补翻流程分块（同布局、同尺寸；注入 tone.md）

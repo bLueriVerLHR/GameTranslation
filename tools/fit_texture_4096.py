@@ -37,7 +37,7 @@ import logging
 import math
 import os
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 from PIL import Image
 
@@ -58,13 +58,13 @@ APP = cliutil.app(help=__doc__)
 
 
 def _frame_list(data):
-    """Return (frames, is_dict); frames is the ordered Aseprite list."""
+    """Return the ordered Aseprite frame list, or None if frames is absent."""
     raw = data.get("frames")
     if isinstance(raw, dict):
-        return list(raw.values()), True
+        return list(raw.values())
     if isinstance(raw, list):
-        return raw, False
-    return None, False
+        return raw
+    return None
 
 
 def _grid_cells(frames):
@@ -96,12 +96,25 @@ def _grid_cells(frames):
 
 
 def _pick_columns(count, fw, fh, limit):
-    """Widest column count whose whole re-tiled grid fits ``limit``, else 0."""
-    for cols in range(max(limit // fw, 0), 0, -1):
+    """Widest column count whose whole re-tiled grid fits ``limit``, else 0.
+
+    Columns are capped at ``count`` so a small frame count can never pad
+    the re-tiled sheet with mostly-empty columns.
+    """
+    for cols in range(min(count, limit // fw), 0, -1):
         rows = math.ceil(count / cols)
         if cols * fw <= limit and rows * fh <= limit:
             return cols
     return 0
+
+
+def _load_json(path):
+    """Load a JSON file; raise ValueError carrying the underlying reason."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError) as exc:
+        raise ValueError(exc) from exc
 
 
 def _save_json(path, data):
@@ -140,10 +153,8 @@ def fix_atlas(web_root, limit, dry_run=False):
         with Image.open(png) as sheet_im:
             sheet = sheet_im.convert("RGBA")
         try:
-            data = _load_json_safe(js)
-            if data is None:
-                raise ValueError("sibling .json is not valid JSON")
-            frames, _ = _frame_list(data)
+            data = _load_json(js)
+            frames = _frame_list(data)
             if frames is None:
                 raise ValueError("frames is neither a list nor an object")
             grid = _grid_cells(frames)
@@ -189,24 +200,21 @@ def fix_atlas(web_root, limit, dry_run=False):
     return 1 if failures else 0
 
 
-def _load_json_safe(path):
-    try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return None
-
-
 def fix_iconset(web_root, limit, dry_run=False):
     """Crop img/system/IconSet.png to ``limit`` at a 32 px row boundary.
 
     Returns 0 on success/no-op, 1 when the sheet cannot be fixed by cropping
-    (width already beyond the cap).
+    (width already beyond the cap, or limit below the 32 px icon grid).
     """
     path = os.path.join(web_root, "img", "system", "IconSet.png")
     if not os.path.isfile(path):
         log.info("iconset: no img/system/IconSet.png; nothing to do")
         return 0
+    if limit < ICON_SIZE:
+        log.error("%s: limit %d is below the %d px icon grid; cropping "
+                  "would produce an empty sheet - left untouched",
+                  path, limit, ICON_SIZE)
+        return 1
     with Image.open(path) as im:
         w, h = im.size
         if max(w, h) <= limit:
@@ -228,38 +236,33 @@ def fix_iconset(web_root, limit, dry_run=False):
     return 0
 
 
-def _opts(limit, dry_run, verbose, quiet, log_file):
-    if limit is None:
-        limit = config.PNG_MAX_DIMENSION
-    cliutil.setup_logging(verbose, quiet, log_file)
-    return limit, dry_run
-
-
 @APP.command()
 def atlas(web_root: Annotated[str, typer.Argument(help="JoiPlay web root")],
-          limit: Annotated[Optional[int], typer.Option(
-              "--limit", help="per-side texture cap in px")] = None,
+          limit: Annotated[int, typer.Option(
+              "--limit", help="per-side texture cap in px")] =
+          config.PNG_MAX_DIMENSION,
           dry_run: Annotated[bool, typer.Option(
               "--dry-run", help="report only, don't modify")] = False,
           verbose: cliutil.Verbose = False,
           quiet: cliutil.Quiet = False,
           log_file: cliutil.LogFile = None) -> int:
     """Re-tile oversized Aseprite sheets (PNG + JSON rects) to fit the cap."""
-    limit, dry_run = _opts(limit, dry_run, verbose, quiet, log_file)
+    cliutil.setup_logging(verbose, quiet, log_file)
     return fix_atlas(web_root, limit, dry_run)
 
 
 @APP.command()
 def iconset(web_root: Annotated[str, typer.Argument(help="JoiPlay web root")],
-            limit: Annotated[Optional[int], typer.Option(
-                "--limit", help="per-side texture cap in px")] = None,
+            limit: Annotated[int, typer.Option(
+                "--limit", help="per-side texture cap in px")] =
+            config.PNG_MAX_DIMENSION,
             dry_run: Annotated[bool, typer.Option(
                 "--dry-run", help="report only, don't modify")] = False,
             verbose: cliutil.Verbose = False,
             quiet: cliutil.Quiet = False,
             log_file: cliutil.LogFile = None) -> int:
     """Crop img/system/IconSet.png to the cap at a 32 px row boundary."""
-    limit, dry_run = _opts(limit, dry_run, verbose, quiet, log_file)
+    cliutil.setup_logging(verbose, quiet, log_file)
     return fix_iconset(web_root, limit, dry_run)
 
 

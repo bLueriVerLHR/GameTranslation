@@ -36,7 +36,7 @@ import shutil
 __all__ = ["BakeError", "UNIFIED_FONT", "parse_path", "set_by_path",
            "load_plugin_params", "save_plugin_params", "apply_font",
            "apply_font_mz", "unify_plugin_fonts", "bake", "parse_note_id",
-           "set_note_payload"]
+           "set_note_payload", "parse_comment_id", "set_comment_payload"]
 
 #: Unified Simplified-Chinese font (local private asset, never committed).
 UNIFIED_FONT = "GlowSansSC-Compressed-Regular.otf"
@@ -81,6 +81,12 @@ _PLUGINS_RE = re.compile(r"(\[\s*\{.*\}\s*\])", re.S)
 #: payloads are displayed text).
 _NOTE_ID_RE = re.compile(r"^(?P<base>.+\.note)#(?P<tag>[^#\[\]]+)"
                          r"\[(?P<index>\d+)\]$")
+
+#: A comment-payload id: ``<list path>[<head>]#<tag>[<occurrence>]`` - the
+#: block form where a plugin reads a menu entry's displayed text out of
+#: comment commands (see ``mvkeys.comment_payloads``).
+_COMMENT_ID_RE = re.compile(r"^(?P<base>.+\.list)\s*\[(?P<head>\d+)\]#"
+                            r"(?P<tag>[^#\[\]]+)\[(?P<index>\d+)\]$")
 
 
 class BakeError(Exception):
@@ -162,6 +168,83 @@ def parse_note_id(sub_path):
     if not match:
         raise BakeError("cannot parse note path %r" % (sub_path))
     return match.group("base"), match.group("tag"), int(match.group("index"))
+
+
+def parse_comment_id(sub_path):
+    """``[1054].list[5]#Subtext Description[0]`` -> list, head, tag, index.
+
+    Returns ``(base, head, tag, occurrence)``: ``base`` addresses the command
+    list and ``head`` is the index of the command carrying the opening tag.
+    """
+    match = _COMMENT_ID_RE.match(sub_path)
+    if not match:
+        raise BakeError("cannot parse comment payload path %r" % (sub_path,))
+    return (match.group("base"), int(match.group("head")),
+            match.group("tag"), int(match.group("index")))
+
+
+def _with_comment_text(command, text):
+    """A copy of a comment command with its ``parameters[0]`` replaced."""
+    if isinstance(command, dict):
+        updated = dict(command)
+        params = list(updated.get("parameters") or [])
+        params[0] = text
+        updated["parameters"] = params
+        return updated
+    updated = list(command)
+    updated[2] = text
+    return updated
+
+
+def set_comment_payload(root, sub_path, text):
+    """Rewrite one comment-command payload in place; True when changed.
+
+    Only the payload moves: the opening/closing tag lines, sibling commands and
+    every other comment stay byte-identical, because the plugin matches the
+    *tag name* - rewriting it would silently drop the menu entry.  A payload
+    whose line count no longer matches the source block is refused (the editor
+    stores one displayed line per comment command, so a mismatch silently
+    drops or duplicates lines).
+    """
+    from . import mvkeys
+
+    base, head, tag, occurrence = parse_comment_id(sub_path)
+    holder = _get_parent(root, parse_path(base))
+    if not holder:
+        return False
+    container, key = holder
+    commands = container[key]
+    if not isinstance(commands, list):
+        return False
+    wanted = [p for p in mvkeys.comment_payloads(commands, (tag,))
+              if p[0] == tag]
+    if occurrence >= len(wanted):
+        return False
+    opening, lines = wanted[occurrence][3], wanted[occurrence][4]
+    if opening != head:
+        return False
+    command = commands[opening]
+    if not mvkeys.is_command(command):
+        return False
+    text_lines = text.split("\n")
+    if lines:
+        if len(text_lines) != len(lines):
+            return False
+        for offset, index in enumerate(lines):
+            commands[index] = _with_comment_text(commands[index],
+                                                 text_lines[offset])
+        return True
+    original = mvkeys._comment_text(command)
+    if original is None:
+        return False
+    match = re.search(r"<" + re.escape(tag) + r":(\s*)([^<>]*)>", original)
+    if not match:
+        return False
+    separator = match.group(1) or " "
+    commands[opening] = _with_comment_text(
+        command, original[:match.start(1)] + separator + text
+        + original[match.end(2):])
+    return True
 
 
 def _get_parent(root, tokens):
@@ -554,7 +637,9 @@ def bake(game_dir, work_dir, apply_unified_font=True, repo_root=None,
         changed = False
         for sub_path, text in entries.items():
             try:
-                if "#" in sub_path:
+                if _COMMENT_ID_RE.match(sub_path):
+                    ok = set_comment_payload(payload, sub_path, text)
+                elif "#" in sub_path:
                     ok = set_note_payload(payload, sub_path, text)
                 else:
                     ok = set_by_path(payload, parse_path(sub_path), text)

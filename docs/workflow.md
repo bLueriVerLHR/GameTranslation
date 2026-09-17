@@ -164,6 +164,19 @@ dataEx/ effects/ fonts/ icon/ img/ js/ audio/`（MV 加 `movies/`）。桌面
 NW.js 运行时纯属浪费，不拷贝。编辑器/repack 垃圾（`img/` 下
 `.txt/.clip/.tmx/.bak`）之后在 `clean` 里删。
 
+**`WEB_DIRS` 之外还有插件资源目录（2026-09 定案）。** 固定目录表会
+**静默**漏掉非标准资源树：DragonBones 骨骼/图集（`dragonbones/`）、
+插件自带 UI 资源（`InterfaceJs/`）、角色表（`character/`）等插件专属
+目录不在 MZ 标准目录里，被跳过时游戏照常启动、`verify` 全绿、HTTP 冒烟
+全 200 —— 坏的是那些插件的画面（骨骼动画「Failed to load」）。所以
+`build` 现在拷贝**除 NW.js 运行时与 repack 工具目录（`Tool`/`MTool`/
+`Dictionaries` 等，`config.REPACK_JUNK_DIRS`）以外的所有顶层目录**，
+并在日志里报出「extra asset dirs beyond WEB_DIRS」与跳过的目录。
+
+- 目录名比较**大小写不敏感**：Windows/macOS 上源码里的 `Audio/`
+  就是 `WEB_DIRS` 的 `audio/`，两边都拷会让两个线程同时写同一批目标
+  文件（`WinError 32`，曾当场炸掉一次构建）。
+
 拷贝并行（asyncio + 线程池，默认 6 worker）：每个网页目录和根文件由自己
 的 worker 拷贝，构建速度受磁盘带宽而非单线程限制。
 

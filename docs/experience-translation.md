@@ -642,11 +642,16 @@ python -m translation.cli prepare <game_dir> <work_dir> --note-tags 拡張説明
 先做前三步再放过，至少能区分「美术」与「真漏译」——本条与 8.1 两条的区别就是：
 后者是**数据**（能改）前者是**图片**（不改）。
 
-### 10.4 顺手发现的两个工具缺口（尚未修）
+### 10.4 两个工具缺口（一个已修，一个仍在）
 
+- `ExtraWindow.WindowList` 这类深层嵌套（三重转义）参数：**已修并实测验证**。
+  给 `DISPLAY_KEYS` 补上大写 `Text` 后，标准链路端到端可用——在修复前的真机
+  `plugins.js` 上跑 `extract`（叶子 167，含 `引換券所持数\V[12]`，param
+  `WindowList`）→ `rebuild`（1 个参数级配对，0 死配对）→ `apply`（applied 1，
+  0 死配对，118 插件仍可解析，日文标签消失）。撚带教训：**把「叶子」当键塞进
+  `plugin_blobs_translated.json` 是错的**（那个文件按**整段参数字符串**配对）
+  → 会报 `dead pair` 并整批拒写。
 - `translation/bake.py::apply_font_mz` **只改 `mainFontFilename`**，不改
   `numberFontFilename` → 数字字体仍指向旧字体，`clean` 就不会把旧字体当
   “未使用”删掉（本例白留 8.8 MB）。手工把两者都置空后 `clean` 正常回收。
-- `ExtraWindow.WindowList` 这类深层嵌套（三重转义）参数，`plugin_json_leaves`
-  的 rebuild/apply 路径仍报 `dead pair`（够不到）→ 本次用受控字节替换完成
-  （计数保护 + 改后重新解析 plugins.js 确认 118 插件仍在）。
+  该文件属并行会话正在改的范围，留待其自己修。

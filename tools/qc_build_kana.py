@@ -48,6 +48,7 @@ from typing import Annotated, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpgmaker import cliutil  # noqa: E402
+from tools import plugin_json_leaves  # noqa: E402
 from translation import mvkeys  # noqa: E402
 
 log = logging.getLogger("qc_build_kana")
@@ -290,6 +291,7 @@ def scan_plugins(build_dir):
         log.warning("js/plugins.js: $plugins unparsable (%s)", exc)
         return {"strings": 0, "samples": []}
     samples = []
+    review = []
     for index, plugin in enumerate(plugins):
         for name, value in (plugin.get("parameters") or {}).items():
             if isinstance(value, str):
@@ -299,10 +301,20 @@ def scan_plugins(build_dir):
             else:
                 values = []
             for item in values:
-                if KANA.search(item):
-                    samples.append(("js/plugins.js#[%d].parameters.%s"
-                                    % (index, name), item))
-    return {"strings": len(samples), "samples": samples}
+                where = "js/plugins.js#[%d].parameters.%s" % (index, name)
+                # Split JSON-in-JSON parameters into their real string leaves, so a
+                # label buried in a WindowList blob is reviewed as itself.
+                for leaf in plugin_json_leaves.iter_string_leaves(item):
+                    if not leaf.strip():
+                        continue
+                    if KANA.search(leaf):
+                        samples.append((where, leaf))
+                    elif CJK.search(leaf):
+                        # Kana-free CJK leaf: a kanji-only Japanese label
+                        # (園田晴香 / 引換券所持数) is invisible to every kana gate,
+                        # so it is collected for review instead of assumed clean.
+                        review.append((where, leaf))
+    return {"strings": len(samples), "samples": samples, "review": review}
 
 
 def report(findings, limit=25, stream=None):
@@ -334,6 +346,14 @@ def report(findings, limit=25, stream=None):
                      "%d kana string(s)\n" % plugins["strings"])
         for where, text in plugins["samples"][:limit]:
             stream.write("   INFO %s = %s\n" % (where, repr(text[:70])))
+        review = plugins.get("review") or []
+        if review:
+            stream.write("plugin parameters with kana-free CJK (review: a kanji-only "
+                         "Japanese label hides here): %d\n" % len(review))
+            for where, text in review[:limit]:
+                stream.write("   REVIEW %s = %s\n" % (where, repr(text[:70])))
+            if len(review) > limit:
+                stream.write("   ... %d more\n" % (len(review) - limit))
     for file_name, trail, text in findings.get("identical", [])[:limit]:
         stream.write("   IDENTICAL %s %s = %s\n"
                      % (file_name, trail[-45:], repr(text[:70])))

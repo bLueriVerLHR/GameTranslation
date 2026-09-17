@@ -68,6 +68,32 @@ def test_extract_takes_kanji_only_values_under_display_keys(tmp_path):
     assert list(leaves) == ["\u653b\u6483"]
 
 
+def test_extract_takes_capital_text_in_nested_window_list(tmp_path):
+    """ExtraWindow style: a window label sits in a JSON-in-JSON ``Text``.
+
+    The value is kanji-only Japanese (``\u5f15\u63db\u5238\u6240\u6301\u6570``), so a
+    kana-only rule would skip a label the player reads on the HUD - that is the
+    real miss this key was added for.
+    """
+    label = "\u5f15\u63db\u5238\u6240\u6301\u6570\\V[12]"
+    inner = json.dumps({"Text": label}, ensure_ascii=False)
+    blob = {"WindowList": json.dumps([inner], ensure_ascii=False)}
+    game = make_game(str(tmp_path), blob=blob)
+    work = str(tmp_path / "work")
+    pjl.cmd_extract(game, work)
+    leaves = plain_io.load_json(os.path.join(work, "plugin_leaves.json"))
+    assert label in leaves
+    assert list(leaves) == [label]
+
+
+def test_extract_skips_kanji_only_values_outside_display_keys(tmp_path):
+    """Over-extraction guard: same value under a functional key stays out."""
+    game = make_game(str(tmp_path), blob={"styleId": "\u8cfc\u8cb7"})
+    work = str(tmp_path / "work")
+    pjl.cmd_extract(game, work)
+    assert plain_io.load_json(os.path.join(work, "plugin_leaves.json")) == {}
+
+
 def test_extract_uses_backticks_in_code_fields(tmp_path):
     """A code field *inside a blob*: only backtick display text is a leaf."""
     blob = {"Script": "return `%s`\u3068 this.x" % KANA}

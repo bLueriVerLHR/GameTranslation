@@ -247,6 +247,26 @@ def test_plugin_parameters_are_inventory_only(tmp_path, capsys):
     assert "excluded by policy" in capsys.readouterr().out
 
 
+def test_plugin_scan_reviews_kana_free_cjk_labels(tmp_path, capsys):
+    """A kanji-only Japanese plugin label is listed for review, not assumed ok.
+
+    ``\u5712\u7530\u6674\u9999`` contains no kana at all, so every kana gate is blind
+    to it; the inventory must still show it (review only, never a failure).
+    """
+    build = make_build(str(tmp_path), plugins=[
+        {"name": "ExtraWindow",
+         "parameters": {"WindowList": json.dumps(
+             [json.dumps({"Text": "\u5712\u7530\u6674\u9999"}, ensure_ascii=False)],
+             ensure_ascii=False)}}])
+    findings = qc.scan(build)
+    review = [text for _where, text in findings["plugins"]["review"]]
+    assert review == ["\u5712\u7530\u6674\u9999"]
+    assert findings["plugins"]["strings"] == 0
+    assert findings["unexpected"] == []
+    assert qc.main([build]) == 0
+    assert "kana-free CJK" in capsys.readouterr().out
+
+
 def test_plugin_scan_can_be_skipped(tmp_path):
     build = make_build(str(tmp_path), plugins=[
         {"name": "P", "parameters": {"popupMessage": KANA_TEXT}}])

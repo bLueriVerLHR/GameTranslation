@@ -69,9 +69,16 @@ CODE_LIKE = re.compile(
 
 # Display-text fields: kana-free values under these keys are still display
 # text (受注 / 所持金 / 出血 ...) even though they are kanji-only.
+#
+# ``Text`` (capital T) is deliberately listed next to ``text``: window-building
+# plugins (ExtraWindow & friends) store a window's label as a ``Text`` field
+# inside a JSON-in-JSON ``WindowList`` parameter, and such labels are routinely
+# kanji-only Japanese (``引換券所持数``, ``園田晴香``) - kana or not, the player
+# reads them, so the kana-only default silently skipped a real HUD label
+# (found by a play-test, fixed by hand before this key was added).
 DISPLAY_KEYS = {
     "Title", "Requester", "Place", "TimeLimit", "DetailNote", "HiddenDetailNote",
-    "Detail", "HiddenDetail", "text", "caption", "Name", "Id", "Label",
+    "Detail", "HiddenDetail", "text", "Text", "caption", "Name", "Id", "Label",
     "CommandName", "ParamName", "HelpText", "CommonHelpText",
     "MenuQuestSystemText", "QuestOrderText", "QuestOrderYesText",
     "QuestOrderNoText", "QuestCancelText", "QuestCancelYesText",
@@ -183,6 +190,47 @@ def round_trip(param):
     if isinstance(out, str):
         return out
     return json.dumps(out, ensure_ascii=False, separators=(",", ":"))
+
+
+def iter_string_leaves(param):
+    """Yield every string leaf of a plugin parameter, JSON-in-JSON included.
+
+    Shared with ``tools/qc_build_kana.py`` so the after-bake review sees the same
+    leaves the extractor sees: a window label hidden three escaping levels deep
+    (``WindowList`` -> object -> ``Text``) must be reviewable on its own, not as
+    a truncated 60-character prefix of a 2 KB parameter blob.
+    """
+    def walk(node):
+        if isinstance(node, str):
+            stripped = node.strip()
+            if stripped[:1] in ("{", "["):
+                try:
+                    inner = json.loads(stripped)
+                except ValueError:
+                    inner = None
+                if inner is not None:
+                    for item in walk(inner):
+                        yield item
+                    return
+            yield node
+            return
+        if isinstance(node, dict):
+            for value in node.values():
+                for item in walk(value):
+                    yield item
+            return
+        if isinstance(node, list):
+            for value in node:
+                for item in walk(value):
+                    yield item
+
+    try:
+        parsed = json.loads(param)
+    except ValueError:
+        yield param
+        return
+    for item in walk(parsed):
+        yield item
 
 
 def collect_leaves_in(o):

@@ -41,6 +41,35 @@ def _copy_many(web_root, dst, dirs, root_files, workers):
         list(ex.map(lambda j: j(), jobs))
 
 
+def extra_asset_dirs(web_root):
+    """Source directories beyond `WEB_DIRS` that still carry game data.
+
+    Plugin asset folders (DragonBones skeletons/atlases, plugin UI bundles,
+    custom data trees) are not MZ standard folders, so a fixed folder list
+    drops them silently and those plugins break at runtime with
+    "Failed to load".  Every directory that is neither an NW.js runtime folder
+    nor repack tooling is treated as game data and copied; the skipped ones
+    are reported so a dropped tree is never invisible.
+    """
+    skip = {d.lower() for d in config.NWJS_RUNTIME} | {
+        d.lower() for d in config.REPACK_JUNK_DIRS}
+    web = {d.lower() for d in config.WEB_DIRS}
+    extra = []
+    for name in sorted(os.listdir(web_root)):
+        if not os.path.isdir(os.path.join(web_root, name)):
+            continue
+        # Case-insensitive compare: on Windows/macOS "Audio" *is* WEB_DIRS'
+        # "audio", and copying both would race two threads onto the same
+        # destination files (WinError 32).
+        if name.lower() in web:
+            continue
+        if name.lower() in skip:
+            log.info("skipping non-web dir %s/ (runtime or repack tooling)", name)
+            continue
+        extra.append(name)
+    return extra
+
+
 def build_joiplay(web_root, dst, keep_movies=True, workers=None):
     """Copy `web_root` into `dst`, skipping NW.js runtime files and editor junk.
 
@@ -51,6 +80,10 @@ def build_joiplay(web_root, dst, keep_movies=True, workers=None):
     dirs = list(config.WEB_DIRS)
     if not keep_movies:
         dirs.remove("movies")
+    extra = extra_asset_dirs(web_root)
+    if extra:
+        log.info("extra asset dirs beyond WEB_DIRS: %s", ", ".join(extra))
+    dirs += extra
 
     root_files = [
         fn for fn in sorted(os.listdir(web_root))

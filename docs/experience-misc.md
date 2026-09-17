@@ -90,6 +90,15 @@
   启用插件做模块顶层 `process`/`require(` 预扫；`verify` 会把未处理项
   WARNING 报一次。**先跑 `compat` 再手改** —— 手工只 patch「看得见的那
   一处」，很容易漏掉依赖同一变量的第二个插件。
+- **列 0 启发式在压缩成单行的插件上会假阳性（2026-09 实测）**：商业插件
+  套件（VisuMZ/VisuStella 这类）把整个文件混淆压成**一行**，于是「列 0
+  = 模块顶层」对整行都成立，`compat`/`verify` 会把函数体内部的
+  `require('fs')`、`process.platform` 报成「load-time NW.js usage」。
+  判定方法：把那行里命中的片段取出来看是不是在 `function(...){...}` 或
+  `if (Utils.isOptionValid(...))` 之内 —— 函数体内（尤其带
+  `isOptionValid` 守卫的）都是运行到那个功能才执行，**不需要**改；
+  一个已启用插件只报 1~3 处且全部在函数体内时，可以放心当噪音处理
+  （不要为了消警告去改混淆代码）。
 - 判据仍然只是启发式（列 0 = 模块顶层）：缩进在函数体里的 `process` 用法
   （如 `if(!Utils.isNwjs()) return;` 之后）**不需要**改，`compat` 也不会碰。
 
@@ -101,6 +110,13 @@ engagement），Edge 不行。修复：`Bitmap_Video.prototype.play` 在 catch
 里 `muted=true` 重试再取消静音；`_createVideo` 设 `autoplay=false`
 （浏览器自己的自动播放尝试不可 catch，会记未处理 rejection）。在大 MZ
 repack 会话中该修复已应用（8 部电影随包）。
+
+**MZ 侧仍无工具，是手工补丁（2026-09 提醒）**：Tyrano 有
+`fix-autoplay`，MZ 只在会话里手改过 `js/plugins/MoviePicture.js`。
+判据：`js/plugins.js` 里 `MoviePicture` 为 `status: true` **且**
+`data/` 里有插件指令引用 `Movies/` 下的影片名 —— 两者都成立才需要改
+（改了没用到无害，没改到用到就是白屏）。改完用 `jssyntax.parse_errors()`
+确认语法仍然干净（插件是别人写的，手改易碰坏配套逻辑）。
 
 （TyranoScript 的 `[bgmovie]` 有同样问题，见 [Tyrano](experience-tyrano.md)
 §1。）

@@ -76,6 +76,12 @@ NWJS_RUNTIME = [
     "snapshot_blob.bin", "locales", "credits.html", "debug.log",
     "lastLoadedTrsFile", "package.json", "save",
 ]
+# Repack tooling that never belongs in a JoiPlay build.  These are *extra*
+# directories (not standard MZ web folders, not NW.js runtime), so `build`
+# drops them while copying every other extra directory as plugin assets.
+REPACK_JUNK_DIRS = [
+    "Tool", "MTool", "Dictionaries", "TrsData", "__pycache__", "node_modules",
+]
 # Editor / repack junk that can usually be dropped from img/ (never loaded at runtime).
 IMG_JUNK_EXTS = {".txt", ".clip", ".tmx", ".bak"}
 

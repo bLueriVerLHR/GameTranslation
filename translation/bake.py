@@ -147,6 +147,42 @@ def set_by_path(root, tokens, value):
     return False
 
 
+def _font_switch_text(game_dir):
+    """Raw text search for a font-switch plugin name (fallback only)."""
+    path = os.path.join(game_dir, "js", "plugins.js")
+    if not os.path.isfile(path):
+        return False
+    with io.open(path, encoding="utf-8", errors="replace") as handle:
+        return bool(MZ_FONT_SWITCH_PLUGIN.search(handle.read()))
+
+
+def font_switch_plugin(game_dir):
+    """Does an **enabled** plugin re-register the font family at runtime?
+
+    The answer decides which unified-font strategy is legal: such a plugin
+    re-registers ``rmmz-mainfont`` from JavaScript, which overrides a CSS
+    ``unicode-range`` split, so those builds get the System.json switch only.
+
+    Status is what decides.  A plain text search over the whole file also
+    matches *disabled* entries - a real build whose font changer sits at
+    ``status: false`` was treated as a font switcher, so the kana face was
+    never declared and every script fell back to one Chinese face.  An
+    unparseable ``plugins.js`` keeps the conservative answer.
+    """
+    try:
+        plugins, _prefix, _suffix = load_plugin_params(game_dir)
+    except BakeError:
+        return _font_switch_text(game_dir)
+    if not plugins:
+        return _font_switch_text(game_dir)
+    for plugin in plugins:
+        if not isinstance(plugin, dict) or not plugin.get("status"):
+            continue
+        if MZ_FONT_SWITCH_PLUGIN.search(str(plugin.get("name") or "")):
+            return True
+    return False
+
+
 def load_plugin_params(game_dir):
     """``(parameters list, prefix, suffix)`` of ``js/plugins.js``.
 
@@ -313,10 +349,7 @@ def apply_font_mz(game_dir, font_path=None, repo_root=None, jp_path=None):
     jp_asset = os.path.isfile(jp_path)
 
     plugins_path = os.path.join(game_dir, "js", "plugins.js")
-    font_plugin = False
-    if os.path.isfile(plugins_path):
-        with io.open(plugins_path, encoding="utf-8", errors="replace") as h:
-            font_plugin = bool(MZ_FONT_SWITCH_PLUGIN.search(h.read()))
+    font_plugin = os.path.isfile(plugins_path) and font_switch_plugin(game_dir)
 
     with io.open(system_path, encoding="utf-8-sig") as handle:
         system = json.load(handle)

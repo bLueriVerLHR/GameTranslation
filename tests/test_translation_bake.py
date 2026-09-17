@@ -361,6 +361,45 @@ def test_apply_font_mz_without_jp_font_declares_han_face_only(tmp_path):
     assert any("JP fallback font missing" in w for w in warnings)
 
 
+def test_apply_font_mz_ignores_a_disabled_font_switch_plugin(tmp_path):
+    """Status decides: a *disabled* font changer must not block the CSS split.
+
+    The old check was a text search over ``js/plugins.js``, so a build whose
+    font-switch plugin ships at ``status: false`` was treated as if it
+    re-registered the family at runtime: the unicode-range split was skipped and
+    the kana face was never declared.  That is what this pins down.
+    """
+    game = make_mz_game(str(tmp_path / "game"),
+                        plugin="Keke_AnyTimeFontChange", plugin_status=False)
+    sc, jp = make_font_assets(tmp_path)
+    files, warnings = bake_mod.apply_font_mz(game, font_path=sc, jp_path=jp)
+
+    css = io.open(os.path.join(game, "css", "game.css"),
+                  encoding="utf-8").read()
+    assert bake_mod.MZ_MARKER in css
+    assert bake_mod.UNIFIED_FONT in css and bake_mod.UNIFIED_FONT_JP in css
+    advanced = _load(os.path.join(game, "data", "System.json"))["advanced"]
+    assert advanced["mainFontFilename"] == ""
+    assert not any("font-switch plugin" in w for w in warnings)
+    assert not bake_mod.font_switch_plugin(game)
+
+
+def test_font_switch_plugin_ignores_disabled_and_reads_status(tmp_path):
+    game = make_mz_game(str(tmp_path / "game"), plugin="Keke_AnyTimeFontChange",
+                        plugin_status=False)
+    assert bake_mod.font_switch_plugin(game) is False
+    make_mz_game(str(tmp_path / "on"), plugin="Keke_AnyTimeFontChange",
+                 plugin_status=True)
+    assert bake_mod.font_switch_plugin(str(tmp_path / "on")) is True
+    # an unparseable plugins.js stays conservative
+    broken = tmp_path / "broken"
+    os.makedirs(str(broken / "js"))
+    with io.open(str(broken / "js" / "plugins.js"), "w", encoding="utf-8",
+                 newline="\n") as handle:
+        handle.write("var $plugins = [ {oops, ")
+    assert bake_mod.font_switch_plugin(str(broken)) is False
+
+
 def test_apply_font_warns_when_asset_missing(tmp_path):
     game = make_game(str(tmp_path / "game"))
     files, warnings = bake_mod.apply_font(game, font_path=str(tmp_path / "no.otf"))
@@ -380,7 +419,7 @@ def make_font_assets(tmp_path):
 
 
 def make_mz_game(root, main_font="mplus-1m-regular.woff", plugin="P",
-                 plugin_params=None):
+                 plugin_params=None, plugin_status=True):
     """An MZ-shaped tree: data/System.json + css/game.css, no gamefont.css."""
     data = os.path.join(root, "data")
     _dump(os.path.join(data, "System.json"), {
@@ -400,7 +439,7 @@ def make_mz_game(root, main_font="mplus-1m-regular.woff", plugin="P",
     with io.open(os.path.join(root, "js", "plugins.js"), "w",
                  encoding="utf-8", newline="\n") as handle:
         handle.write("var $plugins =\n[\n" + json.dumps(
-            {"name": plugin,
+            {"name": plugin, "status": plugin_status,
              "parameters": plugin_params or {"Label": "\u30e9\u30d9\u30eb"}},
             ensure_ascii=False) + "\n];\n")
     return root

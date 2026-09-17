@@ -83,6 +83,47 @@ def test_parse_path_and_set_by_path_shapes():
     assert bake_mod.set_by_path({}, tokens, "x") is False
 
 
+def test_parse_path_accepts_non_ascii_and_spaced_names():
+    """MZ plugin parameters are often named in Japanese, or hold spaces.
+
+    Both shapes reach `bake` as real keys (a shipped game had
+    `[21].parameters.フォント登録リスト` and `[24].parameters.Choice Help Commands`),
+    and the plugin branch calls `parse_path` outside its try/except, so a
+    rejected name took the whole bake down instead of being reported.
+    """
+    assert bake_mod.parse_path("[21].parameters.\u30d5\u30a9\u30f3\u30c8\u767b\u9332\u30ea\u30b9\u30c8") == [
+        (None, 21), ("parameters", None), ("\u30d5\u30a9\u30f3\u30c8\u767b\u9332\u30ea\u30b9\u30c8", None)]
+    assert bake_mod.parse_path("[24].parameters.Choice Help Commands") == [
+        (None, 24), ("parameters", None), ("Choice Help Commands", None)]
+    # nested names still split on the separators, not on punctuation inside them
+    assert bake_mod.parse_path("a.b_c.d-1") == [
+        ("a", None), ("b_c", None), ("d-1", None)]
+    # a bracketed non-index is still a hard error
+    with pytest.raises(bake_mod.BakeError):
+        bake_mod.parse_path("events[a].pages[0]")
+    with pytest.raises(bake_mod.BakeError):
+        bake_mod.parse_path("events[2].pages[0]x[0]")
+
+
+def test_bake_writes_a_japanese_named_plugin_parameter(tmp_path):
+    """The end-to-end guard: a non-ASCII plugin param must not crash the bake."""
+    game = make_game(str(tmp_path / "game"))
+    plugins_path = os.path.join(game, "js", "plugins.js")
+    with io.open(plugins_path, encoding="utf-8") as handle:
+        source = handle.read()
+    source = source.replace(
+        '"parameters": {"Label": "\u30e9\u30d9\u30eb"}',
+        '"parameters": {"\u30d5\u30a9\u30f3\u30c8\u767b\u9332\u30ea\u30b9\u30c8": "\u65e5\u672c\u8a9e"}')
+    with io.open(plugins_path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(source)
+    key = "js/plugins.js#[0].parameters.\u30d5\u30a9\u30f3\u30c8\u767b\u9332\u30ea\u30b9\u30c8"
+    work = prepare_work(tmp_path, game, {key: "\u65e5\u672c\u8a9e"})
+    report = bake_mod.bake(game, work, apply_unified_font=False)
+    assert report["applied"] == 1 and report["skipped"] == 0
+    assert "\u30d5\u30a9\u30f3\u30c8\u767b\u9332\u30ea\u30b9\u30c8" in io.open(
+        plugins_path, encoding="utf-8").read()
+
+
 def test_bake_writes_object_shaped_data_and_backs_up(tmp_path):
     game = make_game(str(tmp_path / "game"))
     key = ("data/Map001.json#events[1].pages[0].list[0].parameters[0]")

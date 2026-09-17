@@ -63,7 +63,14 @@ MZ_KANA_RANGE = "U+3040-30FF, U+31F0-31FF, U+30FB-30FC, U+FF66-FF9F"
 MZ_FONT_SWITCH_PLUGIN = re.compile(
     r"(AnyTimeFontChange|FontChange|FontSwitch|FontLoader|FontChanger)", re.I)
 
-_PATH_TOKEN = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)|\[(\d+)\]")
+#: A path token is either a name or an `[index]`.  A name may hold any char
+#: other than the `.`/`[`/`]` separators: MZ plugin parameters are routinely
+#: named in Japanese (`フォント登録リスト`) or contain spaces
+#: (`Choice Help Commands`), and restricting names to ASCII identifiers made
+#: `bake` raise while rewriting `js/plugins.js` (a real game shipped both).
+#: Names only start a path or follow a `.`, so `pages[0]x[0]` stays an error.
+_NAME_TOKEN = re.compile(r"[^.\[\]]+")
+_INDEX_TOKEN = re.compile(r"\[(\d+)\]")
 _PLUGINS_RE = re.compile(r"(\[\s*\{.*\}\s*\])", re.S)
 
 
@@ -75,7 +82,9 @@ def parse_path(path):
     """``events[2].pages[0].list[7].parameters[0]`` -> tokens.
 
     Tokens are ``(name, None)`` or ``(None, index)``; the trailing ``[1]`` of a
-    choice text (``parameters[0][1]``) is just another index token.
+    choice text (``parameters[0][1]``) is just another index token.  A name may
+    hold any character other than the ``.``/``[``/``]`` separators, so
+    non-ASCII and spaced parameter names parse too.
     """
     tokens = []
     position = 0
@@ -83,13 +92,22 @@ def parse_path(path):
         char = path[position]
         if char == ".":
             position += 1
-            continue
-        match = _PATH_TOKEN.match(path, position)
+            match = _NAME_TOKEN.match(path, position)
+        elif char == "[":
+            match = _INDEX_TOKEN.match(path, position)
+        elif not tokens:
+            match = _NAME_TOKEN.match(path, position)
+        else:
+            match = None
         if not match:
             raise BakeError("cannot parse path %r at %d" % (path, position))
-        name, index = match.groups()
-        tokens.append((name, None) if name else (None, int(index)))
+        if match.re is _INDEX_TOKEN:
+            tokens.append((None, int(match.group(1))))
+        else:
+            tokens.append((match.group(0), None))
         position = match.end()
+    if not tokens:
+        raise BakeError("empty path")
     return tokens
 
 

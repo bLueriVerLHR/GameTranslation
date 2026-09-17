@@ -42,7 +42,8 @@ from .codes import CJK_RE, KANA_RE, code_key, parse_codes
 
 __all__ = ["extract", "load_keys", "text_codes", "extra_text_codes",
            "is_command", "command_code", "speaker_of", "is_candidate",
-           "note_payloads", "DEFAULT_NOTE_TAGS"]
+           "note_payloads", "comment_payloads", "DEFAULT_NOTE_TAGS",
+           "COMMENT_CODES"]
 
 #: Command codes whose first parameter is displayed text.
 TEXT_CODES = (401, 405)
@@ -191,8 +192,109 @@ DEFAULT_NOTE_TAGS = ()
 #: ``<tag:payload>`` - the tag name may not hold ``:``/``<``/``>``/space.
 _NOTE_TAG_RE = re.compile(r"<([^<>:\s][^<>:]*):([^<>]*)>")
 
+#: Comment commands (comment / comment continuation) hold the *block* form of
+#: the same idea: a line that is exactly ``<tag>``, the payload on the
+#: following comment lines, and ``</tag>`` to close it.  MZ's VisuMZ-style
+#: common-event menu stores a menu entry's displayed name/help/subtext that
+#: way, so the payload is player-visible text that lives in *commands*, not in
+#: a ``note`` field - nothing else in this module reads it.
+COMMENT_CODES = (108, 408)
+_BLOCK_OPEN_RE = re.compile(r"^<([^<>:\s][^<>:]*)>\s*$")
+_BLOCK_CLOSE_RE = re.compile(r"^</([^<>:\s][^<>:]*)>\s*$")
+
 #: Version of the JSONL contract; bumped when a field's meaning changes.
 SCHEMA = 2
+
+
+def _comment_text(command):
+    """The text of a comment command of either shape, else None."""
+    if isinstance(command, dict):
+        params = command.get("parameters") or []
+    elif isinstance(command, (list, tuple)) and len(command) >= 3:
+        params = command[2:]
+    else:
+        return None
+    if not params or not isinstance(params[0], str):
+        return None
+    return params[0]
+
+
+def comment_payloads(commands, tags):
+    """Display payloads of allowlisted tags written as comment commands.
+
+    Returns ``[(tag, occurrence, payload, head, lines)]`` in command order:
+    ``head`` indexes the command carrying the opening tag, ``lines`` are the
+    payload command indexes (possibly empty for the inline ``<tag:payload>``
+    form, where the payload sits in ``head`` itself).  ``occurrence`` counts
+    earlier payloads of the same tag in this list, which keeps the derived id
+    unique and stable when a list repeats a tag.
+
+    Only comments are read: a tag written inside a message window, a script or
+    a plugin command is never touched (that is functional data, and the same
+    comment text can legitimately appear in a script).
+    """
+    out = []
+    if not tags:
+        return out
+    wanted = set(tags)
+    seen = defaultdict(int)
+    lst = commands or []
+    index = 0
+    total = len(lst)
+    while index < total:
+        command = lst[index]
+        if not is_command(command) or command_code(command) not in COMMENT_CODES:
+            index += 1
+            continue
+        text = _comment_text(command)
+        if text is None:
+            index += 1
+            continue
+        inline = False
+        for match in _NOTE_TAG_RE.finditer(text):
+            tag, payload = match.group(1), match.group(2)
+            if tag in wanted:
+                # The separator whitespace after the colon is layout, not
+                # text: the payload starts at the first non-space character
+                # and ``bake`` puts the same separator back.
+                out.append((tag, seen[tag], payload.lstrip(), index, []))
+                seen[tag] += 1
+                inline = True
+        if inline:
+            index += 1
+            continue
+        opening = _BLOCK_OPEN_RE.match(text)
+        if opening and opening.group(1) in wanted:
+            tag = opening.group(1)
+            lines = []
+            cursor = index + 1
+            closed = False
+            while cursor < total:
+                following = lst[cursor]
+                if (not is_command(following)
+                        or command_code(following) not in COMMENT_CODES):
+                    break
+                following_text = _comment_text(following)
+                if following_text is None:
+                    break
+                closing = _BLOCK_CLOSE_RE.match(following_text)
+                if closing and closing.group(1) == tag:
+                    closed = True
+                    break
+                lines.append(cursor)
+                cursor += 1
+            if closed:
+                payload = "\n".join(_comment_text(lst[i]) or "" for i in lines)
+                out.append((tag, seen[tag], payload, index, lines))
+                seen[tag] += 1
+                index = cursor + 1
+            else:
+                # Unterminated block: skip the opening tag and keep scanning,
+                # never guessing where the payload would have ended.
+                index += 1
+            continue
+        index += 1
+    return out
 
 
 def note_payloads(note, tags):
@@ -403,8 +505,14 @@ def _cmd_id(rel, path, suffix, param=0):
     return "%s#%s.parameters[%d]%s" % (rel, path, param, suffix)
 
 
-def _walk_list(collector, lst, rel, path, where, stream):
+def _walk_list(collector, lst, rel, path, where, stream, note_tags=()):
     window = 0
+    for tag, occurrence, payload, head, _lines in comment_payloads(lst, note_tags):
+        # Player-visible text that a plugin reads out of comment commands
+        # (menu entry name/help/subtext): one key per payload block.
+        collector.add("%s#%s[%d]#%s[%d]" % (rel, path, head, tag, occurrence),
+                      "ui", "%s / comment<%s>" % (where, tag), payload,
+                      "%s#%s[%d]" % (rel, path, head))
     for index, command in enumerate(lst or []):
         if not is_command(command):
             collector.skipped["malformed"] += 1
@@ -499,10 +607,11 @@ def _collect_maps(collector, game_dir, data_dir, note_tags=()):
                 stream = "%s#%s" % (rel, base)
                 _walk_list(collector, page.get("list"), rel, base,
                            "%s / %s / p%d" % (title, event_name, page_index),
-                           stream)
+                           stream, note_tags)
 
 
-def _collect_common(collector, data_dir):
+def _collect_common(collector, data_dir, note_tags=()):
+    note_tags = tuple(note_tags or ())
     path = os.path.join(data_dir, "CommonEvents.json")
     if not os.path.isfile(path):
         return
@@ -512,10 +621,11 @@ def _collect_common(collector, data_dir):
         base = "[%d].list" % index
         _walk_list(collector, event.get("list"), "data/CommonEvents.json", base,
                    "%s / CommonEvent %s" % (event.get("name") or "", index),
-                   "data/CommonEvents.json#%s" % base)
+                   "data/CommonEvents.json#%s" % base, note_tags)
 
 
-def _collect_troops(collector, data_dir):
+def _collect_troops(collector, data_dir, note_tags=()):
+    note_tags = tuple(note_tags or ())
     path = os.path.join(data_dir, "Troops.json")
     if not os.path.isfile(path):
         return
@@ -529,7 +639,7 @@ def _collect_troops(collector, data_dir):
             base = "[%d].pages[%d].list" % (index, page_index)
             _walk_list(collector, page.get("list"), "data/Troops.json", base,
                        "%s / Troops / p%d" % (name, page_index),
-                       "data/Troops.json#%s" % base)
+                       "data/Troops.json#%s" % base, note_tags)
 
 
 def _collect_db(collector, data_dir, note_tags=()):
@@ -637,8 +747,8 @@ def extract(game_dir, work_dir, window=2, note_tags=DEFAULT_NOTE_TAGS):
         raise FileNotFoundError("no data/ directory under %s" % game_dir)
     collector = _Collector(window=window)
     _collect_maps(collector, game_dir, data_dir, note_tags)
-    _collect_common(collector, data_dir)
-    _collect_troops(collector, data_dir)
+    _collect_common(collector, data_dir, note_tags)
+    _collect_troops(collector, data_dir, note_tags)
     _collect_db(collector, data_dir, note_tags)
     _collect_system(collector, data_dir)
     _collect_plugins(collector, game_dir)

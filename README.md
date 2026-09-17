@@ -126,6 +126,8 @@ GameTranslation/
 │   │                          #   解码自检（convert_kag.py --video-dir 消费其输出）
 │   ├── downscale_images.py    # 把超过 4096 的 PNG 就地缩放到 ≤4096
 │   │                          #   （单一构建策略，替代旧 LowRes 变体；自动并行）
+│   ├── fix_mojibake_names.py  # 修复「Shift-JIS 名被按 CP936 解出」的乱码文件名
+│   │                          #   （引擎按原名加载，改名后才找得到；默认 dry-run）
 │   ├── gen_translation_shards.py # 切成双文件块：ja.txt + zh.txt + context.md
 │   │                             #   （自动选档：90KB 上下文预算，约 11k 字符/块）
 │   ├── gen_completion_shards.py  # 补翻流程分块（同布局、同尺寸；注入 tone.md）
@@ -274,7 +276,8 @@ venv 解释器按平台取：POSIX `.venv/bin/python`，Windows
   还原 + 切片自检）、decrypt（RPGMV 头
   XOR）、verify、build、clean、audio（位率策略）、plain_io（双文件块转义）、
   plugins_io、rvdata2（Ruby Marshal 解码）、merge_plain_chunks（QC 规则）、
-  downscale_images、dxarchive（LZ/Huffman 往返 + 合成 .wolf 全包解包）。
+  downscale_images、dxarchive（LZ/Huffman 往返 + 合成 .wolf 全包解包）、
+  fix_mojibake_names（乱码名往返修复 + 真中文/真日文名不动 + 目标冲突跳过）。
 - **集成测试**（`test_integration.py`）：在合成游戏上跑完整流水线
   build → decrypt → clean → verify → serve 冒烟 → compress → deliver，
   以及真实 CLI 子进程调用与退出码。

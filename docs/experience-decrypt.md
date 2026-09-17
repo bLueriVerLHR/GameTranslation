@@ -51,6 +51,19 @@
 - 此类包的资源是 MZ easy 加密形态（`*.png_`/`*.ogg_` + 16 字节 RPGMV 头）
   而 `js/` 未被改名 —— 后缀 `_` 是**引擎加密**，不是 repacker 改名，别按
   改名逻辑去剥。
+- **目录/文件名乱码：Shift-JIS 名被按 CP936 解出（2026-09 实测）。**
+  中文 locale 机器上解包 Shift-JIS 命名的游戏，`audio/bgs/H効果音2/`、
+  `img/tilesets/MV用xBCDE1.png` 会落成 `H岠壥壒2/`、`MV梡xBCDE1.png_`，
+  而 `data/*.json` 里引用的仍是**原名** —— 结果是这些 BGS/SE/图块**静默
+  不加载**（无报错，只是没声音/缺图），`verify` 与 HTTP 冒烟都全绿。
+  判据：名字全部是 CP936 可编码字符，且 `name.encode("cp936").decode("cp932")`
+  解出可读日文；反方向（真中文名按 cp932 解）会得到**半角片假名**
+  （`ｺﾃﾓﾃｱ…`），那是推广 txt 这类真中文名，**绝不能改**。同样地，含平假名
+  /全角片假名的真日文名根本进不了 CP936，所以天然安全。
+  修复：`tools/fix_mojibake_names.py <游戏目录> --apply`（默认 dry-run，
+  逐条打印映射）；修完必须核对「磁盘文件名 = `data/` 引用名」（本次 247 个
+  加密音频全部命中、0 个未引用）。**先修名再 `build`**，否则构建里带的是
+  乱码名。
 - 某开发者的 MV 游戏**加密**资源（`.rpgmvp`/`.rpgmvo`，密钥在
   `data/System.json`）。它们跨游戏共享**公共资源库**（
   `img/faces/main_cha.png`、`img/tilesets/001_Particle.png`、`fsm_*`

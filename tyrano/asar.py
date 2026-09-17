@@ -29,12 +29,40 @@ from rpgmaker import cliutil  # noqa: E402
 log = logging.getLogger("tyrano.asar")
 
 
+def _unshadow_own_name():
+    """Keep the PyPI ``asar`` package importable from this module.
+
+    This file is named ``asar.py`` and lives in ``tyrano/``.  The
+    documented CLI invocation ``python tyrano/pipeline.py ...`` puts the
+    script directory (``tyrano/``) on ``sys.path``, so a top-level
+    ``import asar`` binds to this very file instead of the PyPI package
+    and ``AsarArchive`` can never be imported (surfacing as a misleading
+    "the 'asar' package is missing" error).  Drop every ``sys.path``
+    entry that would resolve ``asar`` to this file, and forget an
+    already-imported shadow module.
+    """
+    me = Path(__file__).resolve()
+
+    def shadows(p):
+        base = Path(p) if p else Path.cwd()
+        try:
+            return (base / "asar.py").resolve() == me
+        except OSError:                        # pragma: no cover - odd fs state
+            return False
+
+    sys.path[:] = [p for p in sys.path if not shadows(p)]
+    mod = sys.modules.get("asar")
+    if mod is not None and not hasattr(mod, "AsarArchive"):
+        del sys.modules["asar"]
+
+
 def _open(asar_path, mode="r"):
     """Open an asar archive with the packaged implementation.
 
     Imported lazily and reported with an actionable message: the toolkit must
     stay importable (and its tests runnable) without the optional dependency.
     """
+    _unshadow_own_name()
     try:
         from asar import AsarArchive
     except ImportError as exc:                 # pragma: no cover - install hint

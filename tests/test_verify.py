@@ -29,6 +29,32 @@ class TestPngSignatures:
         _root, web = game_dir
         assert verify.verify_pngs(web, workers=1) == []
 
+    def test_jpeg_content_png_tolerated(self, game_dir, fake_tools):
+        """JPEG bytes under a .png name are a known engine practice
+        (content sniffing makes them loadable): reported as WARN, not
+        a verification failure."""
+        _root, web = game_dir
+        p = os.path.join(web, "img", "pictures", "jpegish.png")
+        with open(p, "wb") as f:
+            f.write(b"\xff\xd8\xff\xe0" + b"\x00" * 20)
+        assert verify.verify_pngs(web) == []
+
+    def test_jpeg_content_does_not_fail_verify_all(self, game_dir,
+                                                   fake_tools):
+        _root, web = game_dir
+        with open(os.path.join(web, "img", "pictures", "j.png"), "wb") as f:
+            f.write(b"\xff\xd8\xff\xe1" + b"\x00" * 20)
+        assert verify.verify_all(web) == []
+
+    def test_truncated_jpeg_magic_still_bad(self, game_dir, fake_tools):
+        """A file too short to carry the full JPEG magic is corruption,
+        not a foreign-format image."""
+        _root, web = game_dir
+        p = os.path.join(web, "img", "pictures", "trunc.png")
+        with open(p, "wb") as f:
+            f.write(b"\xff\xd8")
+        assert p in verify.verify_pngs(web)
+
 
 class TestDataJson:
     def test_all_parse(self, game_dir, fake_tools):

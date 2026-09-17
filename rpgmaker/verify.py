@@ -23,10 +23,27 @@ def _iter_png_files(web_root):
                 yield os.path.join(dp, fn)
 
 
+PNG_SIG = b"\x89PNG\r\n\x1a\n"
+JPEG_SIG = b"\xff\xd8\xff"
+
+
 def _check_png_signature(p):
+    """Classify a .png file by magic bytes.
+
+    Returns None for a real PNG, ("jpeg", p) when the file holds JPEG data,
+    or ("bad", p) for anything else (corruption/truncation).
+
+    Some engines ship photographic assets as JPEG bytes under a .png name;
+    browsers decode images by content sniffing (magic bytes), not by URL
+    extension, so such files load fine and must not fail verification.
+    """
     with open(p, "rb") as f:
         sig = f.read(8)
-    return p if sig != b"\x89PNG\r\n\x1a\n" else None
+    if sig == PNG_SIG:
+        return None
+    if sig[:3] == JPEG_SIG:
+        return ("jpeg", p)
+    return ("bad", p)
 
 
 def verify_pngs(web_root, workers=None):
@@ -36,14 +53,22 @@ def verify_pngs(web_root, workers=None):
     """
     workers = runtime.resolve_workers("png", workers, path=web_root)
     files = list(_iter_png_files(web_root))
-    bad = []
+    bad, jpeg = [], []
     if files:
         with ThreadPoolExecutor(max_workers=workers) as ex:
-            bad = [b for b in ex.map(_check_png_signature, files) if b]
+            for res in ex.map(_check_png_signature, files):
+                if res is None:
+                    continue
+                (jpeg if res[0] == "jpeg" else bad).append(res[1])
     if bad:
         log.error("bad PNG signatures: %d (first: %s)", len(bad), bad[:3])
     else:
         log.info("PNG signatures OK (%d files)", len(files))
+    if jpeg:
+        log.warning(
+            "JPEG-content .png files: %d (first: %s) - known engine practice, "
+            "not corruption; browsers decode them by content sniffing, "
+            "kept as-is", len(jpeg), jpeg[:3])
     return bad
 
 

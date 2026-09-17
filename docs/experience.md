@@ -27,7 +27,9 @@
   长文件名解压失败；MZ 文件名大小写敏感坑。
 - **翻译**：统一 chunk 流程（`build_translation.py` → shards → subagent →
   `bake_translation.py`）；残留用假名正则检测；`<TE:name>` 按名引用必须
-  成对翻译；分块估算按 UTF-8 字节计。
+  成对翻译；分块估算按 UTF-8 字节计。v2 五门禁只能护结构：**identity
+  纯汉字、跳句专名漂移、JSON 结构叶子、机翻丢内容**四类必须另做普查
+  （见 [翻译](experience-translation.md) §7）。
 - **Tyrano**：`[bgmovie]` 自动播放策略卡死 → `fix-autoplay`；KAG3 `[s]`/
   可点击地图/`[ch]` 移植语义。
 - **其他 / 杂项**：serve 卫生（固定端口、杀残留服务器）；`process`/

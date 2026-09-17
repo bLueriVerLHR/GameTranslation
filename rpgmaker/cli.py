@@ -294,7 +294,7 @@ def cmd_tyrano_verify(
 @tyrano.command("serve")
 def cmd_tyrano_serve(
     out: str = typer.Argument(..., help="built game folder"),
-    port: int = typer.Option(8100, "--port"),
+    port: int = typer.Option(8100, "-p", "--port"),
     host: str = typer.Option("127.0.0.1", help="bind address.  Use 0.0.0.0 so the "
                                                "owner can play from another device (phone)"),
     test: bool = typer.Option(False, "--test", help="smoke test then exit"),

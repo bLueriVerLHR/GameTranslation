@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Unit tests for tools/fit_texture_4096.py (atlas re-tiling + IconSet crop)."""
+"""Unit tests for tools/fit_texture_4096.py (atlas re-tiling + IconSet crop).
+
+Path setup comes from tests/conftest.py (repo root + tools/).
+"""
 import json
 import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.dirname(os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__)))))
 
 from PIL import Image
 
@@ -32,7 +30,7 @@ def _frame_pixels(fw, fh, seed):
     return px
 
 
-def _write_strip(web_root, name, fw, fh, count, limit_hint=None):
+def _write_strip(web_root, name, fw, fh, count):
     """A horizontal Aseprite strip (PNG + sibling JSON in hash shape)."""
     pic = web_root / "img" / "pictures"
     pic.mkdir(parents=True, exist_ok=True)
@@ -146,6 +144,16 @@ class TestAtlas:
         assert rc == 1
         assert png.read_bytes() == pb
 
+    def test_columns_capped_at_frame_count(self, tmp_path):
+        # 4 frames of 32x400 under limit 512: a naive widest-first search
+        # would pick 16 columns and pad the sheet to 512x400 (67% empty);
+        # the search must cap columns at the frame count (4 -> 128x400).
+        png, _, _ = _write_strip(tmp_path, "wide", 32, 400, 4)
+        rc = ft.main(["atlas", str(tmp_path), "--limit", "512"])
+        assert rc == 0
+        with Image.open(str(png)) as im:
+            assert im.size == (128, 400)
+
     def test_no_layout_fits_refused(self, tmp_path):
         # limit 256: 2 cols x 2 rows of 100x200 = 400 px high (too tall),
         # 1 col x 3 rows = 600 px (too tall) -> nothing fits.
@@ -169,12 +177,16 @@ class TestAtlas:
         assert rc == 0
 
     def test_limit_defaults_to_config(self, tmp_path):
-        png, _, _ = _write_strip(tmp_path, "anim", 100, 40, 5)
         from rpgmaker import config
+        # 50 frames x 100 px = 5000 px wide: oversized under the default cap,
+        # so this exercises the default instead of silently being a noop.
+        png, jsn, _ = _write_strip(tmp_path, "anim", 100, 40, 50)
         rc = ft.main(["atlas", str(tmp_path)])
         assert rc == 0
         with Image.open(str(png)) as im:
+            assert im.size == (4000, 80)  # capped at count: 40 cols x 2 rows
             assert max(im.size) <= config.PNG_MAX_DIMENSION
+        assert len(_rects(_read_json(jsn))) == 50
 
 
 # ---------------------------------------------------------------------------
@@ -203,16 +215,12 @@ class TestIconset:
         with Image.open(str(p)) as im:
             assert im.size == (64, 256)  # 8 rows, multiple of 32
             rgba = im.convert("RGBA")
+            # capacity of the cropped sheet: 8 kept rows x 16 columns = 128
+            assert im.size[1] // ft.ICON_SIZE * ft.ICON_COLUMNS == 128
         # first row (kept) marker intact
         assert rgba.getpixel((5, 5)) == (250, 10, 10, 255)
         # last kept row is row 7: no marker there, so pixel is transparent
         assert rgba.getpixel((5, 7 * ft.ICON_SIZE + 5))[3] == 0
-
-    def test_capacity_report_matches_rows(self, tmp_path):
-        p = _write_iconset(tmp_path, rows=20)
-        ft.main(["iconset", str(tmp_path), "--limit", "256"])
-        with Image.open(str(p)) as im:
-            assert im.size[1] // ft.ICON_SIZE * ft.ICON_COLUMNS == 128
 
     def test_fitting_sheet_untouched(self, tmp_path):
         p = _write_iconset(tmp_path, rows=4)
@@ -225,6 +233,14 @@ class TestIconset:
         p = _write_iconset(tmp_path, cols_px=512, rows=20)
         before = p.read_bytes()
         rc = ft.main(["iconset", str(tmp_path), "--limit", "256"])
+        assert rc == 1
+        assert p.read_bytes() == before
+
+    def test_limit_below_icon_grid_refused(self, tmp_path):
+        # limit < 32 would compute zero rows and crop an empty sheet.
+        p = _write_iconset(tmp_path, rows=20)
+        before = p.read_bytes()
+        rc = ft.main(["iconset", str(tmp_path), "--limit", "16"])
         assert rc == 1
         assert p.read_bytes() == before
 

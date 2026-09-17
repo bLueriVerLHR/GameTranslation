@@ -117,6 +117,8 @@ GameTranslation/
 │   ├── build_tyrano_translation.py # TyranoScript：.ks 提取 → 标准工作包（整行键）
 │   ├── apply_tyrano_translation.py # TyranoScript：translated.json → 写回 .ks
 │   ├── qc_ks_kana.py          # KiriKiri：假名残留 QC（补丁树/字典值）
+│   ├── qc_build_kana.py       # MZ/MV：**烘焙后**构建的假名残留 + %N 一致性
+│   │                          #   （验收硬指标；插件参数只做「按决策排除」计数）
 │   ├── check_iscript_js.py    # KiriKiri：扫 [iscript] 块做 JS 语法检查
 │   │                          #   （tree-sitter，进程内；不需 node）
 │   │                          #   （TJS→JS 转换错误不报错，只让脚本停摆）
@@ -132,7 +134,8 @@ GameTranslation/
 │   ├── bake_translation.py       # 精确匹配静态烘焙（data + 插件参数 + 字体策略）
 │   ├── plugin_json_leaves.py     # 插件参数内嵌 JSON 的叶子级翻译：extract 收集
 │   │                             #   显示叶子（含深层 JSON 递归），rebuild 按叶子
-│   │                             #   重建整串参数供烘焙（大 JSON 参数专用）
+│   │                             #   重建整串参数，apply 写回 js/plugins.js
+│   │                             #   （大 JSON 参数专用；功能键/标识符原样保留）
 │   ├── plain_io.py               # 双文件块格式的共享转义/IO
 │   ├── ctrl_codes.py             # 控制码共享单源：签名（结构化比对）与剥离
 │   │                             #   （\N[1]/\RB[a,b]/Wolf :name[..]）

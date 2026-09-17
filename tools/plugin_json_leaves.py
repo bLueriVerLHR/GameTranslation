@@ -31,6 +31,13 @@ rebuild:
   - writes plugin_blobs_translated.json {original_param: translated_param}
     for bake_translation.py to apply as whole-string plugin matches.
 
+apply:
+  - writes those rebuilt params into a game's js/plugins.js (exact match on
+    the unescaped parameter string).  It runs *after* the translation bake,
+    so blobs the bake did not carry (they are not in the key list) still
+    land; a pair that matches nothing is reported and fails the command,
+    because it means a translated leaf with no effect.
+
 Extraction is structural (JSON walk + display-key heuristics), not
 game-specific: per-game exemptions belong in the --exempt file.
 """
@@ -62,9 +69,16 @@ CODE_LIKE = re.compile(
 
 # Display-text fields: kana-free values under these keys are still display
 # text (受注 / 所持金 / 出血 ...) even though they are kanji-only.
+#
+# ``Text`` (capital T) is deliberately listed next to ``text``: window-building
+# plugins (ExtraWindow & friends) store a window's label as a ``Text`` field
+# inside a JSON-in-JSON ``WindowList`` parameter, and such labels are routinely
+# kanji-only Japanese (``引換券所持数``, ``園田晴香``) - kana or not, the player
+# reads them, so the kana-only default silently skipped a real HUD label
+# (found by a play-test, fixed by hand before this key was added).
 DISPLAY_KEYS = {
     "Title", "Requester", "Place", "TimeLimit", "DetailNote", "HiddenDetailNote",
-    "Detail", "HiddenDetail", "text", "caption", "Name", "Id", "Label",
+    "Detail", "HiddenDetail", "text", "Text", "caption", "Name", "Id", "Label",
     "CommandName", "ParamName", "HelpText", "CommonHelpText",
     "MenuQuestSystemText", "QuestOrderText", "QuestOrderYesText",
     "QuestOrderNoText", "QuestCancelText", "QuestCancelYesText",
@@ -176,6 +190,47 @@ def round_trip(param):
     if isinstance(out, str):
         return out
     return json.dumps(out, ensure_ascii=False, separators=(",", ":"))
+
+
+def iter_string_leaves(param):
+    """Yield every string leaf of a plugin parameter, JSON-in-JSON included.
+
+    Shared with ``tools/qc_build_kana.py`` so the after-bake review sees the same
+    leaves the extractor sees: a window label hidden three escaping levels deep
+    (``WindowList`` -> object -> ``Text``) must be reviewable on its own, not as
+    a truncated 60-character prefix of a 2 KB parameter blob.
+    """
+    def walk(node):
+        if isinstance(node, str):
+            stripped = node.strip()
+            if stripped[:1] in ("{", "["):
+                try:
+                    inner = json.loads(stripped)
+                except ValueError:
+                    inner = None
+                if inner is not None:
+                    for item in walk(inner):
+                        yield item
+                    return
+            yield node
+            return
+        if isinstance(node, dict):
+            for value in node.values():
+                for item in walk(value):
+                    yield item
+            return
+        if isinstance(node, list):
+            for value in node:
+                for item in walk(value):
+                    yield item
+
+    try:
+        parsed = json.loads(param)
+    except ValueError:
+        yield param
+        return
+    for item in walk(parsed):
+        yield item
 
 
 def collect_leaves_in(o):
@@ -357,11 +412,75 @@ def cmd_rebuild(game_dir: Annotated[str, cliutil.Argument(
     if not pairs:
         print("NOTE: no blob pairs - check that translated leaf values differ "
               "from their keys and that blobs match plugins.js.")
+    return 0
+
+
+def cmd_apply(game_dir: Annotated[str, cliutil.Argument(
+            help="game directory (js/plugins.js) to patch")],
+        work_dir: Annotated[str, cliutil.Argument(
+            help="work dir holding the pairs file")],
+        pairs: Annotated[str, cliutil.Option(
+            "--pairs", help="rebuilt pairs file")] =
+        "plugin_blobs_translated.json",
+        dry_run: Annotated[bool, cliutil.Option(
+            "--dry-run", help="report what would change, write nothing")] = False,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Write rebuilt plugin-parameter blobs into js/plugins.js."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    from translation import bake as bake_mod          # single plugins.js I/O
+
+    pairs_path = pairs if os.path.isabs(pairs) else os.path.join(work_dir, pairs)
+    if not os.path.isfile(pairs_path):
+        return cliutil.fail("pairs file not found: %s" % pairs_path)
+    mapping = plain_io.load_json(pairs_path) or {}
+    if not isinstance(mapping, dict) or not mapping:
+        return cliutil.fail("pairs file holds no {original: translated} pairs")
+
+    plugins, prefix, suffix = bake_mod.load_plugin_params(game_dir)
+    originals = set()
+    applied = 0
+    for plugin in plugins or []:
+        params = plugin.get("parameters")
+        if not isinstance(params, dict):
+            continue
+        for key, value in list(params.items()):
+            if not isinstance(value, str):
+                continue
+            originals.add(value)
+            if value in mapping:
+                params[key] = mapping[value]
+                applied += 1
+    dead = [original for original in mapping if original not in originals]
+    print("applied: %d parameter(s) | dead pairs: %d" % (applied, len(dead)))
+    for original in dead[:10]:
+        print("   dead: %r" % original[:70])
+    if dead:
+        print("REFUSING to write: %d pair(s) match no parameter" % len(dead))
+        return 1
+    if not applied:
+        print("NOTE: no parameter matched - nothing to do")
+        return 0
+    if dry_run:
+        print("dry run: not written")
+        return 0
+    path = os.path.join(game_dir, "js", "plugins.js")
+    backup = path + ".bak"
+    if not os.path.exists(backup):
+        with open(path, encoding="utf-8") as handle:
+            original_text = handle.read()
+        with open(backup, "w", encoding="utf-8", newline="") as handle:
+            handle.write(original_text)
+    bake_mod.save_plugin_params(game_dir, plugins, prefix, suffix)
+    print("written (backup js/plugins.js.bak)")
+    return 0
 
 
 app = cliutil.app(help=__doc__)
 app.command(name="extract")(cmd_extract)
 app.command(name="rebuild")(cmd_rebuild)
+app.command(name="apply")(cmd_apply)
 
 
 def main(argv=None) -> int:

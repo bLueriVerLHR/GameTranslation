@@ -26,12 +26,19 @@ from rpgmaker import deliver as deliver_mod  # noqa: E402
 
 
 class _FakeCompress:
-    """Mimics rpgmaker.archive: writes `<path>.7z` for a relative request."""
+    """Mimics rpgmaker.archive: writes `<path>.7z` for a relative request.
+
+    `root` is the archive's stored top-level entry name (deliver passes the
+    delivered game name so the archive and the games-dir folder agree); the
+    fake records it so tests can assert the contract without real 7z work.
+    """
 
     def __init__(self):
         self.created = None
+        self.roots = []
 
-    def compress(self, folder, archive, level=15):
+    def compress(self, folder, archive, level=15, root=None):
+        self.roots.append(root)
         path = Path(archive)
         if not str(path).endswith(".7z") and not path.is_absolute():
             path = Path(str(path) + ".7z")
@@ -62,6 +69,11 @@ def _fake_extract(archive, dest_root, name):
     target.mkdir(parents=True, exist_ok=True)
     (target / "index.html").write_text("<html></html>", encoding="utf-8")
     return target
+
+
+def fake_roots(fake):
+    """Archive root names deliver() asked for (one per compress call)."""
+    return fake.roots
 
 
 class _Config:
@@ -117,6 +129,19 @@ class TestDeliveredName:
         target = tmp_path / "games" / "My Game"
         assert target.is_dir() and (target / "index.html").is_file()
         assert not (tmp_path / "games" / "out").exists()
+        # the archive itself must store the delivered name, not the work-slot
+        # basename: every previously delivered archive here has the game name
+        # as its root entry (extracting that .7z elsewhere must not yield
+        # "out/").
+        assert fake_roots(wired) == ["My Game"]
+
+    def test_archive_root_follows_name_for_a_slot_build(self, tmp_path, wired):
+        """A build in `.../out/` delivered as `Real` stores `Real/`."""
+        folder = _build(tmp_path, "out")
+        deliver_mod.deliver(str(folder), name="Real",
+                           archives=str(tmp_path / "archives"),
+                           games=str(tmp_path / "games"))
+        assert fake_roots(wired) == ["Real"]
 
     def test_without_name_it_uses_the_folder(self, tmp_path, wired):
         folder = _build(tmp_path, "somegame")
@@ -125,6 +150,7 @@ class TestDeliveredName:
                                   games=str(tmp_path / "games"))
         assert Path(out).name == "somegame.7z"
         assert (tmp_path / "games" / "somegame").is_dir()
+        assert fake_roots(wired) == ["somegame"]
 
 
 class TestArchivePath:

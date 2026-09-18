@@ -30,6 +30,33 @@ def test_default_keeps_the_wrapper(tmp_path):
     assert archive.verify(out) is True
 
 
+def test_root_overrides_the_stored_folder_name(tmp_path):
+    """`root=` names the archive's top-level entry, so a build living in a
+    work slot (`.../out/`) is archived under the delivered game name - the
+    shape every previously delivered archive here has."""
+    game = tmp_path / 'out'
+    game.mkdir()
+    _make_game(str(game))
+    out = archive.create(str(game), str(tmp_path / 'named.7z'), level=1,
+                         root='Real Game')
+    names = [n.replace('\\', '/').lstrip('/') for n in archive.names(out)]
+    assert 'Real Game/index.html' in names
+    assert not any(n.startswith('out/') for n in names)
+    assert archive.verify(out) is True
+
+
+def test_wrapper_false_ignores_root(tmp_path):
+    """`root` only applies to the wrapper shape; the flat shape has none."""
+    game = tmp_path / 'mygame'
+    game.mkdir()
+    _make_game(str(game))
+    out = archive.create(str(game), str(tmp_path / 'flat2.7z'), level=1,
+                         wrapper=False, root='Real Game')
+    names = [n.replace('\\', '/').lstrip('/') for n in archive.names(out)]
+    assert 'index.html' in names
+    assert not any(n.startswith('Real Game/') for n in names)
+
+
 def test_wrapper_false_puts_contents_at_the_root(tmp_path):
     game = tmp_path / 'mygame'
     game.mkdir()

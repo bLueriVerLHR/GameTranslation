@@ -59,11 +59,15 @@ def filters_for(level=DEFAULT_LEVEL):
     return [{"id": py7zr.FILTER_ZSTD, "level": int(level)}]
 
 
-def create(folder, archive, level=DEFAULT_LEVEL, threads=None, wrapper=True):
+def create(folder, archive, level=DEFAULT_LEVEL, threads=None, wrapper=True,
+           root=None):
     """Create `archive` (7z + zstd) from `folder`; returns the archive path.
 
-    The folder is stored under its own basename, which is what the previous
-    ``7z a <archive> <folder>`` did and what ``deliver`` expects to extract.
+    The folder is stored under its own basename, or under `root` when given
+    (a build living in a work slot like `.../out/` is delivered under the
+    game's real name, and the archive must store that same name - every
+    previously delivered archive here has the game name as its root entry,
+    which is what ``deliver`` expects to extract).
     Pass ``wrapper=False`` to store the folder's *contents* at the archive root
     instead: that is the shape a device-side importer wants (JoiPlay opens an
     archive whose root holds ``index.html``) and the shape the delivered folders
@@ -84,7 +88,8 @@ def create(folder, archive, level=DEFAULT_LEVEL, threads=None, wrapper=True):
         os.remove(archive)
         log.info("removed stale archive %s", archive)
 
-    root = os.path.basename(os.path.normpath(folder)) if wrapper else ""
+    root = (root or os.path.basename(os.path.normpath(folder))
+            if wrapper else "")
     log.info("running: py7zr zstd level=%s %s <- %s (wrapper=%s)",
              level, archive, folder, wrapper)
     with py7zr.SevenZipFile(archive, "w", filters=filters_for(level)) as a:

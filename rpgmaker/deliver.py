@@ -70,7 +70,8 @@ def deliver(folder, archive=None, games=None, archives=None, level=15,
     # one, not the requested one.  Measured failure: --archive "<name>" wrote
     # "<name>.7z" into the cwd while the test looked at "<name>" and reported
     # a bogus "local archive failed integrity test".
-    local = Path(compress_mod.compress(str(folder), str(local), level=level))
+    local = Path(compress_mod.compress(str(folder), str(local), level=level,
+                                       root=name))
     if not compress_mod.test_archive(str(local)):
         raise RuntimeError("local archive failed integrity test: %s" % local)
 
@@ -88,20 +89,10 @@ def deliver(folder, archive=None, games=None, archives=None, level=15,
             log.info("removing stale folder %s", target)
             shutil.rmtree(target)
     os.makedirs(games, exist_ok=True)
-    # The archive stores the build folder under its own basename, so the wrapper
-    # entry to extract is the FOLDER's name, while the delivered name may differ
-    # (a build living in .../out/ delivered under the game's real name).
-    _extract(dst_archive, games, folder.name)
-    if name != folder.name:
-        extracted = games / folder.name
-        final = games / name
-        if final.exists():
-            if config.is_windows_side(final):
-                _remove_windows_side(final)
-            else:
-                shutil.rmtree(final)
-        os.replace(str(extracted), str(final))       # same volume: instant
-        log.info("renamed extracted folder %s -> %s", extracted, final)
+    # The archive stores the build tree under the DELIVERED name (create(root=)),
+    # so extracting that one entry lands in the correctly named folder even when
+    # the build itself sits in a work slot like .../out/ - no rename needed.
+    _extract(dst_archive, games, name)
 
     log.info("delivered: %s / %s", dst_archive, target)
     return str(dst_archive)

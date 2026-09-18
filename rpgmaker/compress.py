@@ -17,8 +17,13 @@ from . import archive, runtime
 log = logging.getLogger("rpgmaker.compress")
 
 
-def compress(folder, archive_path, level=archive.DEFAULT_LEVEL, threads=None):
+def compress(folder, archive_path, level=archive.DEFAULT_LEVEL, threads=None,
+             root=None):
     """Create a zstd 7z archive of `folder`. Returns the archive path.
+
+    `root` sets the archive's top-level entry name (default: the folder's own
+    basename) - `deliver` passes the delivered game name so the archive and
+    the games-dir folder agree.
 
     Any existing file at `archive_path` is replaced (py7zr opens in "w"
     mode; the explicit removal keeps the log line and guards against a
@@ -30,7 +35,8 @@ def compress(folder, archive_path, level=archive.DEFAULT_LEVEL, threads=None):
     """
     if threads is None:
         threads = runtime.auto_workers("compress", path=folder)
-    return archive.create(folder, archive_path, level=level, threads=threads)
+    return archive.create(folder, archive_path, level=level, threads=threads,
+                          root=root)
 
 
 def test_archive(archive_path):

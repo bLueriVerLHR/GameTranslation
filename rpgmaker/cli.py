@@ -256,7 +256,12 @@ def cmd_tyrano_audio(
 ):
     """mp3 -> Ogg Vorbis, rewriting the scenario .ks references in lockstep."""
     from tyrano import audio as tyrano_audio
-    tyrano_audio.convert_all(out, workers=workers, keep=keep, sample=sample)
+    # convert(), not convert_all(): the conversion deletes the mp3 files, so
+    # the scenario refs must be rewritten first (a convert_all-only wiring
+    # silently leaves every ref dangling = a build with no audio at all).
+    counts = tyrano_audio.convert(out, workers=workers, keep=keep,
+                                  sample=sample)
+    log.info("audio: %s", counts)
 
 
 @tyrano.command("clean")
@@ -274,6 +279,51 @@ def cmd_fix_autoplay(out: str = typer.Argument(..., help="built game folder")):
     """Patch [bgmovie] play() for the browser autoplay policy (idempotent)."""
     from tyrano import autoplay
     autoplay.patch_autoplay(out)
+
+
+@tyrano.command("localize-ui")
+def cmd_tyrano_localize_ui(
+    out: str = typer.Argument(..., help="built game folder"),
+    mapping: str = typer.Option(None, "--map", help="JSON {key: translation} "
+                                                  "for tyrano/lang.js"),
+    dump: str = typer.Option(None, "--dump", help="write the engine UI "
+                                                    "strings as JSON"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="report only"),
+):
+    """Localize the engine's own UI text (tyrano/lang.js).
+
+    The engine dialogs (return-to-title confirm, "no save data", script
+    errors) live outside data/scenario, so a translated scenario still
+    shows Japanese there.  Entries are matched by key, unknown keys are
+    reported and something that fails the mechanical gate is refused.
+    """
+    import json
+    from tyrano import ui_lang
+    lang = ui_lang.find_lang_file(out)
+    if not lang:
+        log.error("no tyrano/lang.js under %s", out)
+        raise typer.Exit(1)
+    strings = ui_lang.extract(lang)
+    log.info("localize-ui: %s carries %d engine UI strings", lang, len(strings))
+    if dump:
+        with open(dump, "w", encoding="utf-8") as f:
+            json.dump(strings, f, ensure_ascii=False, indent=4)
+            f.write("\n")
+        log.info("wrote %s", dump)
+    if not mapping:
+        return
+    with open(mapping, encoding="utf-8") as f:
+        table = json.load(f)
+    report = ui_lang.apply_map(lang, table, dry_run=dry_run)
+    log.info("localize-ui: %d applied, %d not in this lang.js, %d refused",
+             len(report["applied"]), len(report["missing"]),
+             len(report["refused"]))
+    for key in report["missing"]:
+        log.warning("localize-ui: no such key in lang.js: %s", key)
+    for item in report["refused"]:
+        log.error("localize-ui: refused: %s", item)
+    if report["refused"]:
+        raise typer.Exit(1)
 
 
 @tyrano.command("verify")

@@ -36,7 +36,7 @@ ELECTRON_RUNTIME = {
     "main.js", "package.json", "LICENSES.chromium.html",
     "chrome_100_percent.pak", "chrome_200_percent.pak",
     "d3dcompiler_47.dll", "ffmpeg.dll", "icudtl.dat", "libEGL.dll",
-    "libGLESv2.dll", "natives_blob.bin", "resources.pak",
+    "libGLESv2.dll", "natives_blob.bin", "preload.js", "resources.pak",
     "snapshot_blob.bin", "v8_context_snapshot.bin", "version", "locales",
     "swiftshader", "node_modules", "tyrano.ico", "tyrano.icns",
 }

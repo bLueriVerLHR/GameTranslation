@@ -83,12 +83,19 @@ class TestBuild:
         def fake_extract(src, out):
             calls["src"] = src
             make_asar_game(out)
+            # Electron's preload bridge is packed inside the asar too; it is
+            # a Node-only file (require("electron")) that the browser build
+            # must not carry over.
+            with open(os.path.join(out, "preload.js"), "w",
+                      encoding="utf-8") as f:
+                f.write('const { contextBridge } = require("electron");\n')
         monkeypatch.setattr("tyrano.asar.extract", fake_extract)
         work = str(tmp_path / "work")
         tb.unpack_game(root, work)
         assert calls["src"] == asar
         # electron runtime stripped
-        for fn in ("main.js", "package.json", "ffmpeg.dll", "icudtl.dat"):
+        for fn in ("main.js", "package.json", "ffmpeg.dll", "icudtl.dat",
+                   "preload.js"):
             assert not os.path.exists(os.path.join(work, fn)), fn
         # game files kept
         assert os.path.isfile(os.path.join(work, "index.html"))
@@ -225,6 +232,50 @@ class TestAudio:
         text = open(os.path.join(root, "data", "scenario", "first.ks"),
                     encoding="utf-8").read()
         assert 'storage="se1.ogg"' in text
+
+
+class TestAudioCommandWiring:
+    """The `audio` command must go through tyrano.audio.convert().
+
+    convert() rewrites the scenario .mp3 refs before transcoding (the
+    transcoder deletes the mp3s), so wiring the command to convert_all()
+    instead converts every file and leaves every ref dangling - a build
+    that is silent everywhere while the other checks still pass.  The
+    library-level tests above never see that: the regression lived in the
+    command wiring alone.
+    """
+
+    def test_audio_command_rewrites_refs(self, tmp_path, fake_tools):
+        from rpgmaker import cli
+        root = make_asar_game(str(tmp_path))
+        cli.cmd_tyrano_audio(root, workers=1, keep=False, sample=None)
+        text = open(os.path.join(root, "data", "scenario", "first.ks"),
+                    encoding="utf-8").read()
+        assert 'storage="se1.ogg"' in text, "the command did not rewrite refs"
+        assert "se1.mp3" not in text
+        assert os.path.isfile(os.path.join(root, "data", "sound", "se1.ogg"))
+        assert not os.path.isfile(os.path.join(root, "data", "sound",
+                                              "se1.mp3"))
+
+    def test_audio_command_clickse_rewritten(self, tmp_path, fake_tools):
+        """Non-storage audio attributes (button click/enter SEs) go through
+        the same rewrite; they are what a menu-only regression hides."""
+        from rpgmaker import cli
+        root = make_asar_game(str(tmp_path))
+        write_ks(os.path.join(root, "data", "scenario", "btn.ks"),
+                 '[Button_pluginEX clickse="se1.mp3" enterse="se1.mp3" ]\n')
+        cli.cmd_tyrano_audio(root, workers=1, keep=False, sample=None)
+        text = open(os.path.join(root, "data", "scenario", "btn.ks"),
+                    encoding="utf-8").read()
+        assert "se1.mp3" not in text and text.count("se1.ogg") == 2
+
+    def test_audio_command_keep_flag(self, tmp_path, fake_tools):
+        """--keep must survive the wiring (mp3 stays next to the new ogg)."""
+        from rpgmaker import cli
+        root = make_asar_game(str(tmp_path))
+        cli.cmd_tyrano_audio(root, workers=1, keep=True, sample=None)
+        assert os.path.isfile(os.path.join(root, "data", "sound", "se1.mp3"))
+        assert os.path.isfile(os.path.join(root, "data", "sound", "se1.ogg"))
 
 
 class TestClean:

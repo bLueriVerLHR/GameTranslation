@@ -166,6 +166,76 @@ def test_nested_parameter_text_is_scanned(tmp_path):
     assert [entry[2] for entry in findings["unexpected"]] == [KANA_TEXT]
 
 
+def test_plugin_command_label_is_by_design_but_args_are_not(tmp_path):
+    """357 dispatch keys and ``@text`` label are bookkeeping, args are text.
+
+    ``PluginManager.callCommand`` builds ``key = pluginName + ":" +
+    commandName`` from ``params[0]``/``params[1]``, ``command357`` passes
+    ``params[3]`` on, and ``params[2]`` is the editor's ``@text`` label - so a
+    kana label/dispatch key is by design, while a kana *argument* in the same
+    command still fails.
+    """
+    build = make_build(str(tmp_path))
+    make_map(build, [[357, 0, KANA_TEXT, KANA_LINE, KANA_LINE, ZH_TEXT]])
+    findings = qc.scan(build)
+    assert findings["unexpected"] == []
+    assert len(findings["by_design"]) == 3
+
+    build2 = make_build(str(tmp_path / "b2"))
+    make_map(build2, [[357, 0, "Plugin", "cmd", ZH_TEXT, KANA_LINE]])
+    assert [entry[2] for entry in qc.scan(build2)["unexpected"]] == [KANA_LINE]
+
+
+def test_system_json_asset_fields_are_by_design(tmp_path):
+    """Every System.json ``name`` is an audio/character stem, title*Name an
+    image stem - verified on real builds by resolving them to files on disk."""
+    build = make_build(str(tmp_path), system={
+        "gameTitle": KANA_TEXT,                       # shown -> residue
+        "title1Name": KANA_LINE,                      # img/titles1/*.png
+        "sounds": [{"name": KANA_TEXT}],               # audio/se/*.ogg
+        "defeatMe": {"name": KANA_LINE},               # audio/me/*.ogg
+        "switches": [KANA_TEXT],                      # shown by plugins
+    })
+    findings = qc.scan(build)
+    unexpected = {entry[1] for entry in findings["unexpected"]}
+    assert unexpected == {"gameTitle", "switches[0]"}
+    assert {entry[2] for entry in findings["by_design"]} == {KANA_LINE, KANA_TEXT}
+
+
+def test_map_event_name_is_by_design_but_display_name_is_not(tmp_path):
+    """Event names are editor labels (mvkeys skips them); displayName shows."""
+    build = make_build(str(tmp_path))
+    _dump(os.path.join(build, "data", "Map007.json"), {
+        "displayName": KANA_TEXT,
+        "events": [{"id": 1, "name": KANA_LINE, "note": "",
+                    "pages": [{"list": [[401, 0, ZH_TEXT]]}]}]})
+    findings = qc.scan(build)
+    assert [entry[2] for entry in findings["unexpected"]] == [KANA_TEXT]
+    assert [entry[2] for entry in findings["by_design"]] == [KANA_LINE]
+
+
+def test_name_lookups_are_reported(tmp_path, capsys):
+    """A build that looks an event up by name must be told about it."""
+    build = make_build(str(tmp_path))
+    make_map(build, [[108, 0, "<namePop:" + KANA_TEXT + ">"],
+                     [355, 0, "this.findEventByName('" + KANA_TEXT + "');"],
+                     [401, 0, ZH_TEXT]])
+    findings = qc.scan(build)
+    assert len(findings["name_lookups"]) == 2
+    assert findings["unexpected"] == []          # comments/script: by design
+    assert qc.main([build]) == 0
+    out = capsys.readouterr().out
+    assert "look up a map event by name" in out
+
+
+def test_name_lookup_section_is_absent_when_unused(tmp_path, capsys):
+    build = make_build(str(tmp_path))
+    make_map(build, [[401, 0, ZH_TEXT]])
+    assert qc.scan(build)["name_lookups"] == []
+    qc.main([build])
+    assert "look up a map event by name" not in capsys.readouterr().out
+
+
 def test_object_shaped_commands_are_scanned(tmp_path):
     build = make_build(str(tmp_path))
     make_map(build, [{"code": 401, "indent": 0, "parameters": [KANA_LINE]}])

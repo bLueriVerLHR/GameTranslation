@@ -636,6 +636,12 @@ RPG Maker 流水线。下述为桌面翻译路线；手机转换另见
   完整翻译也会被永久拒绝。键表是唯一口径。
 - **identity 条目 (v == k 且含假名) 自动剔除**: bake 加载 dict 时删掉
   这类条目 — 它们会 SHADOW 逐行 fallback(块查找"成功"但文本还是日文)。
+- **烘焙后必须回读比对 (mandatory, 2026-09 定案)**: 五道门禁与覆盖率只证明
+  **译库**完整,bake 本身可能静默跳过整类键 — 实测 System.json 字段表漂移
+  (`element` vs `elements`、缺 `gameTitle`)导致标题/属性名在「100% 覆盖」下
+  仍是日文。烘焙后必须把译库每个键的 JSON 路径在构建里解析回来逐条比对
+  (`docs/experience-translation.md`),不一致当失败处理。烘焙后验收继续跑
+  `tools/qc_build_kana.py <构建> --source <日文原版> --work <工作区>`。
 - **名称引用自动检查 (TE/namePop)**: bake 尾部自动对照 `<TE:name>`/
   `<namePop:name>` 与全游戏事件名,失配的 dangling ref 逐一 WARN
   (含带控制码而被跳过翻译的 ref — 若事件名被翻了而 ref 没翻必被抓)。

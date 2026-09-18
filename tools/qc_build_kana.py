@@ -18,9 +18,19 @@ Classification of what **must** be translated is deliberate:
   real misses;
 * by-design skips: comment commands (108/408), commands whose string
   parameters are **payload rather than display text** (111 conditional
-  branch, 355/655 script, 356/0 menu-command plugin text), the internal
-  ``name`` of Animations/CommonEvents/MapInfos/Tilesets, and every ``note``
-  field (it carries plugin commands, not prose);
+  branch, 355/655 script, 356/0 menu-command plugin text), a 357 plugin
+  command's dispatch keys and editor label (``parameters[0]``/``[1]``/``[2]``
+  - the engine looks the handler up as ``pluginName:commandName`` and never
+  reads the ``@text`` label, while the argument object at ``parameters[3]``
+  stays checked), the internal ``name`` of
+  Animations/CommonEvents/MapInfos/Tilesets and of map *events*, System.json's
+  asset fields (``sounds[].name``, ``title1Name`` ... - every value resolves
+  to a file under ``audio/``/``img/``), and every
+  ``note`` field (it carries plugin commands, not prose);
+* ``name_lookups``: strings that look a map event up by name
+  (``findEventByName(...)``, ``<namePop:...>``, ``<TE:...>``).  There an event
+  name is functional (or shown), so the report calls it out - a build with
+  lookups must translate the argument and the name together;
 * ``allow_kana.json`` from the translation workspace (author names, fixed
   spellings) is honoured when ``--work`` is given;
 * with ``--source``, build strings that are **byte-identical to the original
@@ -85,6 +95,32 @@ INTERNAL_NAME_FIELDS = frozenset([
     ("Animations.json", "name"), ("CommonEvents.json", "name"),
     ("MapInfos.json", "name"), ("Tilesets.json", "name"),
 ])
+#: Plugin command (357): ``[pluginName, commandName, @text, args]``.
+#: ``params[0]``/``params[1]`` are the *dispatch keys* - the engine builds
+#: ``key = pluginName + ":" + commandName`` and looks the handler up by it
+#: (``PluginManager.callCommand`` in the build's own rmmz_managers.js) - so
+#: translating either one makes the command silently do nothing; ``params[2]``
+#: is the *editor's* ``@text`` label (``command357`` passes ``params[3]`` on,
+#: never ``params[2]``), the same editor bookkeeping as the 657 echo above, and
+#: mvkeys does not extract it either.  Only the argument object at
+#: ``params[3]`` can hold text a plugin renders, so only that index is checked.
+PLUGIN_COMMAND_CODE = 357
+PLUGIN_BOOKKEEPING_RE = re.compile(r"\.parameters\[[012]\]$")
+#: System.json asset references: every ``name`` there (``sounds[].name``,
+#: ``battleBgm``/``titleBgm``/``victoryMe``/``defeatMe``/``gameoverMe``/
+#: ``battleEndMe``/``boat``/``ship``/``airship``) is an audio or character file
+#: stem, and ``title1Name``/``title2Name`` are image stems.  Verified by
+#: resolving every value to a file under ``audio/``/``img/`` on two real builds
+#: (29/29 and 30/30) - none of them is ever drawn as text.
+SYSTEM_ASSET_FIELDS = frozenset(["title1Name", "title2Name"])
+#: Map *event* names belong to the editor-internal family above: mvkeys never
+#: extracts them ("editor-only names (MapInfos/event/CommonEvent names)") and a
+#: plugin that finds an event by exact name (``findEventByName``,
+#: ``<namePop:...>``) needs it byte-identical - translating one without also
+#: translating every lookup argument breaks the lookup.  ``name_lookups``
+#: reports the builds where that assumption has to be re-checked instead.
+MAP_FILE_RE = re.compile(r"^Map\d+\.json$")
+NAME_LOOKUP_RE = re.compile(r"findEventByName\s*\(|<(?:namePop|TE):")
 #: Every ``note`` field is a skip: plugin commands, not prose.
 NOTE_FIELD = "note"
 
@@ -179,9 +215,16 @@ def classify(file_name, trail, text, code, allow_list):
     if code is not None and (code in COMMENT_CODES or code in LOGIC_CODES
                              or code in LOOKUP_CODES or code in ASSET_CODES):
         return "by-design"
+    if code == PLUGIN_COMMAND_CODE and PLUGIN_BOOKKEEPING_RE.search(trail):
+        return "by-design"
     field = field_name(trail)
     if field in ASSET_FIELDS or (file_name, field) in INTERNAL_NAME_FIELDS \
             or field == NOTE_FIELD:
+        return "by-design"
+    if file_name == "System.json" and (field == "name"
+                                       or field in SYSTEM_ASSET_FIELDS):
+        return "by-design"
+    if field == "name" and MAP_FILE_RE.match(file_name):
         return "by-design"
     return "unexpected"
 
@@ -224,7 +267,8 @@ def scan(build_dir, source_dir=None, work_dir=None, plugin_scan=True):
             "not an MZ/MV build (no data/System.json): %s" % build_dir)
     allow_list = load_allow_list(work_dir)
     findings = {"unexpected": [], "by_design": [], "allowed": [],
-                "placeholder": [], "identical": [], "files": 0, "strings": 0}
+                "placeholder": [], "identical": [], "name_lookups": [],
+                "files": 0, "strings": 0}
     for file_name in sorted(os.listdir(data_dir)):
         if not file_name.endswith(".json"):
             continue
@@ -240,6 +284,8 @@ def scan(build_dir, source_dir=None, work_dir=None, plugin_scan=True):
         strings = walk_document(document)
         findings["strings"] += len(strings)
         for trail, text, code in strings:
+            if NAME_LOOKUP_RE.search(text):
+                findings["name_lookups"].append((file_name, trail, text))
             if not KANA.search(text):
                 continue
             bucket = classify(file_name, trail, text, code, allow_list)
@@ -336,6 +382,18 @@ def report(findings, limit=25, stream=None):
         stream.write("placeholder (%%N) mismatches: %d\n" % len(placeholders))
     stream.write("identical to source (kana-free CJK, review only): %d\n"
                  % len(findings.get("identical", [])))
+    lookups = findings.get("name_lookups") or []
+    if lookups:
+        stream.write("WARNING: %d string(s) look up a map event by name "
+                     "(findEventByName / <namePop:> / <TE:>) - there an event "
+                     "name is functional, so translate the lookup argument and "
+                     "the event name together (bake checks these refs):\n"
+                     % len(lookups))
+        for file_name, trail, text in lookups[:5]:
+            stream.write("   %s %s = %s\n"
+                         % (file_name, trail[-45:], repr(text[:70])))
+        if len(lookups) > 5:
+            stream.write("   ... %d more\n" % (len(lookups) - 5))
     for file_name, trail, japanese, translated in placeholders[:limit]:
         stream.write("   %s %s\n      ja=%s\n      zh=%s\n"
                      % (file_name, trail[-60:], repr(japanese[:70]),

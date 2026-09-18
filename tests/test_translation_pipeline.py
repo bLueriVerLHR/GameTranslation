@@ -82,7 +82,8 @@ def make_game(root):
                  "description": "HPをかいふくする", "note": ""}])
     write_json(os.path.join(data, "System.json"),
                {"terms": {"basic": ["HP", "MP"]},
-                "message": ["こんにちは"], "commands": ["ニューゲーム"]})
+                "gameTitle": "こんにちは",
+                "elements": ["", "ニューゲーム"]})
     plugins = ('var $plugins =\n[\n  {"name": "MZ_Shop.js", "status": true,'
                ' "description": "", "parameters": {"title": "ショップ"}}\n];\n')
     with open(os.path.join(root, "js", "plugins.js"), "w",
@@ -215,8 +216,8 @@ class TestFullPipeline:
         assert items[0]["description"] == to_zh("HPをかいふくする")
         sysj = json.load(open(os.path.join(out, "data", "System.json"),
                               encoding="utf-8"))
-        assert sysj["message"] == [to_zh("こんにちは")]
-        assert sysj["commands"] == [to_zh("ニューゲーム")]
+        assert sysj["gameTitle"] == to_zh("こんにちは")
+        assert sysj["elements"] == ["", to_zh("ニューゲーム")]
         ce = json.load(open(os.path.join(out, "data", "CommonEvents.json"),
                             encoding="utf-8"))
         assert ce[0]["list"][0]["parameters"][0] == to_zh("ようこそ")

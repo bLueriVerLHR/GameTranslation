@@ -373,8 +373,10 @@ class TestTranslateDataEndToEnd:
                   items=[{"id": 1, "name": "やくそう",
                           "description": "HPをかいふくする", "note": ""}],
                   system={"terms": {"basic": ["HP", "MP"]},
-                          "message": ["こんにちは"]})
-        D = {"やくそう": "药草", "HPをかいふくする": "恢复HP", "こんにちは": "你好"}
+                          "gameTitle": "ドラゴン",
+                          "elements": ["", "ほのお"]})
+        D = {"やくそう": "药草", "HPをかいふくする": "恢复HP",
+             "ドラゴン": "龙", "ほのお": "火焰"}
         bake.STATS.update(hit=0, miss=0)
         bake.translate_data(root, D, write=True)
         items = json.load(open(os.path.join(root, "data", "Items.json"),
@@ -383,7 +385,10 @@ class TestTranslateDataEndToEnd:
                               encoding="utf-8"))
         assert items[0]["name"] == "药草"
         assert items[0]["description"] == "恢复HP"
-        assert sysj["message"] == ["你好"]
+        # real System.json display fields (``message`` was a VX-Ace-only name;
+        # MZ/MV keep their message terms inside ``terms``)
+        assert sysj["gameTitle"] == "龙"
+        assert sysj["elements"] == ["", "火焰"]
 
     def test_plugins_js_exact_match(self, tmp_path):
         root = str(tmp_path / "game")
@@ -655,6 +660,42 @@ class TestMainCoverageGate:
         write_json(trs, {})
         assert self._run_main(root, out, trs, monkeypatch=monkeypatch) == 0
         assert os.path.isdir(out)
+
+    def test_system_display_fields_are_baked(self, tmp_path, monkeypatch):
+        """Regression: gameTitle / elements / currencyUnit used to be skipped.
+
+        They were extracted as keys, translated, gated and counted as covered,
+        but the bake's System.json field list spelled ``element`` (singular)
+        and had no ``gameTitle``/``currencyUnit``, so a finished build kept a
+        Japanese title screen and Japanese element names at "100% coverage".
+        """
+        root = str(tmp_path / "game")
+        make_game(root, maps={"Map001.json": ("", [])}, system={
+            "gameTitle": "\u30c9\u30e9\u30b4\u30f3\u30c7\u30a3\u30a2",
+            "currencyUnit": "\u30b4\u30fc\u30eb\u30c9",
+            "elements": ["", "\u7269\u7406", "\u30c9\u30e9\u30b4\u30f3"],
+            "switches": [None, "\u30dc\u30b9\u5165\u308a\u53e3"],
+            "terms": {"basic": ["\u30ec\u30d9\u30eb", "\u7d4c\u9a13\u5024"]},
+        })
+        out = str(tmp_path / "out")
+        trs = str(tmp_path / "trs.json")
+        write_json(trs, {
+            "\u30c9\u30e9\u30b4\u30f3\u30c7\u30a3\u30a2": "\u9f99\u4e4b\u8fea\u4e9a",
+            "\u30b4\u30fc\u30eb\u30c9": "\u91d1\u5e01",
+            "\u7269\u7406": "\u7269\u7406",
+            "\u30c9\u30e9\u30b4\u30f3": "\u9f99",
+            "\u30dc\u30b9\u5165\u308a\u53e3": "Boss\u5165\u53e3",
+            "\u30ec\u30d9\u30eb": "\u7b49\u7ea7",
+            "\u7d4c\u9a13\u5024": "\u7ecf\u9a8c\u503c",
+        })
+        assert self._run_main(root, out, trs, monkeypatch=monkeypatch) == 0
+        baked = json.load(open(os.path.join(out, "data", "System.json"),
+                              encoding="utf-8"))
+        assert baked["gameTitle"] == "\u9f99\u4e4b\u8fea\u4e9a"
+        assert baked["currencyUnit"] == "\u91d1\u5e01"
+        assert baked["elements"][2] == "\u9f99"
+        assert baked["switches"][1] == "Boss\u5165\u53e3"
+        assert baked["terms"]["basic"] == ["\u7b49\u7ea7", "\u7ecf\u9a8c\u503c"]
 
 
 class TestKeyCoverage:

@@ -344,6 +344,23 @@ false，因为 `$gameMap.isEventRunning()` 恒 true；地图解释器空闲
   「覆盖」门禁（每键需非空）永远不绿。实测一款 MZ 游戏 10 个键卡在这里。
   现有头行之间的文本**原样保留**（写方为空行的那一行就是真的尾部换行），
   手写批次尾部多余的空行不再被静默吞掉（会作为多一行被门禁报出）。
+- `rpgmaker_constants.SYSTEM_TEXT_FIELDS`（bake 与旧提取器共用的 System.json
+  字段表）曾与提取器（`translation.mvkeys._SYSTEM_KEYS`）漂移：写成 `element`
+  （真名是 `elements`）、完全没有 `gameTitle`/`currencyUnit`，却带着只属于
+  VX Ace 的 `message`/`commands`。后果是**静默**的：这些串被提取成键、被翻译、
+  过五道门禁、算进覆盖率，而 bake 从没写进构建 —— 一款 MZ 游戏在「100% 覆盖」
+  下交付了日文标题与日文属性名（`ドラゴンディア`/`ドラゴン`/`アンデッド`）。
+  修法：两张表对齐（`tests/test_system_fields.py` 钉死一致），并把 bake 写盘
+  结果与译库**逐键回读比对**（键 id 里的 JSON 路径解析回构建文档）作为烘焙后
+  验收的一环 —— 「门禁全绿」证明不了「构建真的改了」。
+- `tools/qc_build_kana.py`（烘焙后验收）：原先把三类「引擎根本不读的串」
+  报成 unexpected，MZ 游戏因此永远 REVIEW NEEDED（一个失去意义的门禁）：(a)
+  MZ `357` 插件命令的 `parameters[0]`/`[1]`（引擎按 `pluginName:commandName`
+  查处理器）与 `[2]`（编辑器 `@text` 标签，`command357` 只传 `[3]`），(b) 地图
+  **事件名**（提取器有意不抽取；有 `findEventByName`/`<namePop:>`/`<TE:>` 的
+  构建会在报告里单独 WARN 出来供复核），(c) System.json 的资源字段
+  （`sounds[].name`/`title1Name`…，逐个能在 `audio/`/`img/` 里找到同名文件）。
+  实测 MZ 的 unexpected 从 3114 降到 0。
 - `gen_translation_shards.py`：auto 选档现在是默认
   （--target-chunks N / --context-budget-kb 90 二分搜索，上下文估算误差
   <3%）。

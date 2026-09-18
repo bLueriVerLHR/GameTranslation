@@ -167,7 +167,8 @@ class TestMainTemplate:
                   items=[{"id": 1, "name": "やくそう",
                           "description": "HPをかいふくする", "note": ""}],
                   system={"terms": {"basic": ["HP", "MP"]},
-                          "message": ["こんにちは"], "commands": ["ニューゲーム"]})
+                          "gameTitle": "こんにちは",
+                          "elements": ["", "ニューゲーム"]})
         run_build(root, out, monkeypatch=monkeypatch)
         template = load(out, "template.json")
         kinds = load(out, "kinds.json")

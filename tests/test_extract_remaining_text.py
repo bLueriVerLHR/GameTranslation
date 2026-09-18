@@ -377,8 +377,8 @@ class TestMain:
         root = str(tmp_path / "game")
         make_game(root, maps={"Map001.json": ("", [])},
                   system={"terms": {"basic": ["HP", "MP"]},
-                          "message": ["こんにちは"],
-                          "commands": ["ニューゲーム"],
+                          "gameTitle": "こんにちは",
+                          "elements": ["", "ニューゲーム"],
                           "variables": ["スイッチA"]})
         out = str(tmp_path / "out")
         run_extract(root, out, monkeypatch=monkeypatch)

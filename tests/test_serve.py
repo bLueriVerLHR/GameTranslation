@@ -183,6 +183,69 @@ class TestServeBindAndExit:
         assert serve.serve(web, port=free_port(), bind_and_exit=True) is True
 
 
+class TestSmokePaths:
+    """The smoke probe must follow the build's own layout: RPG Maker
+    (js/, audio/, img/) and TyranoScript (tyrano/, data/scenario) share no
+    paths, and probing the wrong set reported ISSUES on a build that plays."""
+
+    def _tyrano_build(self, root):
+        for rel in ("tyrano/plugins/kag", "data/scenario", "data/system",
+                    "data/bgm", "data/fgimage/cg"):
+            os.makedirs(os.path.join(root, rel), exist_ok=True)
+        files = {
+            "index.html": "<html></html>",
+            "tyrano/tyrano.js": "//engine",
+            "tyrano/plugins/kag/kag.js": "//kag",
+            "data/scenario/first.ks": "[_tb_system_call storage=x]\n",
+            "data/system/Config.tjs": ";configSave=webstorage\n",
+            "data/bgm/theme.ogg": "OggS",
+            "data/fgimage/cg/scene.png": "\x89PNG",
+        }
+        for rel, body in files.items():
+            with open(os.path.join(root, *rel.split("/")), "w",
+                      encoding="utf-8") as f:
+                f.write(body)
+        return root
+
+    def test_mz_layout_probe(self, game_web):
+        paths = serve.smoke_paths(game_web)
+        assert "js/main.js" in paths and "data/System.json" in paths
+        assert not any(p.startswith("tyrano/") for p in paths)
+
+    def test_tyrano_layout_probe(self, tmp_path):
+        root = self._tyrano_build(str(tmp_path / "t"))
+        paths = serve.smoke_paths(root)
+        assert "tyrano/tyrano.js" in paths
+        assert "data/scenario/first.ks" in paths
+        assert "data/system/Config.tjs" in paths
+        # one real audio + one real picture, with Tyrano paths
+        assert "data/bgm/theme.ogg" in paths
+        assert "data/fgimage/cg/scene.png" in paths
+        assert "js/main.js" not in paths
+
+    def test_tyrano_audio_probe_accepts_m4a(self, tmp_path):
+        """A Tyrano game may ship m4a only (the engine plays AAC); the probe
+        must still find a real audio file."""
+        root = self._tyrano_build(str(tmp_path / "t"))
+        os.remove(os.path.join(root, "data", "bgm", "theme.ogg"))
+        os.makedirs(os.path.join(root, "data", "bgm"), exist_ok=True)
+        with open(os.path.join(root, "data", "bgm", "theme.m4a"), "w") as f:
+            f.write("ftyp")
+        assert "data/bgm/theme.m4a" in serve.smoke_paths(root)
+
+    def test_tyrano_smoke_test_passes(self, tmp_path, no_proxy):
+        root = self._tyrano_build(str(tmp_path / "t"))
+        results, ok = serve.smoke_test(root, port=free_port())
+        assert ok, results
+        assert results["tyrano/tyrano.js"] == 200
+
+    def test_missing_engine_file_fails(self, tmp_path, no_proxy):
+        root = self._tyrano_build(str(tmp_path / "t"))
+        os.remove(os.path.join(root, "tyrano", "tyrano.js"))
+        results, ok = serve.smoke_test(root, port=free_port())
+        assert not ok
+
+
 class TestSmokeTest:
     def test_healthy_game_all_200(self, game_web, no_proxy):
         results, ok = serve.smoke_test(game_web, port=free_port())

@@ -11,6 +11,7 @@ import http.client
 import http.server
 import logging
 import mimetypes
+import os
 import threading
 import urllib.parse
 import urllib.request
@@ -40,6 +41,55 @@ SMOKE_PATHS = [
     "audio/bgm",
     "img/pictures",
 ]
+
+# TyranoScript / TyranoBuilder tree (index.html + tyrano/ + data/).
+TYRANO_SMOKE_PATHS = [
+    "index.html",
+    "tyrano/tyrano.js",
+    "tyrano/plugins/kag/kag.js",
+    "data/scenario/first.ks",
+    "data/system/Config.tjs",
+]
+
+# (directory, extensions) holding one real audio and one real picture.
+_LAYOUT_MEDIA = {
+    "mz": (("audio/bgm", (".ogg",)), ("img/pictures", (".png",))),
+    "tyrano": (("data/bgm", (".ogg", ".m4a")), ("data/fgimage", (".png",))),
+}
+
+
+def _first_file(folder, rel_dir, exts):
+    """First file under `rel_dir` (walked in sorted order) with one of
+    `exts`, as a root-relative URL path - or None when there is none."""
+    root = os.path.join(folder, *rel_dir.split("/"))
+    if not os.path.isdir(root):
+        return None
+    for dp, dns, fns in os.walk(root):
+        dns.sort()
+        for fn in sorted(fns):
+            if fn.lower().endswith(exts):
+                rel = os.path.relpath(os.path.join(dp, fn), folder)
+                return rel.replace(os.sep, "/")
+    return None
+
+
+def smoke_paths(folder):
+    """Paths to request for a play-test smoke check.
+
+    The supported layouts ship completely different trees: RPG Maker
+    (js/, audio/, img/, data/*.json) vs TyranoScript (tyrano/, data/scenario,
+    data/system).  Probing RPG Maker paths against a Tyrano build reported
+    ISSUES on a build that plays fine, so the probe follows the layout -
+    detected from the build itself, never from a flag the caller must know.
+    """
+    tyrano = os.path.isfile(os.path.join(folder, "tyrano", "tyrano.js"))
+    paths = list(TYRANO_SMOKE_PATHS if tyrano else SMOKE_PATHS)
+    # add one concrete audio + one concrete picture for a real byte check
+    for rel_dir, exts in _LAYOUT_MEDIA["tyrano" if tyrano else "mz"]:
+        probe = _first_file(folder, rel_dir, exts)
+        if probe:
+            paths.append(probe)
+    return list(dict.fromkeys(paths))
 
 
 class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
@@ -87,22 +137,7 @@ def smoke_test(folder, port=8100, host="127.0.0.1"):
     results = {}
     try:
         base = "http://%s:%d" % (host, port)
-        # figure out one real audio + one real picture for a concrete check
-        smoke = list(SMOKE_PATHS)
-        import os
-        audio_dir = os.path.join(folder, "audio", "bgm")
-        if os.path.isdir(audio_dir):
-            for fn in os.listdir(audio_dir):
-                if fn.endswith(".ogg"):
-                    smoke.append("audio/bgm/" + fn)
-                    break
-        pic_dir = os.path.join(folder, "img", "pictures")
-        if os.path.isdir(pic_dir):
-            for fn in os.listdir(pic_dir):
-                if fn.endswith(".png"):
-                    smoke.append("img/pictures/" + fn)
-                    break
-        for path in dict.fromkeys(smoke):
+        for path in smoke_paths(folder):
             url = base + "/" + urllib.parse.quote(path)
             try:
                 with urllib.request.urlopen(url, timeout=10) as r:

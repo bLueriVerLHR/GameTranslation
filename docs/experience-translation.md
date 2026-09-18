@@ -743,3 +743,8 @@ python -m translation.cli prepare <game_dir> <work_dir> --note-tags 拡張説明
   原 repack 自己也只会显示键）。
 - 教训一句话：**「五门禁全绿 + 覆盖率 100%」只证明已提取子集译完；构建能不能
   显示中文，必须在真构建上跑 `qc_build_kana --source` 并用浏览器看一遍。**
+- **打包时删掉运行时字典**：`翻译文件.json`（或 `<title>.json`）是**构建期数据源**
+  （inliner 的 tier 2/3），禁用插件后游戏零引用 → 它不是游戏资源，不应进包；
+  但 `clean` 不认这个名字（只认根目录 `<title>.json`），而且 bake 会从源副本
+  把它复制回来，所以删除必须放在 **bake 之后、打包之前**。字段补译完之后把
+  中文写回游戏自带表格的 `cn` 列更省事：表格是随包资源，且下一次 bake 直接用它。

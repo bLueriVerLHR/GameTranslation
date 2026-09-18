@@ -51,6 +51,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import japanese_utils  # noqa: E402
 import plain_io  # noqa: E402
 import plugins_io  # noqa: E402
+import resolve_text_keys  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
 from rpgmaker import cliutil, config  # noqa: E402
@@ -601,6 +602,10 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game directory")]
             "--min-coverage")] = False,
         no_kv: Annotated[bool, cliutil.Option(
             "--no-kv", help="do not write translation_kv.json")] = False,
+        no_text_keys: Annotated[bool, cliutil.Option(
+            "--no-text-keys", help="do not inline runtime text keys "
+            "(\\T[id]) - repacks whose data/*.json holds keys instead of "
+            "text need it, see tools/resolve_text_keys.py")] = False,
         workers: Annotated[Optional[int], cliutil.Option(
             "--workers", help="parallel data-file workers for the bake pass "
             "(default: single-threaded; >1 translates the data files "
@@ -691,6 +696,23 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game directory")]
     if coverage_ratio is not None:
         log.info("baked %d of the game's %d keys (%.1f%% key coverage)",
                  covered, total, 100 * coverage_ratio)
+    # Repacks that keep their display text in a runtime table (MTool "mount
+    # translation", the game's own csv text database) carry \T[id] keys in
+    # data/ and js/plugins.js.  The library knows nothing about them (they are
+    # ASCII, no kana), and the web build has no runtime to resolve them: the
+    # title menu of one such build read "\T[SIS1036]" until this step inlined
+    # them from csv/UI.csv + the repack's dictionary.
+    if not no_text_keys:
+        try:
+            keys_stats = resolve_text_keys.resolve_build(out_dir)
+        except (FileNotFoundError, ValueError) as exc:
+            log.warning("text-key inlining skipped (%s)", exc)
+        else:
+            for line in resolve_text_keys.format_report(keys_stats):
+                log.info("%s", line)
+            if keys_stats["unresolved"]:
+                log.warning("text keys with no text in any source: %d key(s) "
+                            "stay verbatim", len(keys_stats["unresolved"]))
     apply_font_policy(out_dir, cjk_font, jp_font)
     if not no_kv:
         kv_path = os.path.join(out_dir, "translation_kv.json")

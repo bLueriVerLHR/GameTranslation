@@ -27,10 +27,30 @@ import re
 from collections import Counter, defaultdict
 
 __all__ = ["CODE_RE", "DISPATCH_RE", "KANA_RE", "KANA_LETTERS_RE", "CJK_RE",
+           "TEXT_KEY_RE",
            "parse_codes", "code_key", "parse_code_sequence",
            "split_keep_codes", "parameter_of", "has_text_parameter",
            "scan_js", "inventory",
            "write_markdown"]
+
+#: A **runtime text-table key** (``\T[id]``).  It is not an RPG Maker escape
+#: code: some repacks replace every display string with a key and resolve it at
+#: runtime - either MTool's "mount translation" mode (its own dictionary) or the
+#: game's own multilingual plugin, which reads ``csv/UI.csv`` through Node's
+#: ``fs``.  Neither runtime exists in a JoiPlay/browser build, so a key left in
+#: display text is drawn verbatim (a title menu literally reading
+#: ``\T[SIS1036]``).  ``tools/resolve_text_keys.py`` inlines them at build time,
+#: ``tools/qc_build_kana.py`` fails the build when one survives.
+#:
+#: ``group(1)`` is the run of backslashes in front of the key: a key inside a
+#: nested JSON parameter carries one escaping level per JSON.parse between the
+#: file and the string the plugin renders (``\T[id]`` at the top level,
+#: ``\\T[id]`` inside one JSON layer, ``\\\\T[id]`` inside two - a QuestSystem
+#: ``QuestDatas`` blob does this).  Inlining must consume the **whole** run and
+#: re-escape the text for ``len(run) // 2`` levels, or the nested JSON stops
+#: parsing (``"Title":"\\药草采集"``: invalid escape) and the game dies with
+#: ``SyntaxError: ... is not valid JSON`` at boot.
+TEXT_KEY_RE = re.compile(r"(?<!\\)(\\+)(T\[([^\]\\]+)\])")
 
 #: One control-code token: ``\name<...>`` / ``\name[...]`` / single-char form.
 CODE_RE = re.compile(r"\\[A-Za-z]+(?:<[^<>]*>|\[[^\[\]]*\])?|\\[{}.|^!$~]")

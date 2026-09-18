@@ -691,3 +691,55 @@ python -m translation.cli prepare <game_dir> <work_dir> --note-tags 拡張説明
   `numberFontFilename` → 数字字体仍指向旧字体，`clean` 就不会把旧字体当
   “未使用”删掉（本例白留 8.8 MB）。手工把两者都置空后 `clean` 正常回收。
   该文件属并行会话正在改的范围，留待其自己修。
+
+## 11. 运行期文本键（`\T[键]`）：浏览器/JoiPlay 里没有任何东西解析它（2026-09，MZ 实测）
+
+**现象**：构建能跑，但**开始菜单直接显示原始键**（`\T[SIS1036]` 而不是
+「新游戏」）；`data/*.json` 与 `js/plugins.js` 里全是 `\T[键]`
+（一款大型 MZ repack 实测 **7,176 个键 / 14,507 处**）。此时五门禁全绿、
+覆盖率还写着 100% —— 因为键是**纯 ASCII、零假名**，提取器不把它当文本，
+假名门禁也永远看不见它。
+
+**两种解析机制，网页构建里都不存在**：
+
+1. 游戏自带的多语言插件（`Chimaki_Lang` 一类，报头写着 "Configure
+   multilingual by using CSV file v1.2"）用 **Node 的
+   `fs.readFile('./csv/UI.csv')`** 读文本表 —— 浏览器里没有 `fs`。
+   **不要试图重新启用它**：把 `status` 改 true 后标题画面立刻抛
+   `TypeError: Cannot read properties of undefined (reading 'SIS1036')`
+   （表永远加载不出来，整个画面变成报错屏），实测确认。
+2. MTool「挂载翻译」（根目录 `MTool挂载翻译.txt` 标记）在运行时用随包字典
+   （`翻译文件.json`）替换键；清理掉 MTool 之后没有任何东西替换。
+
+**解法 = 构建期落地**（`tools/resolve_text_keys.py`，已接进
+`tools/bake_translation.py`，`--no-text-keys` 关闭）。数据源优先级：
+
+1. 游戏自带 CSV 文本表的 `cn` 列（`csv/UI.csv`：`id,who,tw,cn,en`，
+   `tw` 装日文原文）；
+2. 随包字典的**术语行**（`ID,分类,日语,中文,English` → 取 id 之后
+   **最后一个含 CJK 且无假名**的字段，能躲开日文分类列与英文列）；
+3. 该 id 的日文经字典的 `{日文:中文}` 平配对译；
+4. 只剩日文时就用日文（比在屏幕上显示键好，且计数可见）；
+5. 全都没有 → 原样保留并报告（`--strict` 变非零退出）。
+
+配套约定：
+
+- **只改显示文本**：字段判定直接复用 `tools/qc_build_kana.py::classify`
+  （资产名/地图事件名/`note`/357 派发键/System 资源字段全部豁免），
+  两个工具就不会各自漂移。
+- **转义层级是第二个坑**：键在嵌套 JSON 参数里每多一层 `JSON.parse` 就多一层
+  反斜杠（`\T[id]` / `\\T[id]` / `\\\\T[id]`，`QuestDatas` 这类三层参数
+  实测存在）。必须吃下**整段**反斜杠、按 `len(run) // 2` 把插入文本重新转义
+  —— 只吃两个反斜杠会留下 `"Title":"\\药草采集"`（非法转义），游戏开机直接
+  `SyntaxError: ... is not valid JSON`。工具的 `json_layers()` 会在改写前后
+  对比「有多少字符串还能被 `JSON.parse`」，退化即 WARN。
+- **验收门禁**：`qc_build_kana.py` 新增 `text_keys` 类 —— 显示文本里残留
+  `\T[键]` 即判失败（依据同一份 `translation.codes.TEXT_KEY_RE`）。
+  作者表格里**本来就只有日文**的行按 `source_table` 单列（只报不判失败；
+  表内单元格先剥掉控制码再比对，因为事件会在键两侧加码），
+  否则「表格只译了一部分」的 repack 会让门禁永远红。
+- 实测量级（一款 MZ repack）：14,153 处 → 表格中文列 65.1% + 字典术语 10.4%
+  + 字典日文对译 10.9% + 只能回退日文 13.6% + 连原包都没有文本 0.05%（7 处，
+  原 repack 自己也只会显示键）。
+- 教训一句话：**「五门禁全绿 + 覆盖率 100%」只证明已提取子集译完；构建能不能
+  显示中文，必须在真构建上跑 `qc_build_kana --source` 并用浏览器看一遍。**

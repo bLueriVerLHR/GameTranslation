@@ -157,6 +157,8 @@ JSON**，而且可能套两层（`["{\\"label\\":\\"戦う\\"}"]`，写回时
 **“gates 全绿”只证明已提取子集译完，不等于游戏里没有日文**：完工前必须在
 **最终构建**上跑假名残留扫描：`python tools/qc_build_kana.py <build>
 [--source <日文原版>] [--work <工作区>]`——扫 `data/*.json` 的每个字符串，
+它同时会报**残留运行期文本键**（`\T[键]`，见 `docs/experience-translation.md`
+§11）——构建里残留一个就判失败，因为网页运行环境没有人解析它。
 假名字母类为 `[\u3041-\u3096\u30a1-\u30fa\uff66-\uff9d]`（`・`/`ー`
 是允许项）；同时用 `--source` 比 `%N` 占位符数量。退出码 0 才算过，
 否则会交出“看着绿、实际半日文”的构建（见
@@ -528,6 +530,12 @@ python tools\bake_translation.py <built_joiplay> <out_dir> --trs translated.json
 
 - 拷贝已构建（已解密、已压缩）的 JoiPlay 目录，无需重跑
   `build`/`audio`/`clean`。
+- **运行期文本键落地**：有些 repack 的 `data/*.json` 里不是文本而是键
+  （`\T[键]`，靠 MTool 运行时字典或游戏自带 CSV 文本表在运行时解析，
+  网页构建两者都没有）。烘焙末尾自动调
+  `tools/resolve_text_keys.py` 把它们落成真文本（表格 `cn` 列 → 字典术语 →
+  字典日文对译 → 日文回退 → 保留并报告），`--no-text-keys` 关闭。
+  详见 `docs/experience-translation.md` §11。
 - **只精确匹配。** 对每段连续 `401`/`405` 命令用 `\n` 拼接、查块、把译文
   拆回各命令 — 短译文用 `""` 行补齐（没有命令保留日文），长译文追加命令。
   逐行精确匹配是回退。然后处理其他码（`102`/`402`/`101`/`122`/`320`/

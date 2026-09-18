@@ -546,7 +546,13 @@ powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<g
   （口径 = **v2 键表被字典覆盖的比例**，不是 bake 遍历的 hit/miss；
   → 改全量翻译，`--force` 覆盖）、自动剔除 identity 条目、
   自动检查 `<TE:>`/`<namePop:>` 引用对照事件名、自动在输出根归档
-  `translation_kv.json`。然后重跑 `verify --source <原版>`、`serve
+  `translation_kv.json`。
+- 若 repack 把显示文本存成**运行期文本键**（`\T[键]`，靠 MTool 运行时
+  字典或游戏自带 CSV 文本表解析；网页环境两者都没有），bake 末尾会自动调
+  `tools/resolve_text_keys.py` 落成真文本（`--no-text-keys` 关闭），
+  然后 `qc_build_kana` 把残留的键判失败 —— 否则标题菜单会直接显示
+  `\T[SIS1036]`。详见 `docs/experience-translation.md` §11。
+  然后重跑 `verify --source <原版>`、`serve
   --test`、**新端口** HTTP 试玩（同端口 origin 共享 localStorage）、
   再 `deliver`（写回存储侧：压缩 → 压缩包目录 → 成品目录）。注意：它用 `indent=2` 重写所有 `data/*.json`
   （无害），且需要手机上有 CJK 字体（回退列出系统字体；译文显示方块就

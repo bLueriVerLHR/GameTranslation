@@ -728,3 +728,61 @@ class TestKeyCoverage:
         import pytest
         with pytest.raises(FileNotFoundError):
             bake.key_coverage(str(tmp_path / "nope"), {})
+
+
+class TestTextKeyInlining:
+    """Repacks that keep display text in a runtime table (MTool "mount
+    translation", a csv text database read through Node's ``fs``) carry
+    ``\\T[id]`` keys in data/ instead of text.  The bake inlines them from
+    the shipped table + dictionary: without it the build draws the key."""
+
+    def _game(self, tmp_path):
+        root = str(tmp_path / "game")
+        make_game(root, system={"terms": {"commands": ["\\T[SIS1]",
+                                                       "\\T[SIS2]"]}},
+                  items=[None, {"id": 1, "name": "\\T[N001]",
+                                "description": "\\T[W001]", "note": ""}])
+        os.makedirs(os.path.join(root, "csv"), exist_ok=True)
+        with open(os.path.join(root, "csv", "UI.csv"), "w",
+                  encoding="utf-8") as f:
+            f.write("id,who,tw,cn,en\n"
+                    "SIS1,コマンド,初めから,新游戏,New game\n"
+                    "SIS2,コマンド,つづき,继续,Continue\n"
+                    "W001,名前,剣,,Sword\n")
+        write_json(os.path.join(root, "翻译文件.json"), {
+            "剣": "剑",
+            "N001,名前,ルシア,露西娅,Lucia": "N001,姓名,露西娅,Lucia",
+        })
+        return root
+
+    def _run(self, root, out, trs, *extra, monkeypatch):
+        monkeypatch.setattr(bake.config, "find_cjk_font", lambda: "")
+        monkeypatch.setattr(bake.config, "find_jp_font", lambda: "")
+        argv = ["bake_translation.py", root, out, "--trs", trs] + list(extra)
+        monkeypatch.setattr("sys.argv", argv)
+        return bake.main()
+
+    def test_bake_inlines_keys(self, tmp_path, monkeypatch):
+        root = self._game(tmp_path)
+        out = str(tmp_path / "out")
+        trs = str(tmp_path / "trs.json")
+        write_json(trs, {})
+        assert self._run(root, out, trs, monkeypatch=monkeypatch) == 0
+        system = json.load(open(os.path.join(out, "data", "System.json"),
+                                encoding="utf-8"))
+        assert system["terms"]["commands"] == ["新游戏", "继续"]
+        items = json.load(open(os.path.join(out, "data", "Items.json"),
+                              encoding="utf-8"))
+        assert items[1]["name"] == "露西娅"          # table 'cn' column
+        assert items[1]["description"] == "剑"        # japanese -> dict pair
+
+    def test_no_text_keys_flag_keeps_them(self, tmp_path, monkeypatch):
+        root = self._game(tmp_path)
+        out = str(tmp_path / "out")
+        trs = str(tmp_path / "trs.json")
+        write_json(trs, {})
+        assert self._run(root, out, trs, "--no-text-keys",
+                         monkeypatch=monkeypatch) == 0
+        system = json.load(open(os.path.join(out, "data", "System.json"),
+                                encoding="utf-8"))
+        assert system["terms"]["commands"] == ["\\T[SIS1]", "\\T[SIS2]"]

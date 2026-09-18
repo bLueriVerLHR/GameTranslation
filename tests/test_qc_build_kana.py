@@ -56,6 +56,46 @@ def make_map(root, commands, name="Map001.json", display_name=None):
     return root
 
 
+# ------------------------------------------------------------ text keys
+
+def test_runtime_text_key_in_display_text_fails(tmp_path):
+    """A repack that keeps its display text in a runtime table draws the key."""
+    build = make_build(str(tmp_path))
+    make_map(build, [[401, 0, "\\T[SIS1036]"],
+                     [101, 0, "", 0, 0, "\\T[N001]"]])
+    findings = qc.scan(build)
+    assert len(findings["text_keys"]) == 2
+    assert qc.main([build]) == 1
+
+
+def test_runtime_text_key_in_engine_fields_is_by_design(tmp_path):
+    """Dispatch keys, event names, notes and asset stems keep their keys."""
+    build = make_build(str(tmp_path), system={
+        "gameTitle": "\\T[SIS1]",              # display -> flagged
+        "title1Name": "\\T[SIS1]",             # asset stem
+        "sounds": [{"name": "\\T[SIS1]"}],    # asset stem
+    })
+    _dump(os.path.join(build, "data", "Map001.json"), {
+        "displayName": ZH_TEXT,
+        "events": [{"id": 1, "name": "\\T[SIS1]", "note": "\\T[SIS1]",
+                    "pages": [{"list": [
+                        [132, 0, 0, "\\T[SIS1]", 90, 100, 0],
+                        [357, 0, "P", "cmd", "\\T[SIS1]", {}],
+                    ]}]}],
+    })
+    findings = qc.scan(build)
+    assert [entry[0] for entry in findings["text_keys"]] == ["System.json"]
+    assert findings["text_keys"][0][1] == "gameTitle"
+
+
+def test_runtime_text_key_reported_in_json_output(tmp_path, capsys):
+    build = make_build(str(tmp_path))
+    make_map(build, [[401, 0, "\\T[SIS1036]"]])
+    assert qc.main([build, "--json"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload["text_keys"]) == 1
+
+
 # ---------------------------------------------------------------- scanning
 
 def test_clean_build_passes(tmp_path, capsys):

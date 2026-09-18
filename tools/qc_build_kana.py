@@ -49,6 +49,8 @@ Usage:
     python3 tools/qc_build_kana.py <build_dir> [--source JA_DIR] [--work WORK]
                                    [--limit N] [--json]
 """
+import csv
+import glob
 import json
 import logging
 import os
@@ -60,6 +62,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpgmaker import cliutil  # noqa: E402
 from tools import plugin_json_leaves  # noqa: E402
 from translation import mvkeys  # noqa: E402
+from translation import codes as tcodes  # noqa: E402
+from translation import rawlib  # noqa: E402
 
 log = logging.getLogger("qc_build_kana")
 
@@ -150,6 +154,50 @@ def is_allowed(text, allow_list):
         elif pattern in text:
             return True
     return False
+
+
+def load_source_table_texts(build_dir):
+    """Japanese cells of the game's own text table (``csv/*.csv``).
+
+    A repack can keep its display text in such a table (id,who,tw,cn,en) and
+    resolve ``\\T[id]`` at runtime; ``tools/resolve_text_keys.py`` inlines it at
+    build time.  The ``tw`` column holds the author's source text, so a line
+    whose only text in **any** shipped source is that Japanese cell is
+    untranslated by construction (the repack itself had nothing else to draw).
+    Those lines are reported as a review section instead of failing the scan -
+    counting them as residue would make the gate unusable on every repack whose
+    table is only partially translated.
+
+    Cells are compared with control codes stripped, because event commands wrap
+    the key with their own codes (``\\vc\\ac\\c[17]`` + cell).  Only the ``tw``
+    column is exempted: a Chinese ``cn`` cell with a kana slip (a stray ``の``)
+    is a real residue the translator should see.
+
+    A build without ``csv/`` (the common case) gets no exemption.
+    """
+    texts = set()
+    for path in sorted(glob.glob(os.path.join(build_dir, "csv", "*.csv"))):
+        try:
+            with open(path, encoding="utf-8-sig", newline="") as handle:
+                rows = list(csv.reader(handle))
+        except (OSError, ValueError) as exc:
+            log.warning("text table %s unreadable (%s)", path, exc)
+            continue
+        if not rows:
+            continue
+        header = [cell.strip().lower() for cell in rows[0]]
+        if "tw" not in header:
+            continue
+        column = header.index("tw")
+        for row in rows[1:]:
+            if len(row) > column:
+                cell = rawlib.readable_text(row[column]).strip()
+                if cell:
+                    texts.add(cell)
+    if texts:
+        log.info("%d source-table line(s) available as untranslated-text "
+                 "reference", len(texts))
+    return texts
 
 
 def params_of(command):
@@ -266,8 +314,10 @@ def scan(build_dir, source_dir=None, work_dir=None, plugin_scan=True):
         raise FileNotFoundError(
             "not an MZ/MV build (no data/System.json): %s" % build_dir)
     allow_list = load_allow_list(work_dir)
+    table_texts = load_source_table_texts(build_dir)
     findings = {"unexpected": [], "by_design": [], "allowed": [],
                 "placeholder": [], "identical": [], "name_lookups": [],
+                "text_keys": [], "source_table": [],
                 "files": 0, "strings": 0}
     for file_name in sorted(os.listdir(data_dir)):
         if not file_name.endswith(".json"):
@@ -286,9 +336,22 @@ def scan(build_dir, source_dir=None, work_dir=None, plugin_scan=True):
         for trail, text, code in strings:
             if NAME_LOOKUP_RE.search(text):
                 findings["name_lookups"].append((file_name, trail, text))
+            # A runtime text-table key left in display text (see
+            # translation.codes.TEXT_KEY_RE): the web build has no runtime that
+            # resolves it, so the player reads the key.  Engine-read fields
+            # (asset/event names, note, plugin dispatch keys) are excluded by
+            # the same classification the kana residue uses.
+            if tcodes.TEXT_KEY_RE.search(text) \
+                    and classify(file_name, trail, text, code, allow_list) \
+                    == "unexpected":
+                findings["text_keys"].append((file_name, trail, text, code))
             if not KANA.search(text):
                 continue
             bucket = classify(file_name, trail, text, code, allow_list)
+            if bucket == "unexpected" \
+                    and rawlib.readable_text(text).strip() in table_texts:
+                findings["source_table"].append((file_name, trail, text, code))
+                continue
             entry = (file_name, trail, text, code)
             findings["by_design" if bucket == "by-design" else
                      "allowed" if bucket == "allowed" else
@@ -373,6 +436,27 @@ def report(findings, limit=25, stream=None):
     stream.write("kana residue: %d unexpected, %d by-design, %d allowed\n"
                  % (len(unexpected), len(findings["by_design"]),
                     len(findings["allowed"])))
+    table_lines = findings.get("source_table") or []
+    if table_lines:
+        stream.write("source-table lines (the repack's own table holds only "
+                     "Japanese for these): %d\n" % len(table_lines))
+        for file_name, trail, text, code in table_lines[:limit]:
+            stream.write("   JA-TABLE %s %s = %s\n"
+                         % (file_name, trail[-45:], repr(text[:70])))
+        if len(table_lines) > limit:
+            stream.write("   ... %d more\n" % (len(table_lines) - limit))
+    text_keys = findings.get("text_keys") or []
+    if text_keys:
+        stream.write("runtime text keys (%s) left in display text: %d "
+                     "- the build has no runtime that resolves them, so the "
+                     "player reads the key (inline them with "
+                     "tools/resolve_text_keys.py)\n"
+                     % ("\\T[id]", len(text_keys)))
+        for file_name, trail, text, code in text_keys[:limit]:
+            stream.write("   TEXT-KEY %s %s = %s\n"
+                         % (file_name, trail[-45:], repr(text[:70])))
+        if len(text_keys) > limit:
+            stream.write("   ... %d more\n" % (len(text_keys) - limit))
     for file_name, trail, text, code in unexpected[:limit]:
         stream.write("   UNEXPECTED %s (code %s) %s\n"
                      % (file_name, code, trail[-60:]))
@@ -421,7 +505,8 @@ def report(findings, limit=25, stream=None):
     for file_name, message in findings.get("unreadable", []):
         stream.write("   UNREADABLE %s: %s\n" % (file_name, message))
     problems = len(unexpected) + len(placeholders) \
-        + len(findings.get("unreadable", []))
+        + len(findings.get("unreadable", [])) \
+        + len(findings.get("text_keys", []))
     stream.write("\n%s\n" % ("PASS" if not problems else "REVIEW NEEDED"))
     return problems
 
@@ -448,12 +533,17 @@ def cmd(build_dir: Annotated[str, cliutil.Argument(
     if as_json:
         print(json.dumps(findings, ensure_ascii=False, indent=1))
         problems = len(findings["unexpected"]) + len(findings["placeholder"]) \
-            + len(findings.get("unreadable", []))
+            + len(findings.get("unreadable", [])) \
+            + len(findings.get("text_keys", []))
     else:
         problems = report(findings, limit)
-    log.info("kana residue: %d unexpected, %d by-design; %d placeholder mismatch(es)",
+    log.info("kana residue: %d unexpected, %d by-design; %d placeholder "
+             "mismatch(es)",
              len(findings["unexpected"]), len(findings["by_design"]),
              len(findings["placeholder"]))
+    if findings.get("text_keys"):
+        log.warning("%d runtime text key(s) left in display text",
+                    len(findings["text_keys"]))
     return 1 if problems else 0
 
 

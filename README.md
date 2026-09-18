@@ -119,6 +119,8 @@ GameTranslation/
 │   ├── qc_ks_kana.py          # KiriKiri：假名残留 QC（补丁树/字典值）
 │   ├── qc_build_kana.py       # MZ/MV：**烘焙后**构建的假名残留 + %N 一致性
 │   │                          #   （验收硬指标；插件参数只做「按决策排除」计数）
+│   ├── resolve_text_keys.py   # MZ/MV：运行期文本键 `\T[键]` 在构建期落成真
+│   │                          #   文本（游戏自带 csv 文本表 + 随包字典）
 │   ├── check_iscript_js.py    # KiriKiri：扫 [iscript] 块做 JS 语法检查
 │   │                          #   （tree-sitter，进程内；不需 node）
 │   │                          #   （TJS→JS 转换错误不报错，只让脚本停摆）

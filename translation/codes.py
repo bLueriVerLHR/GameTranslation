@@ -26,9 +26,10 @@ import os
 import re
 from collections import Counter, defaultdict
 
-__all__ = ["CODE_RE", "DISPATCH_RE", "KANA_RE", "CJK_RE", "parse_codes",
-           "code_key", "parse_code_sequence", "split_keep_codes",
-           "parameter_of", "has_text_parameter", "scan_js", "inventory",
+__all__ = ["CODE_RE", "DISPATCH_RE", "KANA_RE", "KANA_LETTERS_RE", "CJK_RE",
+           "parse_codes", "code_key", "parse_code_sequence",
+           "split_keep_codes", "parameter_of", "has_text_parameter",
+           "scan_js", "inventory",
            "write_markdown"]
 
 #: One control-code token: ``\name<...>`` / ``\name[...]`` / single-char form.
@@ -45,6 +46,23 @@ DISPATCH_RE = re.compile(r"case\s+'([^']{1,3})'\s*:")
 #: prolonged-sound mark (`ｰ`, used as a dash decoration in the Chinese text)
 #: are deliberately excluded.
 KANA_RE = re.compile(r"[\u3040-\u309f\u30a0-\u30ff\uff66-\uff6f\uff71-\uff9d]")
+
+#: Kana **letters only** - the class for "is this string still Japanese?":
+#: the kana-block punctuation and the voicing marks are excluded because
+#: translated Chinese legitimately keeps them.  A moan line like ``「あ゛っ！``
+#: becomes ``「啊゛！`` - the voice mark ``゛`` (U+309B) is part of the Chinese
+#: text, the middle dot ``・`` (U+30FB) is used in Chinese lists, and
+#: ``ー``/``〜`` are dashes; treating those as residue rejected 534 *translated*
+#: values of one real MV harvest (873 hits on ``゛`` alone) and forced them
+#: through the ``allow_kana.json`` allowlist for nothing.  Any real Japanese
+#: sentence still contains a kana letter, so the gate keeps its teeth.
+#: Same as ``tools/japanese_utils.py:KANA`` except for the halfwidth voicing
+#: mark ``ﾞ`` (U+FF9E) - a mark, not a letter (that class keeps it because a
+#: halfwidth-only line ``ﾌﾞﾂ`` is Japanese either way; there the letters decide).
+#: ``KANA_RE`` stays the coarser block-range test (it decides "is this text
+#: at all?" for code parameters and key candidates, where being permissive is
+#: the safe direction).  tests/test_kana_ranges.py pins all of this.
+KANA_LETTERS_RE = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9d]")
 
 #: Han characters (used to spot kanji-only UI labels such as "攻撃").
 CJK_RE = re.compile(r"[\u3005\u3006\u3400-\u4dbf\u4e00-\u9fff]")

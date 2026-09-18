@@ -33,8 +33,8 @@ import re
 from collections import OrderedDict
 
 from . import mvkeys
-from .codes import (KANA_RE, has_text_parameter, parameter_of, parse_codes,
-                    parse_code_sequence, split_keep_codes)
+from .codes import (KANA_LETTERS_RE, has_text_parameter, parameter_of,
+                    parse_codes, parse_code_sequence, split_keep_codes)
 
 __all__ = ["HEADER_RE", "read_library", "write_library", "append_block",
            "read_jsonl", "read_jsonl_report", "append_jsonl", "apply_rewrites",
@@ -418,9 +418,16 @@ def structure_problems(source_text, target_text):
 
 
 def kana_problem(text, items):
-    """Kana left in the readable part of `text`, unless the allowlist covers it."""
+    """Kana left in the readable part of `text`, unless the allowlist covers it.
+
+    Kana *letters* only (``KANA_LETTERS_RE``): translated Chinese keeps the
+    kana-block punctuation (``゛`` voice marks in moans, ``・``, dashes), so
+    counting those as residue rejected hundreds of finished translations of one
+    real harvest and pushed them through ``allow_kana.json`` for nothing.  A
+    value that is still Japanese contains a kana letter and is still flagged.
+    """
     visible = readable_text(text)
-    if not KANA_RE.search(visible):
+    if not KANA_LETTERS_RE.search(visible):
         return None, None
     item = _kana_allowed(visible, items)
     if item:

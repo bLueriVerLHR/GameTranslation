@@ -12,7 +12,13 @@ both PC and Android. No separate LowRes sibling build is produced anymore.
 The default per-side limit is PNG_MAX_DIMENSION (rpgmaker/config.py).
 
 Usage:
-  python downscale_images.py <web_root> [--limit N] [--dry-run] [--workers N]
+  python downscale_images.py <web_root> [--glob PATTERN] [--limit N]
+                                   [--dry-run] [--workers N]
+
+`--glob` selects which PNGs to scan, relative to the root.  RPG Maker
+builds keep the default (``img/**/*.png``); other layouts (TyranoScript
+ships art under ``data/fgimage``, ``data/bgimage``, ``data/image``) pass
+``--glob "**/*.png"``.
 """
 import glob
 import logging
@@ -35,6 +41,8 @@ log = logging.getLogger("downscale_images")
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 # signature (8) + IHDR length/type (8) + width/height (8)
 PNG_HEADER_BYTES = 24
+# RPG Maker MZ/MV layout; other engines pass --glob explicitly.
+DEFAULT_GLOB = os.path.join("img", "**", "*.png")
 
 
 def png_size(path):
@@ -72,10 +80,11 @@ def downscale_one(path, limit):
     return old, (w, h)
 
 
-def scan(root, limit, workers, dry_run):
+def scan(root, limit, workers, dry_run, pattern=DEFAULT_GLOB):
+    """Downscale every PNG matched by `pattern`; returns how many matched."""
     workers = runtime.resolve_workers("png", workers, path=root)
-    pattern = os.path.join(root, "img", "**", "*.png")
-    sizes = {f: png_size(f) for f in glob.glob(pattern, recursive=True)}
+    found = glob.glob(os.path.join(root, pattern), recursive=True)
+    sizes = {f: png_size(f) for f in found}
     sizes = {f: s for f, s in sizes.items() if s}
     oversized = [f for f, s in sizes.items() if max(s) > limit]
     log.info("%d PNGs total, %d exceed the %d px limit",
@@ -84,7 +93,7 @@ def scan(root, limit, workers, dry_run):
         for f in sorted(oversized):
             log.info("  would downscale %s (%dx%d)",
                      os.path.relpath(f, root), *sizes[f])
-        return
+        return len(sizes)
     done = 0
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {ex.submit(downscale_one, f, limit): f for f in oversized}
@@ -96,10 +105,15 @@ def scan(root, limit, workers, dry_run):
                 log.info("  downscaled %s %dx%d -> %dx%d",
                          os.path.relpath(f, root), *res[0], *res[1])
     log.info("downscaled %d images", done)
+    return len(sizes)
 
 
 def cmd(web_root: Annotated[str, cliutil.Argument(
-            help="game web root (contains img/)")],
+            help="game web root (contains the images)")],
+        pattern: Annotated[str, cliutil.Option(
+            "--glob", help="PNG glob relative to the root (default: "
+            "img/**/*.png; TyranoScript builds pass '**/*.png')"
+        )] = DEFAULT_GLOB,
         limit: Annotated[int, cliutil.Option(
             "--limit", help="max pixels per side")] = config.PNG_MAX_DIMENSION,
         dry_run: Annotated[bool, cliutil.Option(
@@ -112,10 +126,14 @@ def cmd(web_root: Annotated[str, cliutil.Argument(
         log_file: cliutil.LogFile = None) -> int:
     cliutil.setup_logging(verbose, quiet, log_file)
     root = os.path.abspath(web_root)
-    if not os.path.isdir(os.path.join(root, "img")):
-        print("not a web root: %s" % root, file=sys.stderr)
+    if not os.path.isdir(root):
+        print("not a directory: %s" % root, file=sys.stderr)
         return 1
-    scan(root, limit, workers, dry_run)
+    if not scan(root, limit, workers, dry_run, pattern=pattern):
+        print("no PNG matched %s under %s (RPG Maker uses img/; pass "
+              "--glob '**/*.png' for other layouts)" % (pattern, root),
+              file=sys.stderr)
+        return 1
     return 0
 
 

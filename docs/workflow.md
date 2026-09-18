@@ -136,6 +136,10 @@ python $tk\pipeline.py deliver $out          # 写回存储侧（见 §6a）
   - 构建内存在超过 4096 的 PNG 时，用 `tools/downscale_images.py
     <web_root>`（读 IHDR 头字节 16-23 预检，`--dry-run` 先看报告）就地
     缩放到 ≤4096（保持宽高比 + alpha，PNG），保证 Android 正常显示。
+  - **非 RPG Maker 布局要显式给 pattern**：默认只扫 `img/**/*.png`；
+    TyranoScript 的美术在 `data/` 下，用 `--glob "**/*.png"`
+    （详见 `docs/tyrano.md`）。“扫不到 PNG” 会**报错退出**而不是静默
+    当成零超限。
   - 大多数游戏没有超限图，跳过此步即可。
   - 曾试行运行时检测贴图上限并即时缩放（插件方案）以省去缩放步骤 —
     维护成本高于收益，已放弃，一律构建期缩放。

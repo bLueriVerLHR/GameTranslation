@@ -79,3 +79,60 @@ class TestScan:
         _png(6000, 8, web_root / "img" / "pictures" / "big.png")
         di.scan(str(web_root), 4096, workers=1, dry_run=True)
         assert di.png_size(str(web_root / "img" / "pictures" / "big.png"))[0] == 6000
+
+    def test_scan_reports_matched_count(self, web_root):
+        _png(100, 100, web_root / "img" / "pictures" / "a.png")
+        _png(100, 100, web_root / "img" / "pictures" / "b.png")
+        assert di.scan(str(web_root), 4096, workers=1, dry_run=True) == 2
+
+
+class TestScanGlob:
+    """Other engines keep their art outside img/ (TyranoScript: data/fgimage,
+    data/bgimage, data/image), so the scan pattern is an option rather than
+    a hardcoded path."""
+
+    def test_custom_glob_downscales_tyrano_layout(self, web_root):
+        cg = web_root / "data" / "fgimage" / "cg"
+        cg.mkdir(parents=True)
+        _png(6000, 8, cg / "big.png")
+        _png(100, 100, web_root / "img" / "pictures" / "mv.png")
+        di.scan(str(web_root), 4096, workers=1, dry_run=False,
+                pattern=os.path.join("data", "**", "*.png"))
+        assert di.png_size(str(cg / "big.png"))[0] == 4096
+        # the RPG Maker tree is untouched by that pattern
+        assert di.png_size(str(web_root / "img" / "pictures" / "mv.png")) \
+            == (100, 100)
+
+    def test_default_glob_ignores_non_img_dirs(self, web_root):
+        cg = web_root / "data" / "fgimage"
+        cg.mkdir(parents=True)
+        _png(6000, 8, cg / "big.png")
+        assert di.scan(str(web_root), 4096, workers=1, dry_run=False) == 0
+        assert di.png_size(str(cg / "big.png"))[0] == 6000
+
+
+class TestCmdGuard:
+    def _cmd(self, root, pattern=None):
+        kwargs = dict(limit=4096, dry_run=True, workers=1, verbose=False,
+                      quiet=False, log_file=None)
+        if pattern is not None:
+            kwargs["pattern"] = pattern
+        return di.cmd(str(root), **kwargs)
+
+    def test_rejects_root_without_matching_png(self, tmp_path):
+        """A wrong root (or a missing img/ tree) must fail loudly instead of
+        reporting a happy zero-image scan."""
+        (tmp_path / "data" / "scenario").mkdir(parents=True)
+        assert self._cmd(tmp_path) == 1
+
+    def test_accepts_explicit_glob(self, tmp_path):
+        cg = tmp_path / "data" / "fgimage"
+        cg.mkdir(parents=True)
+        _png(6000, 8, cg / "big.png")
+        assert self._cmd(tmp_path, pattern=os.path.join("**", "*.png")) == 0
+        assert di.png_size(str(cg / "big.png")) == (6000, 8)  # dry run
+
+    def test_accepts_default_img_layout(self, tmp_path):
+        (tmp_path / "img").mkdir()
+        _png(6000, 8, tmp_path / "img" / "big.png")
+        assert self._cmd(tmp_path) == 0

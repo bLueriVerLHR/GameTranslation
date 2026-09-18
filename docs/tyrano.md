@@ -33,6 +33,8 @@ python3 tyrano/pipeline.py build   <game_dir> -o <work>/build
 python3 tyrano/pipeline.py audio   <work>/build          # mp3 → ogg + 改脚本引用
 python3 tyrano/pipeline.py clean   <work>/build          # 删 MTool 残留
 python3 tyrano/pipeline.py fix-autoplay <work>/build     # [bgmovie] 自动播放补丁（幂等）
+python3 tools/downscale_images.py <work>/build --glob "**/*.png"   # 超 4096 的贴图
+python3 tyrano/pipeline.py localize-ui <work>/build --map tyrano/ui_lang_zh.json
 python3 tyrano/pipeline.py verify  <work>/build --source <原版解包目录>
 python3 tyrano/pipeline.py serve   <work>/build --test   # HTTP 冒烟
 python3 tyrano/pipeline.py compress <work>/build -o <archives>/<Game>.7z
@@ -51,6 +53,54 @@ python3 tyrano/pipeline.py deliver <work>/build          # 写回存储侧
   （q3），并**同步重写** scenario 里 `storage=`/`clickse=`/`enterse=`/
   `decidese=`/`cancelse=` 的 `.mp3` → `.ogg`。只有解析得到实际文件的
   引用才重写；dangling 引用保持原样并计数。
+
+  **命令走的是 `tyrano/audio.py::convert()`（先重写引用、再转码），不是
+  `convert_all()`。** 转码会删掉 mp3，所以顺序反了会把每一条引用都变成
+  悬空——而 `verify` 当时的布局/音频/PNG 检查全绿，玩家听到的是**全程
+  无声**。曾因 Typer 迁移把命令接线从 `convert()` 改成 `convert_all()` 而
+  真实复现（单测全在库函数层，看不到命令接线）。
+
+  **`--sample N` 只在副本上用**：它先重写**全部**可解析引用，却只转前 N
+  个文件，真实构建上会留下半改状态。要测速就在临时目录单独跑几个文件。
+
+  **m4a 不需要转**：Chromium/Android WebView 原生支持 m4a 里的
+  AAC-LC，引擎用的 Howler 2.2.3 对 `m4a` 的判定是
+  `canPlayType("audio/x-m4a;") || canPlayType("audio/m4a;") ||
+  canPlayType("audio/aac;")`，前后两个在 Chromium 都返回非空——实测
+  （浏览器里直接量）能播，所以只处理 mp3，不要顺手把 m4a 也重编码。
+
+  ⚠️ **扩展名不可信**：repack 里常见 `.mp3` 文件名装着 PCM/WAV 数据
+  （`pcm_s16le`/`pcm_f32le`/`pcm_s24le`）。按**内容**转码（ffmpeg 自己
+  嗅探）结果正确，转完反而变成诚实的 ogg 且体积大减；不要按扩展名
+  跳过或“修复”它们。
+
+- **贴图上限**：`tools/downscale_images.py` 默认扫 `img/**/*.png`
+  （RPG Maker 布局）。TyranoScript 的美术在 `data/{fgimage,bgimage,image}`
+  下，要显式给 pattern：`--glob "**/*.png"`（`--dry-run` 先看报告）。
+  超限的立绘/CG 在手机上渲染成黑块，属构建期强制步骤。
+
+- **localize-ui**：`tyrano/lang.js` 是**引擎自己的玩家可见文案**——回标题
+  确认框、无存档提示、脚本报错、补丁提示——它在 `data/scenario` 之外，
+  任何 scenario 提取器都看不到。只改 `word` 块（`novel` 块是引擎图片
+  文件名），**按键匹配**（`go_title`/`not_saved`…），未知键只报告不插入，
+  其余条目逐字节不动。
+
+  ```
+  python3 tyrano/pipeline.py localize-ui <build> --dump ui_lang.ja.json   # 取出待译条目
+  python3 tyrano/pipeline.py localize-ui <build> --map  ui_lang.zh.json   # 写回
+  ```
+
+  仓库自带引擎级映射 `tyrano/ui_lang_zh.json`（TyranoScript 6.00 的
+  `word` 块），可直接跨游戏复用；缺的键会被报告。机械门禁会**逐条拒绝**
+  不合格译文（占位符 `{ name }` 集合不一致、`\n` 个数不一致、残留假名、
+  空值），且拒绝的条目保持原字节并让命令非零退出。
+
+- **clean**：删 MTool 残留与桌面临时文件（`MTool挂载翻译.txt`/
+  `翻译文件.json`/`winmm.dll` 等）——注意这些通常落在 **Electron 根目录**
+  （构建来自 `app.asar`，本来就不含），所以 `clean` 报告 0 项是正常的，
+  不代表漏了步骤。但 Electron 运行时里的 `preload.js` 曾经**漏剥**
+  （只剥了 main.js/package.json），它 `require('electron')`，浏览器构建
+  里是死文件，现已加入剥离清单。
 - **fix-autoplay**（可选）：用 `[bgmovie]` 的游戏在浏览器/JoiPlay 下被
   自动播放策略拦截（`.play()` 抛 `NotAllowedError`，`wait_bgmovie`
   永久等待 → 标题卡死黑屏）。补丁把 `tyrano/plugins/kag/kag.tag_ext.js`
@@ -67,6 +117,13 @@ python3 tyrano/pipeline.py deliver <work>/build          # 写回存储侧
   流水线的引擎无关模块。
 
 ## 3. 翻译（JP → ZH）
+
+> **三层范围，缺一层就会留下玩家可见日文**：① 剧本 `.ks`（下方提取规则）；
+> ② **引擎 UI** `tyrano/lang.js`（`localize-ui` 步骤，见 §2）；
+> ③ 游戏自己的 `[iscript]` 字符串（如配置画面 `tf.text_sample = '…'`）——
+> 提取器有意不收 iscript（代码，不是文本），这类**极少但确实显示**的
+> 字符串要在构建里单独确认（`rg` 找 `[iscript]` 里的引号日文），不要
+> 因为“门禁全绿”就认为游戏里没有日文。
 
 ```
 python3 tools/build_tyrano_translation.py <work>/build <work> \

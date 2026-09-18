@@ -600,3 +600,90 @@ class TestMainCoverageGate:
                             ["bake_translation.py", root, root, "--trs", trs])
         assert bake.main() == 1
         assert "must differ" in capsys.readouterr().err
+
+    def test_gate_ignores_strings_outside_the_key_list(self, tmp_path,
+                                                       monkeypatch):
+        """Regression: kana strings the key list never owns must not gate.
+
+        bake's traversal also looks up the joined block keys it tries before
+        the per-line ones, plus every field mvkeys deliberately skips (here:
+        animation names and the event name).  Counting those as misses made a
+        completely translated build measure a few percent - one real MZ build
+        reported 7.3% while 80% of its key list was translated - so the gate
+        refused every bake of a finished translation.
+        """
+        root = self._game_with_lines(tmp_path)
+        write_json(os.path.join(root, "data", "Animations.json"),
+                   [None] + [{"id": i, "name": "アニメ%d" % i, "frames": []}
+                             for i in range(1, 11)])
+        out = str(tmp_path / "out")
+        trs = str(tmp_path / "trs.json")
+        write_json(trs, {"こんにちは": "你好", "さようなら": "再见",
+                         "おはよう": "早上好"})
+        assert self._run_main(root, out, trs, monkeypatch=monkeypatch) == 0
+        assert os.path.isdir(out)
+        keys = [e["ja"] for e in bake.mvkeys.keys_of(root)]
+        assert keys == ["こんにちは", "さようなら", "おはよう"]
+        assert "アニメ1" not in keys and "むらびと" not in keys
+        # the metric this replaced (raw traversal lookups, including the block
+        # join and the non-key names) would have refused this very bake
+        D = json.load(open(trs, encoding="utf-8"))
+        bake.STATS.update(hit=0, miss=0)
+        bake.translate_data(root, D, write=False)
+        assert bake.coverage() < 0.5
+
+    def test_gate_refuses_when_only_non_key_strings_are_translated(
+            self, tmp_path, monkeypatch, capsys):
+        root = self._game_with_lines(tmp_path)
+        write_json(os.path.join(root, "data", "Animations.json"),
+                   [None, {"id": 1, "name": "アニメ1", "frames": []}])
+        out = str(tmp_path / "out")
+        trs = str(tmp_path / "trs.json")
+        write_json(trs, {"アニメ1": "动画1"})
+        assert self._run_main(root, out, trs, monkeypatch=monkeypatch) == 1
+        assert "REFUSING to bake" in capsys.readouterr().err
+        assert not os.path.exists(out)
+
+    def test_gate_skipped_without_data_dir(self, tmp_path, monkeypatch):
+        root = os.path.join(str(tmp_path), "game")
+        os.makedirs(os.path.join(root, "js"))
+        with open(os.path.join(root, "js", "plugins.js"), "w",
+                  encoding="utf-8") as handle:
+            handle.write("var $plugins = [];\n")
+        out = str(tmp_path / "out")
+        trs = str(tmp_path / "trs.json")
+        write_json(trs, {})
+        assert self._run_main(root, out, trs, monkeypatch=monkeypatch) == 0
+        assert os.path.isdir(out)
+
+
+class TestKeyCoverage:
+    """The gate's metric: one key entry = one vote."""
+
+    def test_counts_each_key_entry(self, tmp_path):
+        root = str(tmp_path / "game")
+        make_game(root, maps={"Map001.json": ("", [ev(1, "むらびと", [
+            text_cmd("こんにちは"), text_cmd("こんにちは"),
+            text_cmd("こんにちは"), text_cmd("さようなら")])])})
+        covered, total, missing = bake.key_coverage(root,
+                                                   {"こんにちは": "你好"})
+        # a repeated translated line must not mask an untranslated one
+        assert (covered, total) == (3, 4)
+        assert missing == ["さようなら"]
+
+    def test_identity_value_is_not_coverage(self, tmp_path):
+        root = str(tmp_path / "game")
+        make_game(root, maps={"Map001.json": ("", [ev(1, "ev", [
+            text_cmd("おはよう")])])})
+        # an empty value is 'no translation' as far as the dict is concerned
+        assert bake.key_coverage(root, {"おはよう": ""})[0] == 0
+
+    def test_game_without_keys_is_zero_total(self, tmp_path):
+        root = str(tmp_path / "game")
+        make_game(root, maps={"Map001.json": ("", [])})
+        assert bake.key_coverage(root, {}) == (0, 0, [])
+
+    def test_missing_data_dir_raises(self, tmp_path):
+        import pytest
+        with pytest.raises(FileNotFoundError):
+            bake.key_coverage(str(tmp_path / "nope"), {})

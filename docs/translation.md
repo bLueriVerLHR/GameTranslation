@@ -530,12 +530,17 @@ python tools\bake_translation.py <built_joiplay> <out_dir> --trs translated.json
   UI 字段、地图 `displayName`、事件名、`MapInfos` 名。
 - **插件参数**：精确匹配 `js/plugins.js` 里含日文的字符串并写回
   （解析 → 替换 → 序列化；解析失败降级为字面量文本替换）。
-- **覆盖率闸门（2026-08）**：拷贝前先只读扫描，统计游戏里含假名的显示
-  字符串被字典命中的比例（`coverage: N hit / M missed = X%`）。低于
+- **覆盖率闸门（2026-09 订正口径）**：拷贝前先只读扫描，统计 **v2
+  键表**（`translation.mvkeys.keys_of`，即译者被要求覆盖的那套串）被字典
+  覆盖的比例（`coverage: N/M keys translated = X%`）。低于
   `--min-coverage`（默认 0.5）烘焙**拒绝** — 低覆盖烘焙 = 半日半中 +
   污染后续补翻（部分块值、半翻场景）。正确路线是全量翻译
   （`extract_remaining_text.py` → chunks → merge → 再 bake）；有意的
   阶段一 harvest 烘焙用 `--force`。
+  **不要用 bake 遍历时的 hit/miss 当口径**（2026-08 旧写法）：遍历既查
+  「整块拼接键」（bake 先试 `行1\n行2`、再逐行回退），也查 mvkeys 有意
+  跳过的非显示串（动画名、事件名等），分母因此包含翻译流程根本不拥有的
+  串 —— 一款 MZ 游戏键表覆盖 80% 却只报 7.3%，完整翻译会被永久拒绝。
 - **identity 条目自动剔除**：`v == k`（假名键 shadow 逐行 fallback）的
   字典条目加载时删除（某 MZ 任务：删了 123 条）。
 - **名称引用检查**：`<TE:name>`/`<namePop:name>` 引用与字典同步，且结尾

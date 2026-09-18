@@ -25,11 +25,12 @@ Usage:
   --trs      the filled template ({key: value})
   --glossary optional {name: value} overrides (applied to keys in the dict)
   --min-coverage  refuse to bake when the dict translates less than this
-                   fraction of the game's kana-bearing display strings
-                   (default 0.5); a low-coverage bake leaves most of the game
-                   in Japanese and contaminates later completion passes - do a
-                   full translation instead (extract_remaining_text.py ->
-                   subagent chunks -> merge).  --force overrides the refusal.
+                   fraction of the game's translatable key list
+                   (translation.mvkeys; default 0.5); a low-coverage bake
+                   leaves most of the game in Japanese and contaminates later
+                   completion passes - do a full translation instead
+                   (extract_remaining_text.py -> subagent chunks -> merge).
+                   --force overrides the refusal.
   --no-kv    do not write translation_kv.json into out_dir (default: written)
 """
 
@@ -53,6 +54,7 @@ import plugins_io  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
 from rpgmaker import cliutil, config  # noqa: E402
+from translation import mvkeys  # noqa: E402
 from translate_rpgmaker import (  # noqa: E402
     apply_font_policy, clear_encryption_flags, decrypt_dir,
 )
@@ -138,6 +140,25 @@ def exact(s, D):
 def coverage():
     n = STATS["hit"] + STATS["miss"]
     return (STATS["hit"] / n) if n else None
+
+
+def key_coverage(game_dir, D, note_tags=mvkeys.DEFAULT_NOTE_TAGS):
+    """``(covered, total, missing)`` of the game's key list against the dict.
+
+    The gate's denominator is the key list (``translation.mvkeys``) - the set
+    of strings the translation flow owns - and NOT every kana-bearing string a
+    data traversal happens to touch.  Counting lookups over-counts: bake looks
+    up the joined block first (``line1\\nline2``) and then each line, and it
+    also visits fields ``mvkeys`` deliberately skips (animation and event
+    names).  Measured against one real MZ build, that inflated the misses so
+    much that 80% of the key list read as 7.3% - the gate would have refused
+    *every* bake of a complete translation (100* covered/total is what the
+    operator reads as 'coverage' everywhere else too: ``translation.cli
+    status`` reports the same fraction).
+    """
+    entries = mvkeys.keys_of(game_dir, note_tags=note_tags)
+    missing = [entry["ja"] for entry in entries if not D.get(entry["ja"])]
+    return len(entries) - len(missing), len(entries), missing
 
 
 _REF_TAGS = ("TE", "namePop")
@@ -629,19 +650,23 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game directory")]
                  "fallbacks)", len(dropped))
     log.info("loaded %d translation entries", len(D))
 
-    # Coverage gate: measure the dict against the game's kana-bearing display
-    # strings BEFORE copying anything.  A low-coverage bake leaves most of the
+    # Coverage gate: measure the dict against the game's translatable key
+    # list BEFORE copying anything.  A low-coverage bake leaves most of the
     # game in Japanese and contaminates later completion passes (partial block
     # values, half-translated scenes) - the clean path is a full translation
     # from scratch.  --force overrides for intentional phase-1 harvest bakes.
+    covered = total = 0
+    coverage_ratio = None
     if glob.glob(os.path.join(game_dir, "data", "*.json")):
-        STATS.update(hit=0, miss=0)
-        translate_data(game_dir, D, write=False, workers=workers)
-        cov = coverage()
-        if cov is not None:
-            log.info("coverage: %d hit / %d missed = %.1f%%",
-                     STATS["hit"], STATS["miss"], 100 * cov)
-            if cov < min_coverage and not force:
+        covered, total, missing = key_coverage(game_dir, D)
+        if total:
+            coverage_ratio = covered / total
+            log.info("coverage: %d/%d keys translated = %.1f%% (%d key(s) "
+                     "left to a translator)", covered, total,
+                     100 * coverage_ratio, len(missing))
+            if coverage_ratio < min_coverage and not force:
+                for sample in missing[:10]:
+                    log.info("  untranslated key: %s", sample[:80])
                 return cliutil.fail(
                     "REFUSING to bake: coverage %.1f%% < %.0f%% (existing "
                     "translation file covers too little - the bake would leave "
@@ -651,7 +676,7 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game directory")]
                     "<game_dir> <work> -> subagent chunks -> merge -> bake.\n"
                     "  To bake anyway (intentional partial harvest): --force.\n"
                     "  To adjust the threshold: --min-coverage N."
-                    % (100 * cov, 100 * min_coverage))
+                    % (100 * coverage_ratio, 100 * min_coverage))
     else:
         log.info("no data/*.json in game_dir (encrypted data?) - coverage "
                  "check skipped; bake on the decrypted build for the gate")
@@ -663,10 +688,9 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game directory")]
     clear_encryption_flags(out_dir)
     STATS.update(hit=0, miss=0)
     translate_data(out_dir, D, write=True, workers=workers)
-    cov = coverage()
-    if cov is not None:
-        log.info("baked coverage: %d hit / %d missed = %.1f%%",
-                 STATS["hit"], STATS["miss"], 100 * cov)
+    if coverage_ratio is not None:
+        log.info("baked %d of the game's %d keys (%.1f%% key coverage)",
+                 covered, total, 100 * coverage_ratio)
     apply_font_policy(out_dir, cjk_font, jp_font)
     if not no_kv:
         kv_path = os.path.join(out_dir, "translation_kv.json")

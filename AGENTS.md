@@ -622,13 +622,18 @@ RPG Maker 流水线。下述为桌面翻译路线；手机转换另见
   不得静默当成已应用);MZ/MV 走 `bake_translation.py`
   标准字体策略,Tyrano 按 `font_rollback.md` 的 Tyrano 改动点
   (font.css @font-face + Config.tjs `;userFace=`)。
-- **bake 低覆盖率闸门 (mandatory, 2026-08 定案)**: bake 前先做一次只读
-  扫描(不复制、不写盘),统计游戏内 kana 显示字符串被 dict 命中的比例
-  (`coverage: N hit / M missed = X%`)。**X < 50% (`--min-coverage`,默认
+- **bake 低覆盖率闸门 (mandatory, 2026-09 订正口径)**: bake 前先做一次
+  只读扫描(不复制、不写盘),统计 **v2 键表**(`translation.mvkeys` 的
+  可译串集合)被 dict 覆盖的比例
+  (`coverage: N/M keys translated = X%`)。**X < 50% (`--min-coverage`,默认
   0.5) 直接拒绝烘焙** — 低覆盖烘焙 = 半日半中 + 污染后续 completion
   (部分块值、半翻场景),正确路线是**放弃旧翻译文件,全量翻译**:
   `extract_remaining_text.py` 出模板 → subagent chunks → merge → 再 bake。
   故意的阶段一 harvest 烘焙用 `--force` 覆盖。
+  **不要再用 bake 遍历时的 hit/miss 当口径**(2026-08 的旧写法): 它把
+  「整块拼接键」(bake 先试 `行1\n行2` 再逐行) 与 mvkeys 有意跳过的非显示串
+  (动画名/事件名等) 都算进分母,一款键表覆盖 80% 的 MZ 游戏只报 7.3%,
+  完整翻译也会被永久拒绝。键表是唯一口径。
 - **identity 条目 (v == k 且含假名) 自动剔除**: bake 加载 dict 时删掉
   这类条目 — 它们会 SHADOW 逐行 fallback(块查找"成功"但文本还是日文)。
 - **名称引用自动检查 (TE/namePop)**: bake 尾部自动对照 `<TE:name>`/

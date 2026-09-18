@@ -40,10 +40,10 @@ from collections import Counter, OrderedDict, defaultdict
 from . import codes as codes_mod
 from .codes import CJK_RE, KANA_RE, code_key, parse_codes
 
-__all__ = ["extract", "load_keys", "text_codes", "extra_text_codes",
-           "is_command", "command_code", "speaker_of", "is_candidate",
-           "note_payloads", "comment_payloads", "DEFAULT_NOTE_TAGS",
-           "COMMENT_CODES"]
+__all__ = ["extract", "keys_of", "load_keys", "text_codes",
+           "extra_text_codes", "is_command", "command_code", "speaker_of",
+           "is_candidate", "note_payloads", "comment_payloads",
+           "DEFAULT_NOTE_TAGS", "COMMENT_CODES"]
 
 #: Command codes whose first parameter is displayed text.
 TEXT_CODES = (401, 405)
@@ -734,13 +734,8 @@ def _collect_plugins(collector, game_dir):
                           "js/plugins.js#[%d]" % index)
 
 
-def extract(game_dir, work_dir, window=2, note_tags=DEFAULT_NOTE_TAGS):
-    """Extract every translatable string, write the work dir, return stats.
-
-    ``note_tags`` opts *specific* plugin note tags into extraction (payload
-    only, tag name untouched) - see ``note_payloads``.  Empty keeps notes as
-    functional data, which is the safe default.
-    """
+def _collect(game_dir, window=2, note_tags=DEFAULT_NOTE_TAGS):
+    """Run every collector over `game_dir` (shared by extract/keys_of)."""
     note_tags = tuple(note_tags or ())
     data_dir = os.path.join(game_dir, "data")
     if not os.path.isdir(data_dir):
@@ -752,6 +747,33 @@ def extract(game_dir, work_dir, window=2, note_tags=DEFAULT_NOTE_TAGS):
     _collect_db(collector, data_dir, note_tags)
     _collect_system(collector, data_dir)
     _collect_plugins(collector, game_dir)
+    return collector
+
+
+def keys_of(game_dir, window=2, note_tags=DEFAULT_NOTE_TAGS):
+    """The translatable key list for `game_dir`, in memory (no work dir).
+
+    This is the **single source of truth for what counts as a translatable
+    string**, so a coverage measurement can be reported against the same set
+    the translator is asked to produce.  Measuring bake's raw lookups instead
+    is misleading: that traversal also looks up the joined block keys it tries
+    before the per-line ones, plus every field this module deliberately skips
+    (animation names, event names, ...).  One real MZ build therefore measured
+    7.3% coverage with a dictionary that translated 80% of the key list, and a
+    *complete* translation could never have passed the 50% gate.
+    """
+    return _collect(game_dir, window=window, note_tags=note_tags).result()
+
+
+def extract(game_dir, work_dir, window=2, note_tags=DEFAULT_NOTE_TAGS):
+    """Extract every translatable string, write the work dir, return stats.
+
+    ``note_tags`` opts *specific* plugin note tags into extraction (payload
+    only, tag name untouched) - see ``note_payloads``.  Empty keeps notes as
+    functional data, which is the safe default.
+    """
+    note_tags = tuple(note_tags or ())
+    collector = _collect(game_dir, window=window, note_tags=note_tags)
     entries = collector.result()
 
     os.makedirs(work_dir, exist_ok=True)

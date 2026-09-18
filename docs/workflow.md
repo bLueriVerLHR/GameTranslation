@@ -543,7 +543,8 @@ powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<g
   glossary.json`（静态 subagent 工作流）会拷贝**已解密、已压缩**的构建、
   把字典烘焙进 `data/*.json`、应用**标准字体策略** — 无需重跑
   `build`/`audio`/`clean`。bake 现在：低于 `--min-coverage` 50% 拒绝
-  （→ 改全量翻译，`--force` 覆盖）、自动剔除 identity 条目、
+  （口径 = **v2 键表被字典覆盖的比例**，不是 bake 遍历的 hit/miss；
+  → 改全量翻译，`--force` 覆盖）、自动剔除 identity 条目、
   自动检查 `<TE:>`/`<namePop:>` 引用对照事件名、自动在输出根归档
   `translation_kv.json`。然后重跑 `verify --source <原版>`、`serve
   --test`、**新端口** HTTP 试玩（同端口 origin 共享 localStorage）、

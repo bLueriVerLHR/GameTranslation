@@ -325,6 +325,18 @@ false，因为 `$gameMap.isEventRunning()` 恒 true；地图解释器空闲
 - `bake_translation.py`：覆盖率闸门（低于 --min-coverage 0.5 拒绝烘焙并
   指引全量翻译，--force 覆盖）；identity 条目（v==k 带假名）自动剔除；
   <TE:>/<namePop:> dangling 引用自动检查；translation_kv.json 自动归档。
+  **闸门口径订正（2026-09）**：原来是 bake 数据遍历时的 hit/miss，而那次
+  遍历还会查两类别的东西 —— (a) 它先试的「整块拼接键」（`行1\n行2`，
+  然后才逐行回退），(b) `mvkeys` 有意跳过的非显示串（动画名、事件名…）。
+  两者都不是翻译流程拥有的串，分母因此被撬高：一款 MZ 游戏键表已覆盖
+  80%，闸门只报 **7.3%**（
+  `coverage: 1535 hit / 19555 missed`），而拆开看未命中的 95.7% 是
+  跳过的非显示串、3.4% 是整块拼接 —— 也就是这份翻译**永远无法**通过
+  50% 闸门，只能一直 `--force`，闸门失去意义。现改为对
+  `translation.mvkeys.keys_of()` 的**键表**计量
+  （`coverage: N/M keys translated = X%`，一条 key 一票），与
+  `translation.cli status` 报的百分比同口径。跳过的串照旧不翻（它们不是
+  显示文本），只是不再计入分母。
 - `gen_translation_shards.py`：auto 选档现在是默认
   （--target-chunks N / --context-budget-kb 90 二分搜索，上下文估算误差
   <3%）。

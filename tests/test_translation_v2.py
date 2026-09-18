@@ -485,6 +485,46 @@ def test_library_rejects_text_before_header(tmp_path):
         rawlib.read_library(path)
 
 
+def test_library_keeps_trailing_newlines(tmp_path):
+    """A trailing newline in a value is a character, not padding.
+
+    MZ data has text that ends with a newline (item descriptions), and the
+    line-break gate compares newline counts - if the reader ate the newline,
+    such a key could never be given a matching value (10 keys of one real MZ
+    build were unappendable, which blocked the coverage gate as well).
+    """
+    path = str(tmp_path / "lib.txt")
+    cases = {"one": "\u4e00\u884c\u76ee\n", "two": "\u4e00\u884c\u76ee\n\u4e8c\u884c\u76ee\n",
+             "none": "\u65e0\u6362\u884c", "blank": "\u5c3e\u90e8\u7a7a\u884c\n\n"}
+    for key, text in cases.items():
+        rawlib.append_block(path, key, text)
+    values = rawlib.read_library(path)
+    assert values == cases
+    # the rewrite path (rewrites.jsonl application) must round-trip too
+    rawlib.write_library(path, values)
+    assert rawlib.read_library(path) == cases
+
+
+def test_append_accepts_a_source_that_ends_with_a_newline(work, game):
+    """Regression: the line-break gate used to reject this value forever."""
+    mvkeys.extract(game, work)
+    keys_path = os.path.join(work, "keys.jsonl")
+    rows = [json.loads(line) for line
+            in io.open(keys_path, encoding="utf-8") if line.strip()]
+    rows[0]["ja"] = rows[0]["ja"] + "\n"
+    with io.open(keys_path, "w", encoding="utf-8", newline="\n") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    batch = os.path.join(work, "tail.batch.txt")
+    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@%s@@@\n%s\n" % (rows[0]["id"], rows[0]["ja"]))
+    report = rawlib.append_batch(work, batch)
+    assert report["problems"] == []
+    assert report["added"] == 1
+    values = rawlib.read_library(os.path.join(work, rawlib.LIBRARY_NAME))
+    assert values[rows[0]["id"]] == rows[0]["ja"]
+
+
 def test_append_block_rejects_at_signs(tmp_path):
     with pytest.raises(ValueError):
         rawlib.append_block(str(tmp_path / "lib.txt"), "a@@@b", "x")

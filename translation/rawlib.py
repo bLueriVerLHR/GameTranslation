@@ -51,7 +51,19 @@ GATE_ORDER = ("coverage", "control_codes", "kana", "line_breaks", "pending")
 
 
 def read_library(path):
-    """Parse the library into ``OrderedDict(id -> text)``; later blocks win."""
+    """Parse the library into ``OrderedDict(id -> text)``; later blocks win.
+
+    A block is the lines between two ``@@@id@@@`` headers, joined with
+    newlines - and a **trailing newline is a real character**, not padding:
+    the writer emits one blank line for it, so stripping it here makes such a
+    value unrepresentable.  That is not theoretical: MZ data has fields whose
+    text ends with a newline (``data/Items.json`` descriptions), the line-break
+    gate compares newline counts, so a value that has to keep the newline was
+    rejected forever - 10 keys of one real MZ build could never be translated
+    and the coverage gate (every key needs a value) could never go green.
+    A hand-written batch with a stray trailing blank line now fails that gate
+    with a clear message instead of being silently normalized away.
+    """
     values = OrderedDict()
     current = None
     chunks = []
@@ -61,7 +73,7 @@ def read_library(path):
             match = HEADER_RE.match(bare)
             if match:
                 if current is not None:
-                    values[current] = "\n".join(chunks).strip("\n")
+                    values[current] = "\n".join(chunks)
                 current = match.group(1)
                 chunks = []
                 continue
@@ -74,7 +86,7 @@ def read_library(path):
                 raise ValueError("%s:%d: text before the first @@@id@@@ header"
                                  % (path, number))
     if current is not None:
-        values[current] = "\n".join(chunks).strip("\n")
+        values[current] = "\n".join(chunks)
     return values
 
 

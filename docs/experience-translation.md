@@ -337,6 +337,13 @@ false，因为 `$gameMap.isEventRunning()` 恒 true；地图解释器空闲
   （`coverage: N/M keys translated = X%`，一条 key 一票），与
   `translation.cli status` 报的百分比同口径。跳过的串照旧不翻（它们不是
   显示文本），只是不再计入分母。
+- `translation/rawlib.py: read_library`：库/批次格式曾把值尾部的换行
+  `strip("\n")` 掉，于是**源文以换行结尾的键永远无法满足**（MZ
+  `data/Items.json` 的 `description` 就是这种字段）：写入时值丢一行 →
+  「换行数一致」门禁报 `source 1 -> value 0` 而整批拒绝，键进不了库 →
+  「覆盖」门禁（每键需非空）永远不绿。实测一款 MZ 游戏 10 个键卡在这里。
+  现有头行之间的文本**原样保留**（写方为空行的那一行就是真的尾部换行），
+  手写批次尾部多余的空行不再被静默吞掉（会作为多一行被门禁报出）。
 - `gen_translation_shards.py`：auto 选档现在是默认
   （--target-chunks N / --context-budget-kb 90 二分搜索，上下文估算误差
   <3%）。

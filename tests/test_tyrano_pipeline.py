@@ -292,6 +292,22 @@ class TestClean:
             assert not os.path.exists(os.path.join(root, fn)), fn
         assert len(removed) == 4
 
+    def test_keeps_archived_translation_kv(self, tmp_path):
+        """The archived translation KV is root-level json nothing references,
+        so the MTool-dictionary sweep used to delete it - losing the pack rule's
+        mandatory "KV 随包归档" on any later `clean` re-run."""
+        root = make_asar_game(str(tmp_path))
+        with open(os.path.join(root, "translation_kv.json"), "w",
+                  encoding="utf-8") as f:
+            f.write('{"a": "b"}')
+        with open(os.path.join(root, "翻译文件.json"), "w",
+                  encoding="utf-8") as f:
+            f.write("{}")
+        removed = tc.cleanup_all(root)
+        assert os.path.isfile(os.path.join(root, "translation_kv.json"))
+        assert not os.path.exists(os.path.join(root, "翻译文件.json"))
+        assert len(removed) == 1
+
     def test_keeps_referenced_json(self, tmp_path):
         root = make_asar_game(str(tmp_path))
         with open(os.path.join(root, "translations.json"), "w",

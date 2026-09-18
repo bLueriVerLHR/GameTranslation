@@ -32,6 +32,11 @@ MTool_NAMES = ("MTool挂载翻译.txt", "MTool_Config.exe", "MTool_Game.exe",
 # Runtime dictionaries written by MTool into the game root (name is the
 # game title).  Removal is ref-checked too.
 SAV_RESIDUES = ("_sf.sav", "_tyrano_data.sav")
+# Root-level json the toolkit itself puts in the game folder: the archived
+# translation KV, which the packaging rule says must ship with a translated
+# build.  Nothing references it, so the MTool-dictionary sweep below would
+# delete it on any later `clean` re-run.
+KEEP_JSON = ("translation_kv.json",)
 
 
 def _referenced(root, name):
@@ -89,6 +94,7 @@ def cleanup_all(web_root, dry_run=False):
         # Root-level runtime translation dictionary json (title-named),
         # only when the game never references it.
         if (os.path.isfile(path) and name.endswith(".json")
+                and name.lower() not in KEEP_JSON
                 and not name.lower().endswith(("package.json",))
                 and not _referenced(root, name)):
             if not dry_run:

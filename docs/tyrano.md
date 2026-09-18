@@ -101,6 +101,14 @@ python3 tyrano/pipeline.py deliver <work>/build          # 写回存储侧
   不代表漏了步骤。但 Electron 运行时里的 `preload.js` 曾经**漏剥**
   （只剥了 main.js/package.json），它 `require('electron')`，浏览器构建
   里是死文件，现已加入剥离清单。
+
+- **打包前归档翻译 KV（打包规则）**：把译库 `<work>/translated.json`
+  复制为**构建根目录的 `translation_kv.json`** 再打包，便于日后修改/重译
+  （MZ 由 `bake_translation.py` 自动写，Tyrano 这边是手工一步）。
+  顺序上它必须在 `clean` **之后**放：`clean` 会把「根目录无人引用的 json」
+  当成 MTool 运行时字典清掉——唯一例外是 `translation_kv.json`（已列入
+  保留清单，重跑 `clean` 不会再删）。引擎级 UI 映射（`tyrano/ui_lang_zh.json`）
+  属仓库资产，**不**随包发，别往构建里拷。
 - **fix-autoplay**（可选）：用 `[bgmovie]` 的游戏在浏览器/JoiPlay 下被
   自动播放策略拦截（`.play()` 抛 `NotAllowedError`，`wait_bgmovie`
   永久等待 → 标题卡死黑屏）。补丁把 `tyrano/plugins/kag/kag.tag_ext.js`

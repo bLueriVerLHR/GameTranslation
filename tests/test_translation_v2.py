@@ -994,6 +994,31 @@ def test_gate_kana_residue_and_allowlist(work, game):
     assert {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["kana"]["ok"] is True
 
 
+def test_kana_gate_accepts_chinese_with_kana_punctuation(work, game):
+    """Kana-block *punctuation* in a translated value is not residue.
+
+    A moan line translates to Chinese that keeps the voice mark ``\u309b``
+    (``\u300c\u3042\u309b\u3063\uff01`` -> ``\u300c\u554a\u309b\uff01``); ``\u30fb`` and
+    ``\u30fc`` appear in Chinese text too.  Counting them as residue rejected
+    534 finished values in one real MV harvest (873 hits on ``\u309b`` alone),
+    each of them needing a pointless ``allow_kana.json`` entry.
+    """
+    mvkeys.extract(game, work)
+    _dump(os.path.join(work, "allow_kana.json"), {"items": []})
+    _fill_library(work, lambda entry, text: "\u554a\u309b\uff01\u597d\u30fb\u574f\u2014\u2014\uff5e\uff5e")
+    gate = {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["kana"]
+    assert gate["ok"] is True and gate["residue"] == 0
+
+
+def test_kana_gate_still_flags_a_kana_letter(work, game):
+    """The relaxed punctuation rule must not weaken the gate itself."""
+    mvkeys.extract(game, work)
+    _dump(os.path.join(work, "allow_kana.json"), {"items": []})
+    _fill_library(work, lambda entry, text: "\u554a\u309b\uff01\u3063")
+    gate = {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["kana"]
+    assert gate["ok"] is False and gate["residue"] >= 1
+
+
 def test_gate_line_breaks_fails_on_truncated_multiline(work, game):
     """A value that drops one of the source's lines is a gate failure.
 

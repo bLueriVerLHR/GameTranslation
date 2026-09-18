@@ -377,11 +377,12 @@ python $tk\pipeline.py compress $out -o "C:\path\to\deliverables\game.7z"
 确认 "Everything is Ok"。目标路径已有 `.7z` 时**先删** — `7z a` 是追加，
 压在旧包上会双倍（旧 + 新条目）。**试玩之后再运行。**
 
-**压缩包内的根目录名 = 工作目录名（实测教训）。** `compress`/`deliver` 把
-构建目录的**basename** 当作 7z 里的根条目，`deliver --name` 只改**压缩包
-文件名**与成品目录名（解压后再改名）。所以交付前把 Temp 里的构建目录也
-重命名成成品名（`<Game>`），否则玩家自己解压出来的是 `xxx-build/`、
-`out/` 这种临时名（已交付的旧包里两种都有）。
+**压缩包内的根目录名 = 交付名。** `deliver --name <Game>` 把压缩包的**顶层条目**
+也命名成 `<Game>`（`archive.create(root=...)`），因此压缩包文件名、成品目录名、
+包内根目录名三者一致，玩家自己解压不会得到 `xxx-build/`、`out/` 这种临时名。
+（`archive.create` 仍保留“默认用文件夹 basename”的行为，而 MZ 流水线的
+`compress <out> -o X.7z` 默认 wrapper 形状仍是构建目录名 —— 交付一律走
+`deliver --name`，不要再手工重命名 Temp 里的构建目录。）
 
 写回 Windows 存储侧（WSL 下跨文件系统递归拷贝大量小文件很慢）用
 `deliver` 一步完成：

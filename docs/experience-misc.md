@@ -59,7 +59,7 @@
   用 here-string / 单引号文本或 write 工具写，压缩前确认 `$gameSwitches`
   还在。
 
-## 3. `process`/`require('fs')` 插件破坏浏览器/JoiPlay 构建
+## 3. 插件破坏浏览器/JoiPlay 构建（加载期崩 / 启动门）
 
 任何在加载或标题画面读 `process.mainModule.filename` 或 `require('fs')`
 的插件在纯浏览器里抛异常，JoiPlay 下可能失败。真实命中：一个剧情/对话
@@ -101,6 +101,26 @@
   （不要为了消警告去改混淆代码）。
 - 判据仍然只是启发式（列 0 = 模块顶层）：缩进在函数体里的 `process` 用法
   （如 `if(!Utils.isNwjs()) return;` 之后）**不需要**改，`compat` 也不会碰。
+
+### 3.2 Steam 版构建的启动门：卡在标题之前（2026-09）
+
+- **特征**：游戏根目录带 NW.js 运行时，`www/lib/` 下有 `greenworks*.node`
+  与 `steam_api*.dll`（Steam 集成 SDK），`js/plugins.js` 里已启用 Steam
+  集成插件。转换后浏览器/JoiPlay **到不了标题画面**，页面上是
+  “Steam failed to initialize.”（或引擎自绘的错误框）。
+- **根因**：Steam 发行版在闪屏 → 标题之间做一次所有权校验
+  `if (!X.isSubscribedApp(<appid>)) throw ...`，而它写在**闪屏插件的函数体
+  里**（不是模块顶层）—— 所以 `compat` 原来的列 0 预扫看不到它，`verify`
+  也不会报。转换后既没有 NW.js 运行时也没有 Steam，那个调用是桩函数、
+  只能返回 false → 直接抛错。
+- **工具化**：`compat` 的 `steam-ownership-gate` 规则（`SCOPE_ANY`，任意
+  插件）改写成「仅当 Steam 真的在运行时才校验」，桌面 Steam 版语义不变。
+  定位手法：`rg -n 'isSubscribedApp|Steam failed' js/plugins/*.js`，再按栈帧
+  找到抛错那一行。
+- **`www/lib/` 不用删**：那几 MB 的 Steam SDK 只在 `Utils.isNwjs()` 为真时被
+  `require`，浏览器下永不加载；删了也无害，但没必要为此动插件资源树。
+- 同类问题：某些构建把**成就/云存档**当启动前置；只要它也在启动路径上，
+  同样会用桩函数的值做分支，症状一样（白屏/卡住），处理方式相同。
 
 ## 4. MoviePicture 新浏览器白屏 = 自动播放策略
 

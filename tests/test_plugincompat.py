@@ -52,6 +52,23 @@ FileManager.filePath = function(location) {
 
 GUARDED = "if(typeof process !== \"undefined\" && process.versions && process.versions['node-webkit'] >= \"0.13.0\") {"
 
+# The Steam-build boot gate: an MV Steam release checks ownership inside the
+# splash scene and throws right before the title screen.  In a browser/WebView
+# build (no NW.js runtime, no Steam) the check is a stub that only ever answers
+# false, so the build never reaches the title screen.  The call site sits INSIDE
+# a function - a module-scope-only repair would never see it.
+STEAM_GATE = """(function() {
+    Scene_Splash.prototype.gotoTitleOrTest = function() {
+        Scene_Base.prototype.start.call(this);
+\t\tif (!OrangeGreenworks.isSubscribedApp(3331050)) {
+            throw new Error('Steam failed to initialize.');
+\t\t\treturn;
+\t\t}
+        SoundManager.preloadImportantSounds();
+    };
+})();
+"""
+
 
 def make_web(tmp_path, plugins, files, name="build"):
     """Minimal MV-shaped web root with the given plugins.js entries.
@@ -277,6 +294,104 @@ class TestRepair:
         assert len(report.edits) == 2
         assert plugin_text(web, "Reader.js") == text
         assert [f.plugin for f in report.findings] == ["Reader.js"]
+
+
+def steam_web(tmp_path, status=True, text=STEAM_GATE, file_name="Splash.js"):
+    """A build whose splash plugin carries the Steam boot gate."""
+    return make_web(tmp_path, [{"name": file_name, "status": status}],
+                    {file_name: text})
+
+
+class TestSteamBootGate:
+    """The gate lives inside a function, so it needs the any-line scope."""
+
+    def test_gate_inside_a_function_is_guarded(self, tmp_path):
+        web = steam_web(tmp_path)
+        report = plugincompat.repair(web)
+        assert len(report.edits) == 1
+        edit = report.edits[0]
+        assert edit.rule_id == "steam-ownership-gate"
+        text = plugin_text(web, "Splash.js")
+        assert ("if (OrangeGreenworks.isSteamRunning && "
+                "OrangeGreenworks.isSteamRunning() && "
+                "!OrangeGreenworks.isSubscribedApp(3331050)) {") in text
+        # indentation (two tabs) and the following lines survive
+        assert "\t\tif (OrangeGreenworks.isSteamRunning" in text
+        assert "throw new Error('Steam failed to initialize.');" in text
+        assert jssyntax.is_valid(text), jssyntax.parse_errors(text)
+
+    def test_no_game_specific_ids_are_baked_in(self, tmp_path):
+        web = steam_web(tmp_path, text=STEAM_GATE.replace("3331050", "998877"))
+        plugincompat.repair(web)
+        assert "isSubscribedApp(998877)" in plugin_text(web, "Splash.js")
+
+    def test_idempotent_second_run_writes_nothing(self, tmp_path):
+        web = steam_web(tmp_path)
+        plugincompat.repair(web)
+        first = plugin_text(web, "Splash.js")
+        report = plugincompat.repair(web)
+        assert report.edits == []
+        assert plugin_text(web, "Splash.js") == first
+
+    def test_dry_run_reports_without_writing(self, tmp_path):
+        web = steam_web(tmp_path)
+        report = plugincompat.repair(web, dry_run=True)
+        assert [e.rule_id for e in report.edits] == ["steam-ownership-gate"]
+        assert plugin_text(web, "Splash.js") == STEAM_GATE
+
+    def test_disabled_plugin_is_not_touched(self, tmp_path):
+        web = steam_web(tmp_path, status=False)
+        assert plugincompat.repair(web).edits == []
+        assert plugin_text(web, "Splash.js") == STEAM_GATE
+
+    def test_call_used_as_a_value_is_left_alone(self, tmp_path):
+        text = "var owned = OrangeGreenworks.isSubscribedApp(3331050);\n"
+        web = steam_web(tmp_path, text=text)
+        assert plugincompat.repair(web).edits == []
+        assert plugin_text(web, "Splash.js") == text
+
+    def test_positive_test_without_negation_is_left_alone(self, tmp_path):
+        text = "if (OrangeGreenworks.isSubscribedApp(3331050)) { load(); }\n"
+        web = steam_web(tmp_path, text=text)
+        assert plugincompat.repair(web).edits == []
+        assert plugin_text(web, "Splash.js") == text
+
+    def test_no_space_form_is_guarded_too(self, tmp_path):
+        text = "if(!Steam_.isSubscribedApp(12)){ throw new Error('x'); }\n"
+        web = steam_web(tmp_path, text=text)
+        assert len(plugincompat.repair(web).edits) == 1
+        assert ("if (Steam_.isSteamRunning && Steam_.isSteamRunning() && "
+                "!Steam_.isSubscribedApp(12)){ throw new Error('x'); }"
+                ) in plugin_text(web, "Splash.js")
+
+    def test_every_enabled_plugin_is_checked(self, tmp_path):
+        # the rule is plugin-agnostic: two enabled files, both gates, one pass
+        web = make_web(
+            tmp_path,
+            [{"name": "A.js", "status": True}, {"name": "B.js", "status": True}],
+            {"A.js": STEAM_GATE.replace("3331050", "11"),
+             "B.js": STEAM_GATE.replace("3331050", "22")})
+        report = plugincompat.repair(web)
+        assert [e.plugin for e in report.edits] == ["A.js", "B.js"]
+
+    def test_crlf_and_tabs_are_preserved(self, tmp_path):
+        raw = STEAM_GATE.replace("\n", "\r\n").encode("utf-8")
+        web = steam_web(tmp_path, text=raw)
+        plugincompat.repair(web)
+        with open(os.path.join(web, "js", "plugins", "Splash.js"), "rb") as f:
+            out = f.read()
+        assert out.count(b"\r\n") == out.count(b"\n")
+        assert b"\t\tif (OrangeGreenworks.isSteamRunning" in out
+
+    def test_steam_gate_does_not_break_the_scan(self, tmp_path):
+        # the guard introduces no process/require reference for verify to warn on
+        web = steam_web(tmp_path)
+        assert plugincompat.repair(web).findings == []
+
+    def test_compat_cli_applies_it_and_strict_stays_green(self, tmp_path):
+        web = steam_web(tmp_path)
+        assert cli.main(["compat", web, "--strict"]) is None
+        assert "isSteamRunning()" in plugin_text(web, "Splash.js")
 
 
 class TestReport:

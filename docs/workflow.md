@@ -184,13 +184,15 @@ NW.js 运行时纯属浪费，不拷贝。编辑器/repack 垃圾（`img/` 下
 拷贝并行（asyncio + 线程池，默认 6 worker）：每个网页目录和根文件由自己
 的 worker 拷贝，构建速度受磁盘带宽而非单线程限制。
 
-### compat — 加载期崩的插件（NW.js-only 代码）
+### compat — 已知形态的插件定点维修
 
-`build` 剥掉 NW.js 运行时后，任何在**模块顶层**（列 0，即加载时就会执行）
-读 NW.js 全局（`process` / `require`）的**已启用**插件都会在浏览器/JoiPlay
-里抛异常，而且它这一行之后的顶层代码再也不会执行。游戏照常启动，所以
-`verify` 全绿、HTTP 冒烟全 200 —— 坏的是功能，不是启动，最容易一直漏到
-玩家反馈「手机上少了某个画面」。
+`build` 剥掉 NW.js 运行时后，有两类插件会在浏览器/JoiPlay 里坏掉，而它们
+都不影响「游戏能启动」，所以最容易一直漏到玩家反馈。
+
+**(a) 加载期崩的插件（NW.js-only 代码）**：任何在**模块顶层**（列 0，即加载
+时就会执行）读 NW.js 全局（`process` / `require`）的**已启用**插件都会在
+浏览器/JoiPlay 里抛异常，而且它这一行之后的顶层代码再也不会执行。
+游戏照常启动，所以 `verify` 全绿、HTTP 冒烟全 200 —— 坏的是功能，不是启动。
 
 已知的连环格式：`SRD_SuperToolsEngine` 顶层读
 `process.versions['node-webkit']` 死掉 → 而它正是创建
@@ -206,14 +208,44 @@ python $tk\pipeline.py compat $out --strict     # 还有未处理项就非零退
 ```
 
 - **维修**只针对已知形态（`rpgmaker/plugincompat.py` 的 `REPAIRS` 表）：
-  一行进一行出，带 `typeof process` 守卫的行不再重复改（幂等），只改
-  `js/plugins.js` 里 `status: true` 的插件；保留原文件编码
-  （UTF-8 / Shift-JIS）与行尾（CRLF），两样都不匹配的文件 WARN 跳过。
+  一行进一行出，**幂等**（带守卫的行不再重复改；改写后的形态也不再匹配
+  原pattern），只改 `js/plugins.js` 里 `status: true` 的插件；保留原文件
+  编码（UTF-8 / Shift-JIS）与行尾（CRLF），两样都不匹配的文件 WARN 跳过。
+  补丁分两个作用域：`SCOPE_MODULE`（默认，只碰模块顶层行）与
+  `SCOPE_ANY`（整行都看，用于**函数体内但同样会阻断启动**的检查）。
+  `plugin=ANY_PLUGIN`（`"*"`）表示不限插件文件（同一形态可能落在任意
+  插件里）。
+
 - **预扫**（advisory）：报出已启用插件里模块顶层的 `process` / `require(`
   引用（注释与字符串字面量不算、缩进的行不算），**绝不改未知插件代码**；
   `verify` 会把未处理项以 WARNING 报出但不判失败。
 - 列 0 启发式是有意的：缩进的行在函数/块里，加载期不会执行。所以在函数体内
   （如 `if(!Utils.isNwjs()) return;` 之后的 `process.mainModule`）不需要改。
+  但这不适用于 §(b) 那类“藏在函数体里也能阻断启动”的检查 —— 那是
+  `SCOPE_ANY` 规则在管。
+
+#### (b) Steam 版的启动门（2026-09）
+
+Steam 发行版通常在闪屏到标题之间做一次**所有权校验**：
+
+```js
+if (!OrangeGreenworks.isSubscribedApp(<appid>)) { throw new Error(...); }
+```
+
+这行在**函数体内部**（列 0 启发式看不到），且在没有 Steam/没有 NW.js
+运行时的构建里那个调用永远是桩、**只能返回 false** → 浏览器与 JoiPlay
+都**卡在标题画面之前**（页面上是 “Steam failed to initialize.”）。
+`compat` 内置规则 `steam-ownership-gate` 把它改写成：
+
+```js
+if (X.isSteamRunning && X.isSteamRunning() && !X.isSubscribedApp(<appid>)) {
+```
+
+即**只在 Steam 真的在运行时才校验所有权**：桌面 Steam 版语义不变，
+web/JoiPlay 构建不再被挡在标题前；`isSteamRunning` 用 `&&` 探测，缺少该
+方法的对象直接跳过而不是抛错。**appid 不写死**（正则捕获），因此对任何
+游戏都适用。判定：闪屏/标题前抛 “Steam failed to initialize.” 之类的
+错误、且 `rg` 能看到 `isSubscribedApp(` 就命中这一形态。
 
 ### decrypt — 加密资源（easy vs complex）
 

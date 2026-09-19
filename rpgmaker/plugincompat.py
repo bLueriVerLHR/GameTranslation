@@ -23,10 +23,11 @@ HUD data files (Windows/Notes/MapHUD/BattleHUD.json) are never registered in
 Two levels of handling, both limited to plugins that ``js/plugins.js`` actually
 enables (a disabled plugin never executes, so it is never touched):
 
-* ``REPAIRS`` - narrow, per-plugin rewrites of a *known* NW.js-only check into
-  a guarded form.  One line in, one line out.  Idempotent: a line that already
-  carries a guard (``GUARD_MARK``) is left alone, so re-running writes nothing.
-  This is deliberately a small explicit table, never a general JS rewriter.
+* ``REPAIRS`` - narrow, per-plugin rewrites of a *known* check into a guarded
+  form.  One line in, one line out.  Idempotent: a line that already carries a
+  guard (``GUARD_MARK``) is left alone, and the rewritten form no longer
+  matches its own pattern, so re-running writes nothing.  This is deliberately
+  a small explicit table, never a general JS rewriter.
 * ``scan`` - advisory report of module-scope ``process`` / ``require(``
   references in enabled plugins (comments excluded, quoted strings respected).
   It never rewrites unknown plugin code; it names what a human must still look
@@ -65,6 +66,29 @@ PLUGIN_DIR = "js/plugins"
 #: it to recognise "already handled" text (that is what makes repair idempotent).
 GUARD_MARK = "typeof process"
 
+#: ``Repair.plugin`` value that matches every enabled plugin.  Used for the
+#: checks that are not tied to one plugin file (a Steam build can put its boot
+#: gate in any plugin).
+ANY_PLUGIN = "*"
+
+#: ``Repair.scope`` values.  ``module`` = a module-scope line at load time (the
+#: NW.js crash class this module was built for); ``any`` = every line, needed by
+#: checks that live inside a function but still abort the boot.
+SCOPE_MODULE = "module"
+SCOPE_ANY = "any"
+
+#: Steam build boot gate, the usual shape of MV's Steam ownership check:
+#: ``if (!<steam>.isSubscribedApp(<appid>)) throw ...`` inside the splash scene.
+#: On desktop Steam this is a real ownership check; in a browser/WebView build
+#: (no NW.js runtime, no Steam) the same call is a stub that can only answer
+#: false, so the gate throws before the title screen and the build never boots.
+#: Guarding on "Steam is actually running" keeps the desktop semantics intact
+#: and lets a web build start.  ``isSteamRunning`` is probed with ``&&`` so an
+#: object exposing only ``isSubscribedApp`` skips the gate instead of throwing.
+_STEAM_OWNERSHIP_RE = re.compile(
+    r"(?<![\w.$])if\s*\(\s*!\s*"
+    r"(?P<obj>[\w$.]+)\.isSubscribedApp\s*\(\s*(?P<appid>\d+)\s*\)\s*\)")
+
 #: NW.js-only global.  ``q`` is the quote character used around
 #: ``node-webkit``; the repairs reuse that name inside their own patterns and
 #: reference it by name (numeric groups would collide when concatenated).
@@ -89,12 +113,17 @@ class Repair:
     """One narrow, plugin-specific rewrite of a known NW.js-only check."""
 
     rule_id: str
-    plugin: str          # plugin base name, with or without the ".js" suffix
+    #: plugin base name (with or without the ".js" suffix), or ``ANY_PLUGIN``.
+    plugin: str
     pattern: re.Pattern
     replacement: str
     why: str
+    #: ``SCOPE_MODULE`` (default) or ``SCOPE_ANY``.
+    scope: str = SCOPE_MODULE
 
     def applies_to(self, plugin_file):
+        if self.plugin == ANY_PLUGIN:
+            return True
         return _same_plugin(self.plugin, plugin_file)
 
 
@@ -114,6 +143,17 @@ REPAIRS = (
         replacement=(r'((typeof process !== "undefined" && process.versions) ? '
                      r"process.versions[\g<q>node-webkit\g<q>] \g<cmp> : false)"),
         why="NW.js version read used as a value: keep the flag false outside NW.js",
+    ),
+    Repair(
+        rule_id="steam-ownership-gate",
+        plugin=ANY_PLUGIN,
+        scope=SCOPE_ANY,
+        pattern=_STEAM_OWNERSHIP_RE,
+        replacement=(r'if (\g<obj>.isSteamRunning && '
+                     r'\g<obj>.isSteamRunning() && '
+                     r'!\g<obj>.isSubscribedApp(\g<appid>))'),
+        why="Steam ownership gate can only answer false outside a Steam "
+            "runtime and aborts the boot before the title screen",
     ),
 )
 
@@ -313,12 +353,19 @@ def scan(web_root):
 
 
 def _repair_text(plugin, text, rules):
-    """Apply the first matching rule per module-scope line -> (text, edits)."""
+    """Apply the first matching rule per line -> (text, edits).
+
+    ``SCOPE_MODULE`` rules only see module-scope lines; ``SCOPE_ANY`` rules see
+    every line (a boot gate inside a function is just as fatal).
+    """
     out = []
     edits = []
     for lineno, line, code in _walk(text):
-        if code.strip() and GUARD_MARK not in code and _module_scope(code):
+        if code.strip() and GUARD_MARK not in code:
+            at_module_scope = _module_scope(code)
             for rule in rules:
+                if rule.scope != SCOPE_ANY and not at_module_scope:
+                    continue
                 new_line, count = rule.pattern.subn(rule.replacement, line)
                 if count:
                     edits.append(Edit(

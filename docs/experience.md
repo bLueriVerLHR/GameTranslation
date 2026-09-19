@@ -33,7 +33,8 @@
 - **Tyrano**：`[bgmovie]` 自动播放策略卡死 → `fix-autoplay`；KAG3 `[s]`/
   可点击地图/`[ch]` 移植语义。
 - **其他 / 杂项**：serve 卫生（固定端口、杀残留服务器）；`process`/
-  `require('fs')` 插件破坏浏览器构建；FOSSIL 入口跳过 setup 块。
+  `require('fs')` 插件破坏浏览器构建；Steam 版启动门卡在标题前；
+  FOSSIL 入口跳过 setup 块。
 
 ## 如何新增经验
 

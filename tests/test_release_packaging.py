@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Release-packaging rules for a converted KAG3 build.
 
 Two owner requirements after the first real-device test:

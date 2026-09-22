@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/plain_io.py two-file chunk escaping/IO."""
 import os
 

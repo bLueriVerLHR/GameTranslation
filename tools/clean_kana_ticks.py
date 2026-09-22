@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """clean_kana_ticks.py - Final tick cleanup: convert residual kana
 mouth-sounds OUTSIDE \\RB[] codes to Chinese/romaji so the shipped build has
 ~zero kana. \\RB[正文,注音] ruby args are converted by convert_rb_ruby.py;
@@ -14,7 +13,7 @@ import sys
 from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import japanese_utils  # noqa: E402
+from rpgmaker import japanese as japanese_utils  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpgmaker import cliutil  # noqa: E402
@@ -94,9 +93,7 @@ AUTHOR_NAMES = set()
 def is_authorish(k, v):
     if v.strip() in AUTHOR_NAMES:
         return True
-    if len(v) <= 40 and not CJK.search(v) and KANA_ALL.match(v.strip()):
-        return True
-    return False
+    return bool(len(v) <= 40 and not CJK.search(v) and KANA_ALL.match(v.strip()))
 
 
 def clean_plain(seg):

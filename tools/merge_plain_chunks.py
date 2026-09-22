@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """merge_plain_chunks.py - Merge the two-file chunk format into a
 translation KV dict.
 
@@ -28,7 +27,7 @@ from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ctrl_codes  # noqa: E402
-import japanese_utils  # noqa: E402
+from rpgmaker import japanese as japanese_utils  # noqa: E402
 import plain_io  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -84,7 +83,7 @@ def qc_pair(keys, vals, idx):
         return issues, False
     newline_diff = kana_left = ctrl_diff = empty = uncertain = 0
     dbl_backslash = 0
-    for k, v in zip(keys, vals):
+    for k, v in zip(keys, vals, strict=True):
         if not isinstance(v, str):
             continue
         if v.count("\n") != k.count("\n"):
@@ -181,8 +180,7 @@ def cmd(work_dir: Annotated[str, cliutil.Argument(
         chunks += 1
         if not ok:
             problems += 1
-        for k, v in zip(keys, vals):
-            merged[k] = v
+        merged.update(dict(zip(keys, vals, strict=True)))
         tag = "OK" if ok else "ISSUES"
         print("chunk_%02d: %d keys  [%s]%s"
               % (num, len(keys), tag,

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gametranslation.invalid/schema/font-manifest.schema.json",
+  "title": "GameTranslation font manifest",
+  "description": "Inventory of reusable fonts under .asset/fonts/. The repo ships only this schema and an example; the real manifest and the font binaries are local-only. Code and policies reference the logical `id`, never a filename or a machine path.",
+  "type": "object",
+  "required": ["schema_version", "fonts"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "fonts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "file", "family", "purpose", "license", "sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "description": "Logical id referenced by font policies and CLI flags (e.g. 'common-zh')."
+          },
+          "file": {
+            "type": "string",
+            "description": "Filename relative to .asset/fonts/. Must not be an absolute path."
+          },
+          "postscript_name": {"type": "string"},
+          "family": {"type": "string"},
+          "purpose": {
+            "type": "string",
+            "description": "What this font is used for (e.g. 'unified zh/ja/latin UI font')."
+          },
+          "license": {
+            "type": "string",
+            "description": "Distribution license. A font may only be embedded in a build when its license permits redistribution."
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Lowercase hex sha256 of the font file; mismatch must fail doctor/bake."
+          },
+          "coverage": {
+            "type": "object",
+            "description": "Glyph coverage summary used by --font-policy auto checks.",
+            "additionalProperties": false,
+            "properties": {
+              "covers_gb_simplified": {
+                "type": "boolean",
+                "description": "True when GB simplified common Chinese is covered."
+              },
+              "covers_japanese_kana": {"type": "boolean"},
+              "notes": {"type": "string"}
+            }
+          },
+          "size_bytes": {"type": "integer", "minimum": 1}
+        }
+      }
+    }
+  }
+}

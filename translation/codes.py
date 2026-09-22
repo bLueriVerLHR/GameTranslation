@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """codes.py - control codes for RPG Maker text: parsing + derived inventory.
 
 Two jobs, both mechanical (no language judgement):
@@ -29,7 +28,8 @@ from collections import Counter, defaultdict
 __all__ = ["CODE_RE", "DISPATCH_RE", "KANA_RE", "KANA_LETTERS_RE", "CJK_RE",
            "TEXT_KEY_RE",
            "parse_codes", "code_key", "parse_code_sequence",
-           "split_keep_codes", "parameter_of", "has_text_parameter",
+           "split_keep_codes", "parameter_of", "bracket_pair",
+           "has_text_parameter",
            "scan_js", "inventory",
            "write_markdown"]
 
@@ -121,7 +121,7 @@ def split_keep_codes(text):
     """
     if not text:
         return []
-    parts = re.split("(%s)" % CODE_RE.pattern, text)
+    parts = re.split(f"({CODE_RE.pattern})", text)
     return [(bool(index % 2), piece) for index, piece in enumerate(parts)]
 
 
@@ -137,10 +137,27 @@ def parameter_of(token):
       text: it is the name the player reads, so it must be translated.  A gate
       that demanded the whole token be identical would forbid translating it
       and leave Japanese names on screen.
+
+    ``bracket_pair`` answers the other half of that question: which delimiters
+    the engine will look for.
     """
     for opener, closer in (("<", ">"), ("[", "]")):
         if token.endswith(closer) and opener in token:
             return token[token.index(opener) + 1:-1]
+    return None
+
+
+def bracket_pair(token):
+    """The delimiters of a token's parameter, or None when it has none.
+
+    The pair is part of the token's *meaning*: ``\\nc<name>`` is an escape code
+    whose parameter the engine reads between angle brackets, while ``\\nc[name]``
+    is a different (and usually unparseable) token.  Translating the parameter
+    text is allowed; changing which delimiter the engine must scan for is not.
+    """
+    for opener, closer in (("<", ">"), ("[", "]")):
+        if token.endswith(closer) and opener in token:
+            return (opener, closer)
     return None
 
 
@@ -172,7 +189,7 @@ def scan_js(game_dir):
     found = defaultdict(lambda: {"sites": [], "docs": []})
     for path in _js_files(game_dir):
         rel = os.path.relpath(path, game_dir).replace(os.sep, "/")
-        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+        with open(path, encoding="utf-8", errors="replace") as handle:
             for number, line in enumerate(handle, 1):
                 for key in DISPATCH_RE.findall(line):
                     entry = found[key.upper()]
@@ -180,7 +197,7 @@ def scan_js(game_dir):
                     if len(entry["sites"]) < 4:
                         entry["sites"].append(site)
                 stripped = line.strip()
-                if not (stripped.startswith("*") or stripped.startswith("//")):
+                if not (stripped.startswith(("*", "//"))):
                     continue
                 for match in re.finditer(r"\\([A-Za-z]{1,4})", line):
                     key = match.group(1).upper()
@@ -218,7 +235,7 @@ def inventory(game_dir, counts):
 
 
 def _sample_tokens(entry, limit=3):
-    return ", ".join("`%s`" % tok for tok, _ in entry["tokens"].most_common(limit))
+    return ", ".join(f"`{tok}`" for tok, _ in entry["tokens"].most_common(limit))
 
 
 def _clip(text, limit=120):
@@ -246,7 +263,7 @@ def write_markdown(path, merged, total_keys=0):
     ]
     for key, entry in rows:
         sample = _sample_tokens(entry) or ""
-        sites = " ".join("`%s`" % site for site in entry["sites"][:2])
+        sites = " ".join(f"`{site}`" for site in entry["sites"][:2])
         docs = _clip(" / ".join(entry["docs"][:1]))
         meaning = " ".join(x for x in (sites, docs) if x) or "_(not found)_"
         lines.append("| `\\%s` | %d | %s | %s | %s |"
@@ -275,8 +292,7 @@ def write_markdown(path, merged, total_keys=0):
         lines.append("(inventory covers %d extracted keys)" % total_keys)
         lines.append("")
     if unknown:
-        lines.append("Undocumented codes seen in data: %s"
-                     % ", ".join("`\\%s`" % k for k in sorted(unknown)))
+        lines.append("Undocumented codes seen in data: {}".format(", ".join(f"`\\{k}`" for k in sorted(unknown))))
         lines.append("")
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines))

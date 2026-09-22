@@ -12,7 +12,7 @@ import re
 from kirikiri import tjs2js
 from kirikiri.kag.assets import _find_asset, _layer_map
 from kirikiri.kag.tags import _DROPPED_TAGS, SYSTEM_ISCRIPT_DROP
-from kirikiri.ks_extract import detect_encoding
+from kirikiri.ks_extract import decode_text, detect_encoding
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def _wait_to_waitskip(m):
         return tag
     t = re.search(r'\btime\s*=\s*([0-9]+)', tag)
     if t:
-        return '[kagwaitskip time=%s]' % t.group(1)
+        return f'[kagwaitskip time={t.group(1)}]'
     return tag
 
 
@@ -208,7 +208,7 @@ def convert_ks_line(line, unpacked, macros, in_script=False):
             )
     line = re.sub(
         r'(exp|cond)\s*=\s*"([^"]*)"',
-        lambda m: '%s="%s"' % (m.group(1), tjs2js.convert_expr(m.group(2))),
+        lambda m: f'{m.group(1)}="{tjs2js.convert_expr(m.group(2))}"',
         line,
     )
     # KAG3 defaults vs Tyrano vital params: [trans] needs layer (KAG3
@@ -233,9 +233,7 @@ def convert_ks_line(line, unpacked, macros, in_script=False):
     }
     line = re.sub(
         r'\[trans\b([^\]]*\bmethod\s*=\s*)(["\']?)([a-zA-Z_0-9]+)\2',
-        lambda m: '[trans%s%s%s%s' % (m.group(1), m.group(2),
-                                      _TRANS_METHODS.get(m.group(3).lower(), m.group(3)),
-                                      m.group(2)),
+        lambda m: f'[trans{m.group(1)}{m.group(2)}{_TRANS_METHODS.get(m.group(3).lower(), m.group(3))}{m.group(2)}',
         line,
     )
     # KAG3 [s] = pure stop (inSleep, no click callback, scenario ends;
@@ -261,7 +259,7 @@ def convert_ks_line(line, unpacked, macros, in_script=False):
     if lm:
         line = re.sub(
             r'layer\s*=\s*&sf\.(lay_[a-z0-9_]+)',
-            lambda m: 'layer=%s' % lm.get(m.group(1), "base"),
+            lambda m: 'layer={}'.format(lm.get(m.group(1), "base")),
             line,
         )
     # `global` (KAG runtime global) is undefined in Tyrano: neutralize
@@ -325,14 +323,14 @@ def _replace_layer_image(part):
     if not layer or layer.lower() == "base":
         return part
     pm = re.search(r'\bpage\s*=\s*("(?:[^"]*)"|\'(?:[^\']*)\'|[^\s\]]+)', attrs)
-    page = " page=%s" % pm.group(1) if pm else ""
+    page = f" page={pm.group(1)}" if pm else ""
     # Keep the original line ending: dropping it glues the NEXT source line
     # onto this one, and a following `;` comment then lands in the middle of
     # the tag line, where Tyrano parses it as dialogue text (KAG3 only treats
     # `;` at the start of a line as a comment). That surfaced as comments
     # being printed into the message window.
     tail = part[len(part.rstrip("\r\n")):]
-    prefix = "[freeimage layer=%s%s]" % (lm.group(1), page)
+    prefix = f"[freeimage layer={lm.group(1)}{page}]"
     # Tyrano's [image] tag has no opacity parameter, while KAG3 applies it to
     # the image on the layer. Since this pass already enforces KAG3's
     # one-image-per-layer model, setting the layer opacity is equivalent. This
@@ -340,8 +338,8 @@ def _replace_layer_image(part):
     # solid placeholder bitmap otherwise covers the gallery content.
     om = re.search(r'\bopacity\s*=\s*("(?:[^"]*)"|\'(?:[^\']*)\'|[^\s\]]+)', attrs)
     if om:
-        prefix += "[layopt layer=%s%s opacity=%s]" % (lm.group(1), page, om.group(1))
-    return "%s%s%s" % (prefix, part.strip(), tail)
+        prefix += f"[layopt layer={lm.group(1)}{page} opacity={om.group(1)}]"
+    return f"{prefix}{part.strip()}{tail}"
 
 
 def _tag_spans(text):
@@ -422,7 +420,7 @@ def _export_globals(js_text):
         depth += line.count("{") - line.count("}")
     if not names:
         return js_text
-    export = "\n".join("window.%s = %s;" % (n, n) for n in names)
+    export = "\n".join(f"window.{n} = {n};" for n in names)
     return js_text.rstrip("\n") + "\n" + export + "\n"
 
 
@@ -450,8 +448,8 @@ def _balance_if_endif(lines):
 
     def inject():
         nonlocal depth
-        for _ in range(max(depth, 0)):
-            out.append("[endif]\n")
+        if depth > 0:
+            out.extend(["[endif]\n"] * depth)
         depth = 0
         pending.clear()
 
@@ -459,10 +457,10 @@ def _balance_if_endif(lines):
         s = ln.strip()
         if in_script:
             out.append(ln)
-            if s.startswith("[endscript") or s.startswith("@endscript"):
+            if s.startswith(("[endscript", "@endscript")):
                 in_script = False
             continue
-        if s.startswith("[iscript") or s.startswith("@iscript"):
+        if s.startswith(("[iscript", "@iscript")):
             in_script = True
             out.append(ln)
             continue
@@ -518,9 +516,9 @@ def _finalize_output_lines(lines):
     in_script = False
     for ln in lines:
         s = ln.strip()
-        if s.startswith("[iscript") or s.startswith("@iscript"):
+        if s.startswith(("[iscript", "@iscript")):
             in_script = True
-        elif s.startswith("[endscript") or s.startswith("@endscript"):
+        elif s.startswith(("[endscript", "@endscript")):
             in_script = False
         if not in_script:
             ln = _strip_comment_tail(ln)
@@ -535,7 +533,7 @@ def convert_scenario_file(src_path, unpacked, out_path, macros, stats):
     # (or manual fix) takes priority over automatic TJS2->JS conversion.
     fix_path = src_path + ".jsfix"
     if os.path.isfile(fix_path):
-        with open(fix_path, "r", encoding="utf-8") as f:
+        with open(fix_path, encoding="utf-8") as f:
             data = f.read()
         # export top-level iscript declarations to window (same as the
         # auto-conversion path) so [eval] can reach them
@@ -557,13 +555,8 @@ def convert_scenario_file(src_path, unpacked, out_path, macros, stats):
         stats["jsfix"] += 1
         return "utf-8"
     raw = open(src_path, "rb").read()
-    """Convert one .ks file (encoding detect + storage rewrite + UTF-8 out)."""
-    raw = open(src_path, "rb").read()
     enc = detect_encoding(raw)
-    try:
-        text = raw.decode(enc, errors="replace")
-    except (UnicodeDecodeError, LookupError):
-        text = raw.decode("utf-8", errors="replace")
+    text = decode_text(raw, enc)
     out_lines = []
     dropped = 0
     in_script = False
@@ -572,7 +565,7 @@ def convert_scenario_file(src_path, unpacked, out_path, macros, stats):
     for ln in text.splitlines(keepends=True):
         s = ln.strip()
         if in_script:
-            if s.startswith("[endscript") or s.startswith("@endscript"):
+            if s.startswith(("[endscript", "@endscript")):
                 # end of block: convert the whole block at once (classes
                 # and multi-line constructs need the full body)
                 if drop_script:
@@ -590,7 +583,7 @@ def convert_scenario_file(src_path, unpacked, out_path, macros, stats):
             else:
                 script_buf.append(ln)
             continue
-        if s.startswith("[iscript") or s.startswith("@iscript"):
+        if s.startswith(("[iscript", "@iscript")):
             in_script = True
             script_buf = []
             out_lines.append(_strip_continuation(ln, False))

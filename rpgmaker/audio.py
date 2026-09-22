@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Probe and re-encode Vorbis audio in place.
 
 Probing goes through `rpgmaker/media.py` (PyAV, in-process): no ffprobe
@@ -31,7 +30,7 @@ import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
-from . import config, media, runtime
+from . import constants, media, runtime, tool_registry
 
 log = logging.getLogger("rpgmaker.audio")
 
@@ -83,7 +82,7 @@ class MonoVoiceStrategy(EncodeStrategy):
     def applies(self, info):
         ch = int(info["channels"] or 0)
         br = bitrate_calc(int(info["size"]), float(info["duration"]))
-        return ch == 1 and br > config.MONO_BITRATE_THRESHOLD
+        return ch == 1 and br > constants.MONO_BITRATE_THRESHOLD
 
     def args(self):
         return ["-ar", "32000", "-ac", "1", "-c:a", "libvorbis", "-q:a", "2"]
@@ -96,7 +95,7 @@ class StereoMusicStrategy(EncodeStrategy):
     def applies(self, info):
         ch = int(info["channels"] or 0)
         br = bitrate_calc(int(info["size"]), float(info["duration"]))
-        return ch != 1 and br > config.STEREO_BITRATE_THRESHOLD
+        return ch != 1 and br > constants.STEREO_BITRATE_THRESHOLD
 
     def args(self):
         return ["-c:a", "libvorbis", "-q:a", "3"]
@@ -147,13 +146,15 @@ def transcode_one(ffmpeg, path, info):
 
         loopstart, looplength = info.get("loopstart"), info.get("looplength")
         if loopstart:
-            args += ["-metadata:s:a:0", "LOOPSTART=%s" % loopstart,
-                     "-metadata:s:a:0", "LOOPLENGTH=%s" % looplength]
+            args += ["-metadata:s:a:0", f"LOOPSTART={loopstart}",
+                     "-metadata:s:a:0", f"LOOPLENGTH={looplength}"]
 
         fd, tmp = tempfile.mkstemp(suffix=".ogg", dir=os.path.dirname(path))
         os.close(fd)
         cmd = [ffmpeg, "-y", "-v", "error", "-i", path, "-map", "0:a:0"] + args + [tmp]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=FFMPEG_TIMEOUT)
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
+                           timeout=FFMPEG_TIMEOUT)
         if r.returncode != 0:
             os.remove(tmp)
             # Per-file failure with the reason: the aggregate counter alone
@@ -172,7 +173,7 @@ def transcode_one(ffmpeg, path, info):
         # Per-file transcode guard: malformed probe info (KeyError/TypeError/
         # ValueError), file I/O (OSError), ffmpeg timeout (TimeoutExpired).
         # A failure is recorded as the status so the batch keeps going.
-        return path, "exc: %s" % e, 0
+        return path, f"exc: {e}", 0
 
 
 def iter_audio_files(web_root):
@@ -217,13 +218,12 @@ def reencode_all(web_root, infos, workers=None):
     `workers=None` auto-tunes from the machine (see runtime.py).
     """
     workers = runtime.resolve_workers("encode", workers, path=web_root)
-    ffmpeg = config.find_ffmpeg()
+    ffmpeg = tool_registry.find_ffmpeg()
     if not ffmpeg:
         raise FileNotFoundError(
             "ffmpeg not found - install ffmpeg or set the FFMPEG env var")
     counts = {}
     saved = 0
-    done = 0
     total = len(infos)
 
     def work(item):
@@ -233,10 +233,9 @@ def reencode_all(web_root, infos, workers=None):
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         results = list(ex.map(work, infos.items()))
-    for path, status, saved_bytes in results:
+    for done, (_path, status, saved_bytes) in enumerate(results, start=1):
         counts[status] = counts.get(status, 0) + 1
         saved += saved_bytes
-        done += 1
         if done % 500 == 0 or done == total:
             log.info("...%d/%d", done, total)
 

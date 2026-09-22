@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for rpgmaker/audio.py probing and re-encoding policy."""
 import os
 import random
@@ -7,7 +6,7 @@ import random
 import pytest
 
 
-from rpgmaker import audio, config
+from rpgmaker import audio, constants, tool_registry
 
 
 class TestBitrateCalc:
@@ -121,14 +120,14 @@ class TestToolMissing:
 
     def test_probe_all_needs_no_external_tool(self, game_dir, monkeypatch):
         _root, web = game_dir
-        monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
+        monkeypatch.setattr(tool_registry, "find_ffmpeg", lambda: None)
         infos = audio.probe_all(web, workers=1, sample=1)
         assert len(infos) == 1
 
     def test_reencode_all_raises_when_ffmpeg_missing(self, game_dir,
                                                      monkeypatch):
         _root, web = game_dir
-        monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
+        monkeypatch.setattr(tool_registry, "find_ffmpeg", lambda: None)
         with pytest.raises(FileNotFoundError):
             audio.reencode_all(web, {}, workers=1)
 
@@ -140,18 +139,18 @@ class TestStrategyPattern:
     extend the list without touching transcode_one."""
 
     def _info(self, ch, fsize, dur=10.0):
-        return {"duration": "%.4f" % dur, "size": str(fsize),
+        return {"duration": f"{dur:.4f}", "size": str(fsize),
                 "channels": str(ch)}
 
     def test_pick_mono_voice(self):
-        br = config.MONO_BITRATE_THRESHOLD
+        br = constants.MONO_BITRATE_THRESHOLD
         s = audio.pick_strategy(self._info(1, br * 10 // 8 + 8))
         assert isinstance(s, audio.MonoVoiceStrategy)
         assert s.args() == ["-ar", "32000", "-ac", "1", "-c:a", "libvorbis",
                             "-q:a", "2"]
 
     def test_pick_stereo_music(self):
-        br = config.STEREO_BITRATE_THRESHOLD
+        br = constants.STEREO_BITRATE_THRESHOLD
         s = audio.pick_strategy(self._info(2, br * 10 // 8 + 8))
         assert isinstance(s, audio.StereoMusicStrategy)
         assert s.args() == ["-c:a", "libvorbis", "-q:a", "3"]
@@ -163,8 +162,8 @@ class TestStrategyPattern:
 
     def test_pick_mono_priority_over_music(self):
         # a mono file above BOTH thresholds must pick MonoVoice (priority)
-        mono = config.MONO_BITRATE_THRESHOLD * 10 // 8 + 8
-        stereo = config.STEREO_BITRATE_THRESHOLD * 10 // 8 + 8
+        mono = constants.MONO_BITRATE_THRESHOLD * 10 // 8 + 8
+        stereo = constants.STEREO_BITRATE_THRESHOLD * 10 // 8 + 8
         s = audio.pick_strategy(self._info(1, max(mono, stereo)))
         assert isinstance(s, audio.MonoVoiceStrategy)
 
@@ -195,8 +194,8 @@ class TestRandomSamplePolicy:
     keeps the run reproducible without ever making it flaky.
     """
 
-    MONO = config.MONO_BITRATE_THRESHOLD
-    STEREO = config.STEREO_BITRATE_THRESHOLD
+    MONO = constants.MONO_BITRATE_THRESHOLD
+    STEREO = constants.STEREO_BITRATE_THRESHOLD
 
     @staticmethod
     def _fake_ffmpeg(monkeypatch, captured):
@@ -237,7 +236,7 @@ class TestRandomSamplePolicy:
             path = tmp_path / ("s%d.ogg" % idx)
             path.write_bytes(b"\x00" * fsize)
             br = audio.bitrate_calc(fsize, dur)
-            info = {"duration": "%.6f" % dur, "size": str(fsize),
+            info = {"duration": f"{dur:.6f}", "size": str(fsize),
                     "channels": str(ch)}
             captured.clear()
             _p, status, _saved = audio.transcode_one("unused", str(path), info)
@@ -268,7 +267,7 @@ class TestRandomSamplePolicy:
                 path = tmp_path / ("b%d_%d.ogg" % (ch, fsize))
                 path.write_bytes(b"\x00" * fsize)
                 captured.clear()
-                info = {"duration": "%.4f" % dur, "size": str(fsize),
+                info = {"duration": f"{dur:.4f}", "size": str(fsize),
                         "channels": str(ch)}
                 _p, status, _saved = audio.transcode_one(
                     "unused", str(path), info)

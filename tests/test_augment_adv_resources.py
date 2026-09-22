@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/augment_adv_resources.py - ADV text-resource
 extraction (walk_resources -> augment) and in-place baking for RPG Maker
 MZ games with a custom TextResource plugin (data/resources/<lang>/*.json).

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Repo-level invariants for parallelism defaults.
 
 Owner directive: the default worker count is never a hardcoded number -- it is
@@ -50,7 +49,7 @@ class TestCoreProbingIsCentralised:
                            if rel != RUNTIME_REL and "cpu_count()" in text)
         assert offenders == [], (
             "use rpgmaker.runtime.physical_cpu_count()/resolve_workers() "
-            "instead: %s" % offenders)
+            f"instead: {offenders}")
 
     def test_multiprocessing_cpu_count_is_only_in_runtime(self):
         offenders = sorted(rel for rel, text in SOURCES.items()
@@ -73,11 +72,10 @@ class TestPoolsDeriveTheirSize:
         for rel, text in SOURCES.items():
             if rel == RUNTIME_REL:
                 continue
-            if "max_workers=" in text or "Pool(" in text:
-                if "runtime" not in text:
-                    offenders.append(rel)
+            if ("max_workers=" in text or "Pool(" in text) and "runtime" not in text:
+                offenders.append(rel)
         assert offenders == [], (
-            "pool without rpgmaker.runtime sizing: %s" % sorted(offenders))
+            f"pool without rpgmaker.runtime sizing: {sorted(offenders)}")
 
     def test_qc_pool_uses_the_qc_kind(self):
         src = SOURCES[os.path.join("tools", "merge_plain_chunks.py")]

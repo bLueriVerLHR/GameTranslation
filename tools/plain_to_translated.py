@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """plain_to_translated.py - LEGACY (old ===KEY=== plain format, superseded by
 the two-file chunk layout: chunk_NN.ja.txt + chunk_NN.zh.txt + 
 tools/merge_plain_chunks.py).  Kept for old work packages.
@@ -51,7 +50,7 @@ def main():
               % (len(entries), len(src_keys)))
         sys.exit(2)
     out = {}
-    for key, lines in zip(src_keys, entries):
+    for key, lines in zip(src_keys, entries, strict=True):
         if not any(lines) and False:
             pass
         if len(lines) == 1 and lines[0] == "":

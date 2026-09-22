@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for the KAG source-folder -> Tyrano data-folder mapping.
 
 Why this exists: the mapping used to be a hardcoded list of one game's folders

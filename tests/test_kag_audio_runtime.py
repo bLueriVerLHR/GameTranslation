@@ -1,11 +1,18 @@
-"""Behavioral tests of the generated audio channel, without media or a browser."""
+"""Behavioral tests of the generated audio channel, without media or a browser.
+
+Marked `node`: the shim logic is executed by a real Node.js binary, so this
+belongs to the nightly layer (`-m node`) rather than the PR fast layer.
+"""
 
 import subprocess
 
 import pytest
 
 from kirikiri.convert_kag import RUNTIME_SHIM_IIFE
-from rpgmaker.config import find_node
+from rpgmaker.tool_registry import find_node
+
+
+pytestmark = pytest.mark.node
 
 
 def test_audio_channel_ignores_obsolete_callbacks():
@@ -59,5 +66,6 @@ channel.play({storage:'failed.ogg'});
 assert.equal(channel.status, 'stop');
 """
     result = subprocess.run([node, "-e", harness], capture_output=True,
-                            text=True, timeout=15)
+                            text=True, encoding="utf-8", errors="replace",
+                            timeout=15)
     assert result.returncode == 0, result.stderr

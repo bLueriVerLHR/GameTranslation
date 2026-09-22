@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for kirikiri/xp3tool.py - the krkrz XP3 archive unpacker.
 
 All archives are built from scratch at the byte level so the suite is fully
@@ -289,18 +288,17 @@ class TestIndexBlocks:
     def test_read_index_block_unknown_method(self, tmp_path):
         p = tmp_path / "i.bin"
         p.write_bytes(bytes([0x02]))
-        with p.open("rb") as f:
-            with pytest.raises(xp3tool.Xp3Error, match="unknown encode method"):
-                xp3tool.read_index_block(f, 0)
+        with p.open("rb") as f, pytest.raises(xp3tool.Xp3Error,
+                                           match="unknown encode method"):
+            xp3tool.read_index_block(f, 0)
 
     def test_read_index_block_zlib_size_mismatch(self, tmp_path):
         data = b"data"
         comp = zlib.compress(data)
         p = tmp_path / "i.bin"
         p.write_bytes(bytes([0x01]) + struct.pack("<qq", len(comp), len(data) + 3) + comp)
-        with p.open("rb") as f:
-            with pytest.raises(xp3tool.Xp3Error, match="decompressed"):
-                xp3tool.read_index_block(f, 0)
+        with p.open("rb") as f, pytest.raises(xp3tool.Xp3Error, match="decompressed"):
+            xp3tool.read_index_block(f, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -537,6 +535,35 @@ class TestSubChunkHelpers:
         with pytest.raises(xp3tool.Xp3Error, match="chunk"):
             xp3tool.find_chunk(buf, 0, len(buf), b"info")
 
+    def test_a_non_positive_chunk_size_is_rejected_not_spun_on(self):
+        """A declared size of 0 or -12 must raise, not loop forever.
+
+        The scan advances by `12 + chunk_size`, so -12 leaves the cursor where
+        it was and 0 advances by only the header: both spin without output, and
+        a hang is unrecoverable for a batch unpack because there is nothing for
+        a caller to catch.  Measured: 0 -> 0 and -12 -> -12 on the cursor.
+        """
+        for bad in (0, -12):
+            buf = b"XXXX" + struct.pack("<q", bad) + b"data"
+            with pytest.raises(xp3tool.Xp3Error, match="non-positive size"):
+                xp3tool.find_chunk(buf, 0, len(buf), b"info")
+
+    def test_a_negative_entry_name_length_is_rejected(self):
+        """A signed 16-bit name length can be negative; the guard runs first.
+
+        `_need` would also reject the resulting negative byte count, but this
+        check is what produces a message naming the *name length* rather than a
+        generic bounds complaint.
+        """
+        raw = build_index([("a.txt", [(19, 5, 5, False)])],
+                          compress=False, raw=True)
+        body = bytearray(raw[9:])
+        # info block starts at 12; its name length sits at info_start + 20.
+        info_start = body.index(b"info") + 12
+        body[info_start + 20:info_start + 22] = struct.pack("<h", -1)
+        with pytest.raises(xp3tool.Xp3Error, match="negative entry name"):
+            xp3tool.parse_index(bytes(body), 0)
+
     def test_parse_index_entries(self):
         raw = build_index([("a.txt", [(19, 5, 5, False)]),
                            ("b/c.bin", [(24, 8, 8, False)])],
@@ -545,6 +572,23 @@ class TestSubChunkHelpers:
         entries = xp3tool.parse_index(raw[9:], 0)
         assert [e["name"] for e in entries] == ["a.txt", "b/c.bin"]
         assert entries[0]["segments"] == [(19, 5, 5, False)]
+
+    def test_need_rejects_every_out_of_range_shape(self):
+        """`_need` is the bounds guard every index read goes through.
+
+        It must reject a negative offset, a negative size and a size that runs
+        past the buffer - and report the *declared* numbers, because a game
+        archive's index is attacker-controlled and `struct.error` from the read
+        that would follow says nothing about which sub-chunk lied.
+        """
+        buf = b"x" * 25
+        assert xp3tool._need(buf, 0, 25, "the whole buffer") is None
+        for pos, size in ((-1, 1), (0, -1), (20, 6), (26, 0)):
+            with pytest.raises(xp3tool.Xp3Error) as excinfo:
+                xp3tool._need(buf, pos, size, "the segment table")
+            message = str(excinfo.value)
+            assert "the segment table" in message
+            assert "is %d" % len(buf) in message
 
 
 class TestAdlerSubChunk:
@@ -570,6 +614,30 @@ class TestAdlerSubChunk:
         # engine would refuse to load this file entirely
         assert entries[0]["adler"] is None
         assert "adlr" in caplog.text and "a.txt" in caplog.text
+
+    def test_a_short_adlr_sub_chunk_yields_none(self, tmp_path):
+        """A present-but-stunted 'adlr' must not be read as an Adler-32.
+
+        `_u32` would happily read four bytes past a 3-byte chunk - the value
+        would then come from whatever follows and the archive would be accepted
+        with a nonsense extraction-filter key.  The `adlr_size >= 4` guard is
+        what stands between a truncated archive and that silently wrong key.
+
+        Unlike an *absent* 'adlr' (which warns - see the test above), a chunk
+        that is present but too short is silent: `find_chunk` succeeded, so the
+        `except Xp3Error` path does not run.  The observable contract either
+        way is `adler is None`, which is what the caller checks.
+        """
+        p = tmp_path / "short-adlr.xp3"
+        # The index must be stored raw, or 'adlr' is not visible as bytes.
+        p.write_bytes(make_archive([("a.txt", b"hello")],
+                                   index_compress=False, index_raw=True))
+        raw = bytearray(p.read_bytes())
+        at = raw.index(b"adlr")
+        raw[at + 4:at + 12] = struct.pack("<q", 3)   # declare only 3 bytes
+        p.write_bytes(bytes(raw))
+        entries = xp3tool.open_xp3(str(p))
+        assert entries[0]["adler"] is None
 
 
 class TestListEntries:
@@ -699,6 +767,55 @@ class TestProtectedVariantDetection:
                             0x03, 0x08, 0xe2, 0xbb, 0xd9, 0x61, 0x74, 0x91,
                             0x02, 0x07, 0x02])
         assert xp3tool.payload_is_recognizable(cp932_junk) is False
+
+    def test_a_non_empty_payload_never_decodes_to_empty_text(self):
+        """The invariant behind the (now deleted) `if not text` guard.
+
+        `payload_is_recognizable` used to return False when the sniffed head
+        decoded to the empty string.  That cannot happen - a non-empty `data`
+        gives a non-empty `head`, and a successful UTF-8 decode of a non-empty
+        byte string is never empty - so the clause was removed as unreachable
+        (see `tests/README.md` section 3 for the rule).  What *is* worth pinning
+        is the premise: if `_TEXT_SNIFF` ever became 0 the head would be empty
+        and the deleted guard would have been load-bearing after all.
+        """
+        assert xp3tool._TEXT_SNIFF > 0
+        for data in (b"a", b"\x00", b"\xe3\x81\x82", b" " * 8):
+            head = data[:xp3tool._TEXT_SNIFF]
+            assert head
+            assert head.decode("utf-8") != ""
+        # ...and payloads that really do carry text are still recognized.
+        for text in (b"hello, world", b"[playbgm storage=\"bgm01\"]" * 4):
+            assert xp3tool.payload_is_recognizable(text) is True
+
+    def test_a_corrupt_segment_is_skipped_not_fatal(self, tmp_path, caplog):
+        """`probe_payloads` swallows a per-entry failure and keeps going.
+
+        The probe only *samples* payloads to decide whether an archive is an
+        opaque protected variant.  One unreadable entry must not abort the
+        sample, and it must not count as 'recognizable' either - a probe that
+        crashes on the first bad entry would make every archive with a single
+        damaged file look unprotected.
+        """
+        p = tmp_path / "damaged.xp3"
+        p.write_bytes(make_archive([("a.txt", b"hello"),
+                                    ("b.bin", b"world")],
+                                   zlib_segments=("b.bin",)))
+        entries = xp3tool.open_xp3(str(p))
+        # Destroy the zlib header of the second entry's stored payload.  Its
+        # segment table still points at the right offset, so extraction gets
+        # as far as `zlib.decompress` and raises `zlib.error` - the third of
+        # the three exception types the probe must survive.
+        raw = bytearray(p.read_bytes())
+        start = entries[1]["segments"][0][0]
+        raw[start:start + 2] = b"\x00\x00"
+        p.write_bytes(bytes(raw))
+        with caplog.at_level(logging.DEBUG):
+            checked, known = xp3tool.probe_payloads(str(p), entries)
+        assert checked == 1          # only the healthy entry was counted
+        assert known == 1
+        assert any("probe of" in record.getMessage()
+                   for record in caplog.records)
 
     def test_probe_counts_what_it_checked(self, tmp_path):
         p = tmp_path / "probe.xp3"

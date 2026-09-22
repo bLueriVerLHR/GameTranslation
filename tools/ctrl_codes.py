@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Control-code helpers shared by the translation tools (single source).
 
 Control codes are engine escape sequences that must survive translation

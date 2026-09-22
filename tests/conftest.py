@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Shared pytest fixtures: repo path setup, synthetic RPG Maker games and
 fake-tool environment wiring.
 
-The fake tools live in tests/fake_tools/ and are injected via the FFMPEG /
-SEVENZ env vars (config.find_* honors env vars first), so the
-whole pipeline runs hermetic - no system ffmpeg/7z needed.
+The only fake tool left is ffmpeg: it is still spawned by the `audio` step for
+Vorbis encoding (PyAV's wheels lack libvorbis), and `tests/fake_tools/ffmpeg.py`
+is injected through the FFMPEG env var so the pipeline runs hermetic.  There is
+no fake 7z any more - py7zr packs in-process, and the only 7-Zip left is the
+Windows-side bridge (`win_7z`, `SEVENZ_WIN`).
 
 Media probing/decoding is in-process (PyAV), so those tests use a real
 container instead of a fake binary: `tests/fixtures/sine_loop.ogg` is a
@@ -23,6 +24,7 @@ sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
 
 import pytest  # noqa: E402
+import contextlib
 
 FAKE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_tools")
 FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -112,7 +114,7 @@ def make_launcher(script_path, workdir):
     launcher = os.path.join(workdir, stem + ".cmd")
     with open(launcher, "w", encoding="ascii", newline="\r\n") as f:
         f.write("@echo off\n")
-        f.write('"{}" "{}" %*\n'.format(sys.executable, script_path))
+        f.write(f'"{sys.executable}" "{script_path}" %*\n')
     return launcher
 
 
@@ -228,15 +230,17 @@ def game_dir(tmp_path):
 
 @pytest.fixture
 def fake_tools(monkeypatch, tmp_path_factory):
-    """Point FFMPEG/SEVENZ at the fake tool launchers.
+    """Point FFMPEG at the fake tool launcher.
 
     Returns a mapping tool-name -> launcher path (``fake_tools["ffmpeg"]``),
     which is also what the subprocess-based CLI tests must export into their
-    environment.
+    environment.  ``fake_tools["7z"]`` no longer exists: packaging is in-process
+    (py7zr) and the native ``7z`` registry entry was removed, so exporting
+    SEVENZ would wire up a variable nothing reads (see PLAN Phase 4 task 8).
     """
     workdir = str(tmp_path_factory.mktemp("fake-tools"))
     mapping = {}
-    for name, script in (("FFMPEG", "ffmpeg.py"), ("SEVENZ", "7z.py")):
+    for name, script in (("FFMPEG", "ffmpeg.py"),):
         launcher = fake_launcher(script, workdir)
         monkeypatch.setenv(name, launcher)
         mapping[os.path.splitext(script)[0]] = launcher
@@ -244,15 +248,6 @@ def fake_tools(monkeypatch, tmp_path_factory):
     for var in ("FAKE_HIGH_BITRATE", "FAKE_SMALL_OUTPUT", "GT_WORKERS"):
         monkeypatch.delenv(var, raising=False)
     return mapping
-
-
-@pytest.fixture
-def fake_powershell(monkeypatch, tmp_path_factory):
-    """Point POWERSHELL_EXE at the fake capture interpreter."""
-    workdir = str(tmp_path_factory.mktemp("fake-powershell"))
-    launcher = fake_launcher("fake_powershell.py", workdir)
-    monkeypatch.setenv("POWERSHELL_EXE", launcher)
-    return launcher
 
 
 @pytest.fixture
@@ -275,10 +270,8 @@ def fs_is_case_sensitive(path):
     try:
         return not os.path.exists(os.path.join(str(path), "caseprobe"))
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.remove(probe)
-        except OSError:
-            pass
 
 
 def free_port():
@@ -299,8 +292,8 @@ def hermetic_resolution(monkeypatch):
     warn-once assertions stay isolated.  Tests that exercise probing itself
     monkeypatch the probe anchors and unset GT_NO_PROBE explicitly.
     """
-    from rpgmaker import config
+    from rpgmaker import deliverables
 
     monkeypatch.setenv("GT_NO_PROBE", "1")
-    monkeypatch.setattr(config, "_warned_defaults", set())
+    monkeypatch.setattr(deliverables, "_noted_defaults", set())
     yield

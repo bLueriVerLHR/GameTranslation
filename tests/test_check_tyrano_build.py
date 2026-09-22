@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for the TyranoScript play-test gate's pure logic (no browser needed)."""
 import sys
 from pathlib import Path
@@ -17,7 +16,7 @@ def snap(text=(100, 200, 300, 240), inner_z=8000, imgs=(), windows=None, ctrl=()
         "base": list(base) if base else None,
         "text": list(text) if text else None,
         "innerZ": inner_z,
-        "imgs": [dict(src=s, rect=list(r), z=z) for s, r, z in imgs],
+        "imgs": [{"src": s, "rect": list(r), "z": z} for s, r, z in imgs],
         "windows": windows if windows is not None else [
             {"rect": [90, 190, 320, 250], "z": inner_z, "text": list(text) if text else [0, 0, 0, 0]}],
         "ctrl": [list(c) for c in ctrl],

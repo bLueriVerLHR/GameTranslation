@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Merge a Chinese font with a Japanese font into one CJK TTF.
 
 The Chinese font goes first, so its glyphs win for every codepoint both
@@ -9,7 +8,8 @@ Both inputs are rescaled to a common units-per-em (2048) before merging.
 Useful for KiriKiri games whose configured font has no GB glyphs - the
 merged font is installed (or registered) for the game, so dialogue renders
 without tofu boxes.  Exact font registration is game-specific; record what
-worked in docs/table/<Game>/notes.md.
+worked in *that game's workspace notes* (a gitignored local file, see
+docs/reference/local-layout.md).
 
 Usage:
     python3 kirikiri/merge_font.py <cn_font> <jp_font> <out.ttf> [--upm 2048]
@@ -23,7 +23,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 # Repo root, appended (not inserted) so a same-named sibling module in
 # this directory still wins.
 sys.path.append(os.path.dirname(_HERE))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, platform  # noqa: E402
 
 try:
     from fontTools.ttLib import TTFont, TTCollection
@@ -80,6 +80,12 @@ def scale_to(font_path, out_path, target_upm):
 def merge_fonts(cn_font, jp_font, out_path, upm):
     from fontTools.merge import Merger
 
+    # AGENTS.md CRITICAL: reads two font files and writes scaled intermediates
+    # next to the output; all of them must be on this processor's side.
+    own = platform.require_native_paths("merge fonts", cn_font=cn_font,
+                                        jp_font=jp_font, out_path=out_path)
+    cn_font, jp_font = str(own["cn_font"]), str(own["jp_font"])
+    out_path = str(own["out_path"])
     tmp_dir = os.path.dirname(os.path.abspath(out_path))
     os.makedirs(tmp_dir, exist_ok=True)
     cn_scaled = os.path.join(tmp_dir, "_cn_%d.ttf" % upm)

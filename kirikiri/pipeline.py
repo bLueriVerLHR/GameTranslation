@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Generic KiriKiri (KAG3) port pipeline: probe -> unpack -> convert -> verify.
 
 One command drives a whole game port, so a new title is "write a profile file,
@@ -23,7 +22,7 @@ Profile (JSON object; paths resolve as noted):
       "src": "src",                          # relative to the profile's dir
       "out": "out",                          # relative to the profile's dir
       "convert": {
-        "fonts": ["docs/table/fonts/<font>.otf"],
+        "fonts": [os.path.join(FONT_DIR, "<font>.otf")],
         "video_dir": "media/webm",
         "state_overrides": "state/gallery-unlocked.json",
         "video_fit": "box",                  # box | fill
@@ -47,7 +46,7 @@ import logging
 import os
 import re
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(_HERE)
@@ -55,12 +54,16 @@ sys.path.append(REPO_ROOT)
 
 from kirikiri import xp3tool  # noqa: E402
 from kirikiri.ks_extract import load_ks  # noqa: E402
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, platform, settings  # noqa: E402
+import contextlib
 
 log = logging.getLogger("kirikiri.pipeline")
 
 DEFAULT_ENGINE = os.path.join(".tools", "tyranoscript")
-FONT_DIR = os.path.join("docs", "table", "fonts")
+# The registered font directory comes from the shared private-data mapping, so
+# no literal local path appears here.  FONT_DIR stays a module attribute because
+# callers and tests override it in one place.
+FONT_DIR = str(settings.private_path("fonts"))
 INDEX_FILE = "unpack-index.txt"
 
 #: asset refs are relative to the build's data/ dir and usually omit the
@@ -91,7 +94,7 @@ def list_archives(source):
     try:
         names = os.listdir(source)
     except OSError as exc:
-        raise FileNotFoundError("cannot list %s (%s)" % (source, exc))
+        raise FileNotFoundError(f"cannot list {source} ({exc})") from exc
     return [n for n in names if n.lower().endswith(".xp3")]
 
 
@@ -149,7 +152,7 @@ def usable_archives(source):
             refusals.append((info["name"], info["detail"]))
         else:
             refusals.append((info["name"],
-                            "%s: %s" % (info["name"], info.get("detail", ""))))
+                            "{}: {}".format(info["name"], info.get("detail", ""))))
     return usable, refusals
 
 
@@ -215,17 +218,18 @@ def load_profile(path):
 
 
 def default_fonts():
-    """Project font policy: the packaged font under docs/table/fonts/.
+    """Project font policy: the registered font directory (see
+    docs/reference/local-layout.md).
 
-    Missing local data is a WARN, never a silent no-op (AGENTS: mandatory steps
-    that need gitignored data must say so).
+    Missing local data is a WARN, never a silent no-op (mandatory steps that
+    need gitignored data must say so - see AGENTS.md and
+    docs/reference/local-layout.md section 9).
     """
-    font_dir = os.path.join(REPO_ROOT, FONT_DIR)
-    found = sorted(glob.glob(os.path.join(font_dir, "*.otf"))
-                   + glob.glob(os.path.join(font_dir, "*.ttf")))
+    found = sorted(glob.glob(os.path.join(FONT_DIR, "*.otf"))
+                   + glob.glob(os.path.join(FONT_DIR, "*.ttf")))
     if not found:
         log.warning("no font under %s - the unified-font policy is NOT applied "
-                    "(see docs/table/font_rollback.md)", FONT_DIR)
+                    "(see docs/reference/local-layout.md section 5)", FONT_DIR)
         return None
     return found[:1]
 
@@ -245,6 +249,12 @@ def archive_order(profile):
 def unpack(profile, force=False):
     """Extract every archive over one tree; returns (files, bytes) or None."""
     source, dest = profile["_source"], profile["_src"]
+    # AGENTS.md CRITICAL: this reads the game's Windows-side archives and
+    # writes a WSL-side staging tree with plain Python I/O.  Gate before the
+    # first makedirs / extract call.
+    own = platform.require_native_paths("unpack kirikiri game", source=source,
+                                        dest=dest)
+    source, dest = str(own["source"]), str(own["dest"])
     names = archive_order(profile)
     if not names:
         log.error("%s: no *.xp3 archive found", source)
@@ -255,7 +265,7 @@ def unpack(profile, force=False):
 
     usable, refusals = usable_archives(source)
     if refusals:
-        for name, reason in refusals:
+        for _name, reason in refusals:
             log.error("%s", reason)
         log.error("refusing to unpack %s: %d archive(s) are unusable "
                   "(pass --force only to inspect them, not to port)",
@@ -264,7 +274,7 @@ def unpack(profile, force=False):
 
     os.makedirs(dest, exist_ok=True)
     lines = ["# unpack order (engine priority: later archives override earlier)",
-             "# %s" % source]
+             f"# {source}"]
     total_files = total_bytes = 0
     for name in names:
         path = os.path.join(source, name)
@@ -286,10 +296,8 @@ def _tree_size(root):
     for base, _dirs, names in os.walk(root):
         for name in names:
             files += 1
-            try:
+            with contextlib.suppress(OSError):
                 size += os.path.getsize(os.path.join(base, name))
-            except OSError:
-                pass
     return files, size
 
 
@@ -451,16 +459,15 @@ def verify_build(build, source=None, strict=False):
 
     problems = []
     if not os.path.isfile(os.path.join(build, "index.html")):
-        problems.append("no index.html in %s" % build)
+        problems.append(f"no index.html in {build}")
     scenarios = scenario_files(build)
     if not scenarios:
-        problems.append("no data/scenario/**/*.ks in %s" % build)
+        problems.append(f"no data/scenario/**/*.ks in {build}")
     entry_missing = missing_entry_scenario(build)
     if entry_missing:
         problems.append(
-            "entry scenario %s is not in the build (the engine will boot to a "
-            "black screen); pass --first-scenario or fix the scenario scan"
-            % entry_missing)
+            f"entry scenario {entry_missing} is not in the build (the engine will boot to a "
+            "black screen); pass --first-scenario or fix the scenario scan")
     for problem in problems:
         log.error("%s", problem)
     if problems:
@@ -504,7 +511,7 @@ def verify_build(build, source=None, strict=False):
 # ---------------------------------------------------------------------------
 
 def cmd_probe(source: Annotated[str, cliutil.Argument(help="game folder holding *.xp3")],
-              write_profile: Annotated[Optional[str], cliutil.Option(
+              write_profile: Annotated[str | None, cliutil.Option(
                   "--write-profile", metavar="JSON",
                   help="write a profile skeleton for this game")] = None,
               as_json: Annotated[bool, cliutil.Option(
@@ -515,13 +522,13 @@ def cmd_probe(source: Annotated[str, cliutil.Argument(help="game folder holding 
     """Report which archives a game has and whether they can be unpacked."""
     cliutil.setup_logging(verbose, quiet, log_file)
     if not os.path.isdir(source):
-        return cliutil.fail("not a folder: %s" % source, 2)
+        return cliutil.fail(f"not a folder: {source}", 2)
     try:
         infos = probe_source(source)
     except FileNotFoundError as exc:
         return cliutil.fail(str(exc))
     if not infos:
-        return cliutil.fail("no *.xp3 archive found in %s" % source)
+        return cliutil.fail(f"no *.xp3 archive found in {source}")
 
     if as_json:
         print(json.dumps({"source": source, "archives": infos},
@@ -593,12 +600,12 @@ def cmd_convert(profile: Annotated[str, cliutil.Argument(help="profile JSON")],
     if prof is None:
         return 2
     if not os.path.isdir(prof["_src"]):
-        return cliutil.fail("not unpacked yet: %s (run unpack first)" % prof["_src"])
+        return cliutil.fail("not unpacked yet: {} (run unpack first)".format(prof["_src"]))
     return convert_game(prof, scenario_only=scenario_only)
 
 
 def cmd_verify(build: Annotated[str, cliutil.Argument(help="built Tyrano folder")],
-               source: Annotated[Optional[str], cliutil.Option(
+               source: Annotated[str | None, cliutil.Option(
                    "--source", metavar="DIR",
                    help="unpacked source tree, to tell conversion gaps apart")] = None,
                strict: Annotated[bool, cliutil.Option(
@@ -609,7 +616,7 @@ def cmd_verify(build: Annotated[str, cliutil.Argument(help="built Tyrano folder"
     """Check a converted build: structure, kana, storage refs, iscript JS."""
     cliutil.setup_logging(verbose, quiet, log_file)
     if not os.path.isdir(build):
-        return cliutil.fail("not a folder: %s" % build, 2)
+        return cliutil.fail(f"not a folder: {build}", 2)
     return verify_build(build, source=source, strict=strict)
 
 
@@ -634,7 +641,7 @@ def cmd_port(profile: Annotated[str, cliutil.Argument(help="profile JSON")],
         if unpack(prof, force=force) is None:
             return 1
     elif not os.path.isdir(prof["_src"]):
-        return cliutil.fail("no source tree at %s" % prof["_src"])
+        return cliutil.fail("no source tree at {}".format(prof["_src"]))
     code = convert_game(prof, scenario_only=scenario_only)
     if code:
         return code
@@ -646,10 +653,10 @@ def _read(profile_path):
     try:
         return load_profile(profile_path)
     except FileNotFoundError:
-        cliutil.fail("no such profile: %s" % profile_path, 2)
+        cliutil.fail(f"no such profile: {profile_path}", 2)
         return None
     except (json.JSONDecodeError, OSError, KeyError) as exc:
-        cliutil.fail("%s: bad profile (%s)" % (profile_path, exc), 2)
+        cliutil.fail(f"{profile_path}: bad profile ({exc})", 2)
         return None
 
 

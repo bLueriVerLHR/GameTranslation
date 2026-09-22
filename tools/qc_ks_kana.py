@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Kana-residual QC for KiriKiri and TyranoScript scenario translations.
 
 Scans a scenario tree for translatable lines whose display text still
@@ -23,7 +22,7 @@ import json
 import logging
 import os
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -74,16 +73,19 @@ def scan_values(translated_path):
     return len(trans), residual
 
 
-def cmd(values: Annotated[Optional[str], cliutil.Option(
+def cmd(values: Annotated[str | None, cliutil.Option(
             "--values", metavar="translated.json",
             help="check a dictionary's values instead of a tree")] = None,
-        target: Annotated[Optional[str], cliutil.Argument(
+        target: Annotated[str | None, cliutil.Argument(
             help="scenario/patch directory")] = None,
         verbose: cliutil.Verbose = False,
         quiet: cliutil.Quiet = False,
         log_file: cliutil.LogFile = None) -> int:
     """Report kana left in a scenario tree (or in a dictionary's values)."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("qc ks kana", target=target)
     if values:
         total, residual = scan_values(values)
         log.info("values: %d entries, %d with kana", total, residual)

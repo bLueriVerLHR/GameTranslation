@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """mvkeys.py - story-ordered key extraction for RPG Maker MV / MZ data trees.
 
 v2 workflow step 1 (design: `.tmp/TRANSLATION_WORKFLOW_V2.md`): turn a game's
@@ -31,7 +30,6 @@ continuation (an editor echo the engine never executes) and the 357's
 ``parameters[2]`` (@text - the engine hands the plugin ``parameters[3]`` only).
 Those are reported in ``stats.json`` under ``skipped``.
 """
-import io
 import json
 import os
 import re
@@ -101,7 +99,7 @@ def _nested_texts(value, trail=""):
             out.extend(_nested_texts(item, "%s[%d]" % (trail, index)))
     elif isinstance(value, dict):
         for key, item in value.items():
-            out.extend(_nested_texts(item, "%s.%s" % (trail, key)))
+            out.extend(_nested_texts(item, f"{trail}.{key}"))
     return out
 
 
@@ -377,9 +375,7 @@ def is_candidate(text, kind="map"):
         return False
     if _PATH_RE.search(text):
         return False
-    if kind in ("db", "ui", "plugin") and _SCRIPTISH_RE.search(text):
-        return False
-    return True
+    return not (kind in ("db", "ui", "plugin") and _SCRIPTISH_RE.search(text))
 
 
 def namebox_of(text):
@@ -511,7 +507,7 @@ def _walk_list(collector, lst, rel, path, where, stream, note_tags=()):
         # Player-visible text that a plugin reads out of comment commands
         # (menu entry name/help/subtext): one key per payload block.
         collector.add("%s#%s[%d]#%s[%d]" % (rel, path, head, tag, occurrence),
-                      "ui", "%s / comment<%s>" % (where, tag), payload,
+                      "ui", f"{where} / comment<{tag}>", payload,
                       "%s#%s[%d]" % (rel, path, head))
     for index, command in enumerate(lst or []):
         if not is_command(command):
@@ -529,13 +525,13 @@ def _walk_list(collector, lst, rel, path, where, stream, note_tags=()):
             collector.add(_cmd_id(rel, "%s[%d]" % (path, index), field),
                           "map" if "Map" in rel else
                           ("common" if "CommonEvents" in rel else "troop"),
-                          "%s/%s" % (where, command_code(command)),
+                          f"{where}/{command_code(command)}",
                           text, stream, window=window)
         for param, field, text in extra_text_codes(command):
             collector.add(_cmd_id(rel, "%s[%d]" % (path, index), field, param),
                           "map" if "Map" in rel else
                           ("common" if "CommonEvents" in rel else "troop"),
-                          "%s/%s" % (where, command_code(command)),
+                          f"{where}/{command_code(command)}",
                           text, stream, window=window)
 
 
@@ -544,7 +540,7 @@ def _map_order(data_dir):
     ids = []
     path = os.path.join(data_dir, "MapInfos.json")
     if os.path.isfile(path):
-        with io.open(path, encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             infos = json.load(handle)
         named = [info for info in infos if isinstance(info, dict)]
         named.sort(key=lambda info: (info.get("order") or 0, info.get("id") or 0))
@@ -570,7 +566,7 @@ def _records(data):
 
 
 def _read_json(path):
-    with io.open(path, encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         return json.load(handle)
 
 
@@ -586,9 +582,9 @@ def _collect_maps(collector, game_dir, data_dir, note_tags=()):
         if isinstance(data.get("displayName"), str):
             # A location banner is often kanji-only, so it counts as UI text
             # (the kana rule would drop it) even though it lives in map data.
-            collector.add("%s#displayName" % rel, "ui",
-                          "%s/displayName" % title, data["displayName"],
-                          "%s#displayName" % rel)
+            collector.add(f"{rel}#displayName", "ui",
+                          f"{title}/displayName", data["displayName"],
+                          f"{rel}#displayName")
         for event_index, event in enumerate(data.get("events") or []):
             if not event:
                 continue
@@ -600,11 +596,11 @@ def _collect_maps(collector, game_dir, data_dir, note_tags=()):
                 collector.add(
                     "%s#events[%d].note#%s[%d]" % (rel, event_index, tag,
                                                     occurrence),
-                    "ui", "%s / %s / note<%s>" % (title, event_name, tag),
+                    "ui", f"{title} / {event_name} / note<{tag}>",
                     payload, "%s#events[%d]" % (rel, event_index))
             for page_index, page in enumerate(event.get("pages") or []):
                 base = "events[%d].pages[%d].list" % (event_index, page_index)
-                stream = "%s#%s" % (rel, base)
+                stream = f"{rel}#{base}"
                 _walk_list(collector, page.get("list"), rel, base,
                            "%s / %s / p%d" % (title, event_name, page_index),
                            stream, note_tags)
@@ -620,8 +616,8 @@ def _collect_common(collector, data_dir, note_tags=()):
             continue
         base = "[%d].list" % index
         _walk_list(collector, event.get("list"), "data/CommonEvents.json", base,
-                   "%s / CommonEvent %s" % (event.get("name") or "", index),
-                   "data/CommonEvents.json#%s" % base, note_tags)
+                   "{} / CommonEvent {}".format(event.get("name") or "", index),
+                   f"data/CommonEvents.json#{base}", note_tags)
 
 
 def _collect_troops(collector, data_dir, note_tags=()):
@@ -634,12 +630,12 @@ def _collect_troops(collector, data_dir, note_tags=()):
             continue
         name = troop.get("name") or "Troop%d" % index
         collector.add("data/Troops.json#[%d].name" % index, "troop",
-                      "%s/name" % name, name, "data/Troops.json#[%d]" % index)
+                      f"{name}/name", name, "data/Troops.json#[%d]" % index)
         for page_index, page in enumerate(troop.get("pages") or []):
             base = "[%d].pages[%d].list" % (index, page_index)
             _walk_list(collector, page.get("list"), "data/Troops.json", base,
                        "%s / Troops / p%d" % (name, page_index),
-                       "data/Troops.json#%s" % base, note_tags)
+                       f"data/Troops.json#{base}", note_tags)
 
 
 def _collect_db(collector, data_dir, note_tags=()):
@@ -660,7 +656,7 @@ def _collect_db(collector, data_dir, note_tags=()):
                                                           note_tags):
                 collector.add(
                     "%s#[%d].note#%s[%d]" % (rel, index, tag, occurrence),
-                    "db", "%s/note<%s>" % (label, tag), payload,
+                    "db", f"{label}/note<{tag}>", payload,
                     "%s#[%d]" % (rel, index))
             for field in fields:
                 text = record.get(field)
@@ -673,7 +669,7 @@ def _collect_db(collector, data_dir, note_tags=()):
                                       item, "%s#[%d]" % (rel, index))
                     continue
                 collector.add("%s#[%d].%s" % (rel, index, field), "db",
-                              "%s/%s" % (label, field), text,
+                              f"{label}/{field}", text,
                               "%s#[%d]" % (rel, index))
 
 
@@ -686,14 +682,14 @@ def _collect_system(collector, data_dir):
 
     def walk(node, path):
         if isinstance(node, str):
-            collector.add("%s#%s" % (rel, path), "ui", "System/%s" % path,
-                          node, "%s#%s" % (rel, path))
+            collector.add(f"{rel}#{path}", "ui", f"System/{path}",
+                          node, f"{rel}#{path}")
         elif isinstance(node, list):
             for index, item in enumerate(node):
                 walk(item, "%s[%d]" % (path, index))
         elif isinstance(node, dict):
             for key, item in node.items():
-                walk(item, "%s.%s" % (path, key) if path else key)
+                walk(item, f"{path}.{key}" if path else key)
 
     for key in _SYSTEM_KEYS:
         if key in data:
@@ -705,7 +701,7 @@ def _collect_plugins(collector, game_dir):
     path = os.path.join(game_dir, "js", "plugins.js")
     if not os.path.isfile(path):
         return
-    with io.open(path, encoding="utf-8", errors="replace") as handle:
+    with open(path, encoding="utf-8", errors="replace") as handle:
         source = handle.read()
     match = re.search(r"\[\s*\{.*\}\s*\]", source, re.S)
     if not match:
@@ -730,7 +726,7 @@ def _collect_plugins(collector, game_dir):
                 collector.skipped["plugin"] += 1
                 continue
             collector.add("js/plugins.js#[%d].parameters.%s" % (index, key),
-                          "plugin", "%s/%s" % (name, key), value,
+                          "plugin", f"{name}/{key}", value,
                           "js/plugins.js#[%d]" % index)
 
 
@@ -739,7 +735,7 @@ def _collect(game_dir, window=2, note_tags=DEFAULT_NOTE_TAGS):
     note_tags = tuple(note_tags or ())
     data_dir = os.path.join(game_dir, "data")
     if not os.path.isdir(data_dir):
-        raise FileNotFoundError("no data/ directory under %s" % game_dir)
+        raise FileNotFoundError(f"no data/ directory under {game_dir}")
     collector = _Collector(window=window)
     _collect_maps(collector, game_dir, data_dir, note_tags)
     _collect_common(collector, data_dir, note_tags)
@@ -778,13 +774,13 @@ def extract(game_dir, work_dir, window=2, note_tags=DEFAULT_NOTE_TAGS):
 
     os.makedirs(work_dir, exist_ok=True)
     keys_path = os.path.join(work_dir, "keys.jsonl")
-    with io.open(keys_path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(keys_path, "w", encoding="utf-8", newline="\n") as handle:
         for entry in entries:
             handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    names = {name: record for name, record in sorted(
-        collector.names.items(), key=lambda kv: (-kv[1]["count"], kv[0]))}
-    with io.open(os.path.join(work_dir, "names_candidates.json"), "w",
+    names = dict(sorted(
+        collector.names.items(), key=lambda kv: (-kv[1]["count"], kv[0])))
+    with open(os.path.join(work_dir, "names_candidates.json"), "w",
                  encoding="utf-8", newline="\n") as handle:
         json.dump(names, handle, ensure_ascii=False, indent=1, sort_keys=False)
         handle.write("\n")
@@ -811,7 +807,7 @@ def extract(game_dir, work_dir, window=2, note_tags=DEFAULT_NOTE_TAGS):
         "window": window,
         "note_tags": list(note_tags),
     }
-    with io.open(os.path.join(work_dir, "stats.json"), "w", encoding="utf-8",
+    with open(os.path.join(work_dir, "stats.json"), "w", encoding="utf-8",
                  newline="\n") as handle:
         json.dump(stats, handle, ensure_ascii=False, indent=1)
         handle.write("\n")
@@ -822,7 +818,7 @@ def load_keys(work_dir):
     """Read ``keys.jsonl`` back as a list (streaming, order preserved)."""
     path = os.path.join(work_dir, "keys.jsonl")
     out = []
-    with io.open(path, encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
             if line:
@@ -844,7 +840,7 @@ def slice_keys(work_dir, start=0, count=None, kind=None, skip_ids=None):
     """
     out = []
     path = os.path.join(work_dir, "keys.jsonl")
-    with io.open(path, encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         for seq, line in enumerate(handle):
             line = line.strip()
             if not line or seq < start:

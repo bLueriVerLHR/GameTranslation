@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/fix_mojibake_names.py (CP936-misread Shift-JIS names).
 
 The fixtures are real strings produced by the failing repack path (Shift-JIS

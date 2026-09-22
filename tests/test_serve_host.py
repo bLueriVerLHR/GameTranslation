@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for the serve commands' bind host (both pipelines).
 
 The owner plays from another device over the LAN (an AGENTS requirement), and

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for the KAG3 video system handling in the KAG3 -> TyranoScript
 converter (kirikiri/kag/assets.py plus the video shim in kirikiri/kag/js/).
 
@@ -143,12 +142,12 @@ def test_video_tags_are_not_registered_as_noops():
     # registration would win and movie playback would silently do nothing.
     js, _n = ck._shim_js(set())
     for tag in ck.VIDEO_TAGS:
-        assert ('tag["%s"] = { start: noop }' % tag) not in js, tag
+        assert (f'tag["{tag}"] = {{ start: noop }}') not in js, tag
 
 
 def test_video_shim_implements_every_video_tag():
     for tag in ck.VIDEO_TAGS:
-        assert ("tag['%s']" % tag) in ck.VIDEO_SHIM_JS, tag
+        assert (f"tag['{tag}']") in ck.VIDEO_SHIM_JS, tag
 
 
 def test_video_shim_wv_cannot_stall_forever():

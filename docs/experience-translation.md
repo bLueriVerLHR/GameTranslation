@@ -45,9 +45,9 @@
   `add_cjk_font_fallback`（仅 MZ）没用，简体中文渲染方块。
   `add_mv_cjk_font(root, --cjk-font)` 打包 CJK ttf 并按 `unicode-range`
   拆 `gamefont.css`（假名/ASCII → 原字体，汉字 → 打包字体）。
-  **2026-08 后默认拆分为**：假名/日文标点 → `--jp-font`（解析顺序：
-  `JP_FONT_PATH` → `docs/table/local_font_path.txt` 第二行 → 自动发现
-  `docs/table/fonts/`，未配置则回退游戏原字体），汉字/拉丁 → `--cjk-font`。
+  **2026-08 后默认拆分为**：假名/日文标点 → `--jp-font`（解析顺序见
+  `docs/reference/local-layout.md` §5：环境变量 → 本地字体策略 → 打包字体
+  自动发现；未配置则回退游戏原字体），汉字/拉丁 → `--cjk-font`。
 - **翻译后验证 CSV ID：** 地图 JSON 里每个 `\M[ID]` 必须在 CSV 的 名前
   列存在（排除既有缺失如 `\V[320`、`テスト`、单假名 — 源里本来就没有）。
 
@@ -228,8 +228,8 @@ false，因为 `$gameMap.isEventRunning()` 恒 true；地图解释器空闲
   译文里（视为专名），QC 假名残留检测会抓到 — 用 `--sweep` 或修复遍历
   统一，而不是依赖 agent。
 - **谜题暗号词豁免：** 一款的 DB description 里有一组假名暗号（变位词
-  谜题答案，如 5 个假名词），翻译会破坏谜题 — 记录到
-  `docs/table/<Game>/notes.md` 豁免清单，QC 接受残留。
+  谜题答案，如 5 个假名词），翻译会破坏谜题 — 记入该游戏的**本地工作区
+  豁免清单**（位置见 `docs/reference/local-layout.md`），QC 接受残留。
 - **插件 note 功能性标签豁免：** `<モーション変更:guard>` 类
   `<插件标签>` 是功能引用不是显示文本 — 保留，记入豁免清单。
 - **修复遍历：** 残留假名行里除豁免外全是题材术语串 — 机械替换两个

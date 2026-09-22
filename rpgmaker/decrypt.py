@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Decrypt RPGMaker encrypted assets (16-byte RPGMV header + XOR on the first
 16 bytes) in place, dropping the trailing underscore, and clear the
 hasEncrypted* / encryptionKey flags in data/System.json.
@@ -21,7 +20,7 @@ import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 
-from . import config, runtime
+from . import constants, runtime
 
 log = logging.getLogger("rpgmaker.decrypt")
 
@@ -60,7 +59,7 @@ def _decrypt_to(path, key, new_path):
     """
     with open(path, "rb") as f:
         data = f.read()
-    if len(data) < 16 or data[:16] != config.RPGMV_HEADER:
+    if len(data) < 16 or data[:16] != constants.RPGMV_HEADER:
         return False
     body = bytearray(data[16:])
     for i in range(min(16, len(body))):

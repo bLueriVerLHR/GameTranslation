@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Build the JoiPlay folder for a TyranoScript game.
 
 TyranoScript games ship as an Electron app: the game itself (index.html +
@@ -15,15 +14,10 @@ import logging
 import os
 import re
 import shutil
-import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-# Repo root, appended (not inserted) so a same-named sibling module in
-# this directory still wins.
-sys.path.append(os.path.dirname(_HERE))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, platform
 
 from . import asar as asar_mod
 
@@ -64,6 +58,13 @@ def find_asar(game_dir, asar_path=None):
 
 def unpack_game(game_dir, work_dir, asar_path=None):
     """Extract the game from its asar into a working HTML5 folder."""
+    # AGENTS.md CRITICAL: the source, the output and the asar all have to be
+    # on this processor's side.  Checked before rmtree: deleting a Windows-side
+    # directory from WSL is the exact shape of the recorded incident.
+    own = platform.require_native_paths("unpack tyrano game", game_dir=game_dir,
+                                        work_dir=work_dir,
+                                        asar_path=asar_path or game_dir)
+    game_dir, work_dir = str(own["game_dir"]), str(own["work_dir"])
     src = find_asar(game_dir, asar_path)
     if not src:
         log.error("no app.asar found under %s", game_dir)
@@ -122,7 +123,7 @@ def build(game_dir, out_dir, asar_path=None):
 
 def cmd(game_dir: Annotated[str, cliutil.Argument(help="game root folder")],
         out_dir: Annotated[str, cliutil.Argument(help="build output folder")],
-        asar: Annotated[Optional[str], cliutil.Option(
+        asar: Annotated[str | None, cliutil.Option(
             "--asar", help="path to app.asar (absolute, or relative to "
             "game_dir)")] = None,
         verbose: cliutil.Verbose = False,

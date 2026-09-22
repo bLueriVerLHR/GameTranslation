@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 bake_translation.py - Static-bake a translated template into an RPG Maker MZ
 game (the new workflow's bake step; replaces the greedy logic of the old
@@ -43,18 +42,18 @@ import shutil
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Annotated, Optional
+from typing import Annotated
 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import japanese_utils  # noqa: E402
+from rpgmaker import japanese as japanese_utils  # noqa: E402
 import plain_io  # noqa: E402
-import plugins_io  # noqa: E402
+from rpgmaker import plugins_io  # noqa: E402
 import resolve_text_keys  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
-from rpgmaker import cliutil, config  # noqa: E402
+from rpgmaker import assets, cliutil  # noqa: E402
 from translation import mvkeys  # noqa: E402
 from translate_rpgmaker import (  # noqa: E402
     apply_font_policy, clear_encryption_flags, decrypt_dir,
@@ -191,7 +190,7 @@ def _translate_note_refs(note, D, refs=None):
         v = exact(name, D)
         final = v if v is not None else name
         refs.append((tag, final))
-        return "<%s:%s>" % (tag, final)
+        return f"<{tag}:{final}>"
 
     return _REF_RE.sub(repl, note)
 
@@ -245,6 +244,77 @@ def _process_block(cmds, D, loc):
         i = j
 
 
+def _apply_choice(params, D, cloc):
+    """Code 102: exact-match every choice caption."""
+    if not (params and isinstance(params[0], list)):
+        return
+    for idx, x in enumerate(params[0]):
+        if isinstance(x, str):
+            v = exact_loc(x, D, cloc)
+            if v is not None:
+                params[0][idx] = v
+
+
+def _apply_event_text(code, params, D, cloc):
+    """Codes in EVENT_TEXT_IDX: exact-match the text operands."""
+    for idx in EVENT_TEXT_IDX[code]:
+        if idx < len(params) and isinstance(params[idx], str):
+            v = exact_loc(params[idx], D, cloc)
+            if v is not None:
+                params[idx] = v
+
+
+def _apply_script_operand(params, D, cloc):
+    r"""Code 122: script operands holding display strings.
+
+    ``operandType == 4`` stores a display string in a variable (shown later
+    via ``\V[n]``): exact-match the whole JS literal.  Non-literal script
+    expressions are left alone.
+    """
+    if len(params) > 3 and params[3] == 4:
+        if len(params) > 4 and isinstance(params[4], str) and params[4] \
+                and params[4][0] in "'\"" and QUOTED.search(params[4]):
+            v = exact_loc(params[4], D, cloc)
+            if v is not None:
+                params[4] = v
+        return
+    for idx in (3, 4):
+        if idx < len(params) and isinstance(params[idx], str):
+            v = exact_loc(params[idx], D, cloc)
+            if v is not None:
+                params[idx] = v
+
+
+def _apply_script_line(params, D, cloc):
+    """Codes 355/655: a script line with kana in a quoted literal.
+
+    The whole line is exact-matched so the translated string stays valid JS
+    (e.g. ``BattleManager._logWindow.addText('...')``).
+    """
+    if params and isinstance(params[0], str) and QUOTED.search(params[0]):
+        v = exact_loc(params[0], D, cloc)
+        if v is not None:
+            params[0] = v
+
+
+def _apply_plugin_arg(params, D, cloc):
+    """Code 357: exact-match kana-bearing string VALUES in the arg dict.
+
+    ``params[2]`` (the Japanese command name) is a functional lookup key and
+    is never matched.
+    """
+    if len(params) > 3 and isinstance(params[3], dict):
+        _translate_arg_values(params[3], D, cloc)
+
+
+def _apply_comment(params, D, cloc):
+    """Code 408: a comment line (invisible, but choice-help plugins show it)."""
+    if params and isinstance(params[0], str):
+        v = exact_loc(params[0], D, cloc)
+        if v is not None:
+            params[0] = v
+
+
 def _process_single_code(cmds, D, loc):
     """Individual command codes: choices, display-text indices, script
     operands, script lines, plugin-command args and comment lines, each
@@ -255,54 +325,18 @@ def _process_single_code(cmds, D, loc):
             continue
         code = cmd.get("code")
         cloc = loc + "#c%d" % ci
-        if code == 102 and params and isinstance(params[0], list):
-            for idx, x in enumerate(params[0]):
-                if isinstance(x, str):
-                    v = exact_loc(x, D, cloc)
-                    if v is not None:
-                        params[0][idx] = v
+        if code == 102:
+            _apply_choice(params, D, cloc)
         elif code in EVENT_TEXT_IDX:
-            for idx in EVENT_TEXT_IDX[code]:
-                if idx < len(params) and isinstance(params[idx], str):
-                    v = exact_loc(params[idx], D, cloc)
-                    if v is not None:
-                        params[idx] = v
+            _apply_event_text(code, params, D, cloc)
         elif code == 122:
-            # script operands (operandType == 4) store display strings in
-            # variables (shown later via \V[n]): exact-match the whole JS
-            # literal.  Non-literal script expressions are left alone.
-            if len(params) > 3 and params[3] == 4:
-                if len(params) > 4 and isinstance(params[4], str) and params[4] \
-                        and params[4][0] in "'\"" and QUOTED.search(params[4]):
-                    v = exact_loc(params[4], D, cloc)
-                    if v is not None:
-                        params[4] = v
-            else:
-                for idx in (3, 4):
-                    if idx < len(params) and isinstance(params[idx], str):
-                        v = exact_loc(params[idx], D, cloc)
-                        if v is not None:
-                            params[idx] = v
+            _apply_script_operand(params, D, cloc)
         elif code in (355, 655):
-            # script lines with kana inside a quoted literal are display text
-            # (e.g. BattleManager._logWindow.addText('...')): exact-match the
-            # whole line so the translated string stays valid JS.
-            if params and isinstance(params[0], str) and QUOTED.search(params[0]):
-                v = exact_loc(params[0], D, cloc)
-                if v is not None:
-                    params[0] = v
+            _apply_script_line(params, D, cloc)
         elif code == 357:
-            # plugin command arguments: exact-match kana-bearing string VALUES
-            # in the arg dict (display text).  params[2] (Japanese command
-            # name) is a functional lookup key - never matched.
-            if len(params) > 3 and isinstance(params[3], dict):
-                _translate_arg_values(params[3], D, cloc)
+            _apply_plugin_arg(params, D, cloc)
         elif code == 408:
-            if params and isinstance(params[0], str):
-                v = exact_loc(params[0], D, cloc)
-                if v is not None:
-                    params[0] = v
-                    params[0] = v
+            _apply_comment(params, D, cloc)
 
 
 def process_commands(cmds, D, loc=""):
@@ -342,11 +376,7 @@ def process_db(obj, D, loc=""):
             return
         for k, v in list(obj.items()):
             kloc = loc + "#" + str(k)
-            if k in DISPLAY_KEYS and isinstance(v, str):
-                nv = exact_loc(v, D, kloc)
-                if nv is not None:
-                    obj[k] = nv
-            elif k == "note" and isinstance(v, str):
+            if k in DISPLAY_KEYS and isinstance(v, str) or k == "note" and isinstance(v, str):
                 nv = exact_loc(v, D, kloc)
                 if nv is not None:
                     obj[k] = nv
@@ -403,7 +433,7 @@ def translate_plugins(root, D, write=True):
             for key, val in items:
                 if isinstance(val, str):
                     v = exact_loc(val, D,
-                                  "js/plugins.js#%s#%s" % (pname, key))
+                                  f"js/plugins.js#{pname}#{key}")
                     if v is not None:
                         params[key] = v
                         n += 1
@@ -467,12 +497,9 @@ def _translate_events(data, D, fname, event_names, refs):
             new_note = _translate_note_refs(note, D, refs)
             if new_note != note:
                 ev["note"] = new_note
-        lists = []
-        if isinstance(ev.get("list"), list):
-            lists.append(ev["list"])
-        for pg in ev.get("pages") or []:
-            if isinstance(pg, dict) and isinstance(pg.get("list"), list):
-                lists.append(pg["list"])
+        lists = [ev["list"]] if isinstance(ev.get("list"), list) else []
+        lists.extend(pg["list"] for pg in ev.get("pages") or []
+                     if isinstance(pg, dict) and isinstance(pg.get("list"), list))
         for li, lst in enumerate(lists):
             process_commands(lst, D, eloc + "#pg%d" % li)
 
@@ -589,6 +616,100 @@ def translate_data(root, D, write=True, workers=None):
         _report_name_refs(refs, event_names)
 
 
+def _load_dict(trs, glossary):
+    """Load the translation dict, overlay `glossary`, drop identity entries.
+
+    Identity entries (v == k with kana) are untranslated leftovers: in the
+    dict they SHADOW per-line fallbacks (the block lookup 'succeeds' with the
+    unchanged Japanese text), so they must never reach the bake (MZ job
+    2026-08: 123 removed, residual 24 -> 21).
+    """
+    D = plain_io.load_json(trs)
+    if glossary:
+        for k, v in plain_io.load_json(glossary).items():
+            if v and (k not in D or not D.get(k)):
+                D[k] = v
+    dropped = [k for k, v in D.items() if v == k and KANA.search(k)]
+    for k in dropped:
+        del D[k]
+    if dropped:
+        log.info("dropped %d identity entries (v == k with kana, shadow per-line "
+                 "fallbacks)", len(dropped))
+    log.info("loaded %d translation entries", len(D))
+    return D
+
+
+def _check_coverage(game_dir, D, min_coverage, force):
+    """The bake coverage gate; returns `(covered, total, ratio)` or None.
+
+    Measure the dict against the game's translatable key list BEFORE copying
+    anything.  A low-coverage bake leaves most of the game in Japanese and
+    contaminates later completion passes (partial block values,
+    half-translated scenes) - the clean path is a full translation from
+    scratch.  `force` overrides for intentional phase-1 harvest bakes.
+    Returns None when the gate cannot run (no data/*.json); the caller must
+    exit non-zero itself when the gate refuses.
+    """
+    if not glob.glob(os.path.join(game_dir, "data", "*.json")):
+        log.info("no data/*.json in game_dir (encrypted data?) - coverage "
+                 "check skipped; bake on the decrypted build for the gate")
+        return None
+    covered, total, missing = key_coverage(game_dir, D)
+    if not total:
+        return None
+    ratio = covered / total
+    log.info("coverage: %d/%d keys translated = %.1f%% (%d key(s) "
+             "left to a translator)", covered, total, 100 * ratio,
+             len(missing))
+    if ratio < min_coverage and not force:
+        for sample in missing[:10]:
+            log.info("  untranslated key: %s", sample[:80])
+        raise _CoverageRefused(
+            f"REFUSING to bake: coverage {100 * ratio:.1f}% < {100 * min_coverage:.0f}% (existing "
+            "translation file covers too little - the bake would leave "
+            "most of the game in Japanese and contaminate a later "
+            "completion pass).\n"
+            "  Do a FULL translation instead: extract_remaining_text.py "
+            "<game_dir> <work> -> subagent chunks -> merge -> bake.\n"
+            "  To bake anyway (intentional partial harvest): --force.\n"
+            "  To adjust the threshold: --min-coverage N.")
+    return covered, total, ratio
+
+
+class _CoverageRefused(Exception):
+    """The bake coverage gate refused (the message is the CLI failure text)."""
+
+
+def _inline_text_keys(out_dir):
+    """Inline `\\T[id]` runtime text keys (no-op without a text table).
+
+    Repacks that keep their display text in a runtime table (MTool "mount
+    translation", the game's own csv text database) carry \\T[id] keys in
+    data/ and js/plugins.js.  The library knows nothing about them (they are
+    ASCII, no kana), and the web build has no runtime to resolve them: the
+    title menu of one such build read "\\T[SIS1036]" until this step inlined
+    them from csv/UI.csv + the repack's dictionary.
+    """
+    try:
+        keys_stats = resolve_text_keys.resolve_build(out_dir)
+    except (FileNotFoundError, ValueError) as exc:
+        log.warning("text-key inlining skipped (%s)", exc)
+        return
+    for line in resolve_text_keys.format_report(keys_stats):
+        log.info("%s", line)
+    if keys_stats["unresolved"]:
+        log.warning("text keys with no text in any source: %d key(s) "
+                    "stay verbatim", len(keys_stats["unresolved"]))
+
+
+def _archive_kv(out_dir, D):
+    """Write the baked dict next to the build for later re-edits."""
+    kv_path = os.path.join(out_dir, "translation_kv.json")
+    with open(kv_path, "w", encoding="utf-8") as f:
+        json.dump(D, f, ensure_ascii=False, indent=1)
+    log.info("archived translation KV -> %s", kv_path)
+
+
 def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game directory")],
         out_dir: Annotated[str, cliutil.Argument(help="baked output directory")],
         trs: Annotated[str, cliutil.Option("--trs", help="filled template JSON")],
@@ -596,7 +717,7 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game directory")]
             "--glossary", help="name overrides JSON")] = "",
         min_coverage: Annotated[float, cliutil.Option(
             "--min-coverage", help="refuse to bake below this coverage "
-            "(default %s)" % DEFAULT_MIN_COVERAGE)] = DEFAULT_MIN_COVERAGE,
+            f"(default {DEFAULT_MIN_COVERAGE})")] = DEFAULT_MIN_COVERAGE,
         force: Annotated[bool, cliutil.Option(
             "--force", help="bake anyway when coverage is below "
             "--min-coverage")] = False,
@@ -606,7 +727,7 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game directory")]
             "--no-text-keys", help="do not inline runtime text keys "
             "(\\T[id]) - repacks whose data/*.json holds keys instead of "
             "text need it, see tools/resolve_text_keys.py")] = False,
-        workers: Annotated[Optional[int], cliutil.Option(
+        workers: Annotated[int | None, cliutil.Option(
             "--workers", help="parallel data-file workers for the bake pass "
             "(default: single-threaded; >1 translates the data files "
             "concurrently - output is identical, only the coverage totals "
@@ -614,77 +735,37 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game directory")]
         cjk_font: Annotated[str, cliutil.Option(
             "--cjk-font", help="CJK ttf to bundle (MV: gamefont.css split; MZ: "
             "swap the main @font-face src). Default: resolved via "
-            "CJK_FONT_PATH / docs/table/local_font_path.txt / "
-            "auto-discovery of docs/table/fonts/")] = "",
+            "CJK_FONT_PATH, then the local font-paths file, then the "
+            "registered font directory")] = "",
         jp_font: Annotated[str, cliutil.Option(
             "--jp-font", help="Japanese fallback font for kana/JP punctuation "
-            "(second line of docs/table/local_font_path.txt, JP_FONT_PATH, "
-            "or auto-discovery of docs/table/fonts/; default: the game's "
+            "(second line of the local font-paths file, JP_FONT_PATH, or the "
+            "registered font directory; default: the game's "
             "original font)")] = "",
         verbose: cliutil.Verbose = False,
         quiet: cliutil.Quiet = False,
         log_file: cliutil.LogFile = None) -> int:
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("bake translation", game_dir=game_dir, out_dir=out_dir, trs=trs)
     if not cjk_font:
-        cjk_font = config.find_cjk_font() or ""
+        cjk_font = assets.find_cjk_font() or ""
     if not jp_font:
-        jp_font = config.find_jp_font() or ""
+        jp_font = assets.find_jp_font() or ""
 
     game_dir = os.path.abspath(game_dir)
     out_dir = os.path.abspath(out_dir)
     if not os.path.isdir(game_dir):
-        return cliutil.fail("game_dir not found: %s" % game_dir)
+        return cliutil.fail(f"game_dir not found: {game_dir}")
     if os.path.abspath(out_dir) == game_dir:
         return cliutil.fail("out_dir must differ from game_dir")
 
-    D = plain_io.load_json(trs)
-    if glossary:
-        G = plain_io.load_json(glossary)
-        for k, v in G.items():
-            if v and (k not in D or not D.get(k)):
-                D[k] = v
-    # Identity entries (v == k with kana) are untranslated leftovers: in the
-    # dict they SHADOW per-line fallbacks (the block lookup 'succeeds' with the
-    # unchanged Japanese text), so they must never reach the bake (MZ job
-    # 2026-08: 123 removed, residual 24 -> 21).
-    dropped = [k for k, v in D.items() if v == k and KANA.search(k)]
-    for k in dropped:
-        del D[k]
-    if dropped:
-        log.info("dropped %d identity entries (v == k with kana, shadow per-line "
-                 "fallbacks)", len(dropped))
-    log.info("loaded %d translation entries", len(D))
-
-    # Coverage gate: measure the dict against the game's translatable key
-    # list BEFORE copying anything.  A low-coverage bake leaves most of the
-    # game in Japanese and contaminates later completion passes (partial block
-    # values, half-translated scenes) - the clean path is a full translation
-    # from scratch.  --force overrides for intentional phase-1 harvest bakes.
-    covered = total = 0
-    coverage_ratio = None
-    if glob.glob(os.path.join(game_dir, "data", "*.json")):
-        covered, total, missing = key_coverage(game_dir, D)
-        if total:
-            coverage_ratio = covered / total
-            log.info("coverage: %d/%d keys translated = %.1f%% (%d key(s) "
-                     "left to a translator)", covered, total,
-                     100 * coverage_ratio, len(missing))
-            if coverage_ratio < min_coverage and not force:
-                for sample in missing[:10]:
-                    log.info("  untranslated key: %s", sample[:80])
-                return cliutil.fail(
-                    "REFUSING to bake: coverage %.1f%% < %.0f%% (existing "
-                    "translation file covers too little - the bake would leave "
-                    "most of the game in Japanese and contaminate a later "
-                    "completion pass).\n"
-                    "  Do a FULL translation instead: extract_remaining_text.py "
-                    "<game_dir> <work> -> subagent chunks -> merge -> bake.\n"
-                    "  To bake anyway (intentional partial harvest): --force.\n"
-                    "  To adjust the threshold: --min-coverage N."
-                    % (100 * coverage_ratio, 100 * min_coverage))
-    else:
-        log.info("no data/*.json in game_dir (encrypted data?) - coverage "
-                 "check skipped; bake on the decrypted build for the gate")
+    D = _load_dict(trs, glossary)
+    try:
+        coverage = _check_coverage(game_dir, D, min_coverage, force)
+    except _CoverageRefused as exc:
+        return cliutil.fail(str(exc))
 
     log.info("copying %s -> %s", game_dir, out_dir)
     shutil.copytree(game_dir, out_dir, dirs_exist_ok=True)
@@ -693,32 +774,15 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game directory")]
     clear_encryption_flags(out_dir)
     STATS.update(hit=0, miss=0)
     translate_data(out_dir, D, write=True, workers=workers)
-    if coverage_ratio is not None:
+    if coverage is not None:
+        covered, total, ratio = coverage
         log.info("baked %d of the game's %d keys (%.1f%% key coverage)",
-                 covered, total, 100 * coverage_ratio)
-    # Repacks that keep their display text in a runtime table (MTool "mount
-    # translation", the game's own csv text database) carry \T[id] keys in
-    # data/ and js/plugins.js.  The library knows nothing about them (they are
-    # ASCII, no kana), and the web build has no runtime to resolve them: the
-    # title menu of one such build read "\T[SIS1036]" until this step inlined
-    # them from csv/UI.csv + the repack's dictionary.
+                 covered, total, 100 * ratio)
     if not no_text_keys:
-        try:
-            keys_stats = resolve_text_keys.resolve_build(out_dir)
-        except (FileNotFoundError, ValueError) as exc:
-            log.warning("text-key inlining skipped (%s)", exc)
-        else:
-            for line in resolve_text_keys.format_report(keys_stats):
-                log.info("%s", line)
-            if keys_stats["unresolved"]:
-                log.warning("text keys with no text in any source: %d key(s) "
-                            "stay verbatim", len(keys_stats["unresolved"]))
+        _inline_text_keys(out_dir)
     apply_font_policy(out_dir, cjk_font, jp_font)
     if not no_kv:
-        kv_path = os.path.join(out_dir, "translation_kv.json")
-        with open(kv_path, "w", encoding="utf-8") as f:
-            json.dump(D, f, ensure_ascii=False, indent=1)
-        log.info("archived translation KV -> %s", kv_path)
+        _archive_kv(out_dir, D)
     log.info("done -> %s", out_dir)
     return 0
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for rpgmaker/logsetup.py - the single logging configuration.
 
 The regression this guards: a module that configures logging at IMPORT time
@@ -170,19 +169,19 @@ class TestHandlers:
 
 class TestPhase:
     def test_logs_start_and_done_with_elapsed_time(self, caplog):
-        with caplog.at_level(logging.INFO, logger="phase"):
-            with logsetup.phase("audio encode", logging.getLogger("phase")):
-                pass
+        with caplog.at_level(logging.INFO, logger="phase"), \
+                logsetup.phase("audio encode", logging.getLogger("phase")):
+            pass
         text = caplog.text
         assert "audio encode: start" in text
         assert "audio encode: done in" in text
         assert ": start" in text and "s" in text
 
     def test_failure_is_logged_at_error_and_reraised(self, caplog):
-        with caplog.at_level(logging.INFO, logger="phase"):
-            with pytest.raises(ValueError):
-                with logsetup.phase("pack", logging.getLogger("phase")):
-                    raise ValueError("boom")
+        with caplog.at_level(logging.INFO, logger="phase"), \
+                pytest.raises(ValueError), \
+                logsetup.phase("pack", logging.getLogger("phase")):
+            raise ValueError("boom")
         assert "pack: FAILED" in caplog.text
 
 

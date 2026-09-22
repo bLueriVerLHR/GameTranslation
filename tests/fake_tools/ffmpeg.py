@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Fake ffmpeg for hermetic tests.
 
 Decode mode (verify --decode): args end with `-f null -` -> exit 0 silently.

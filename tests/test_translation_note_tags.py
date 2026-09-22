@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Note-tag payload translation (`prepare --note-tags` + `bake`).
 
 ``note`` fields are functional data - plugin tags, embedded JSON, lookup keys -
@@ -16,7 +15,6 @@ These tests pin the contract:
   * bake rewrites exactly one occurrence and leaves every other byte alone,
   * a payload that would break the tag syntax is refused, not written.
 """
-import io
 import json
 import os
 
@@ -28,7 +26,7 @@ from translation import mvkeys
 
 def _dump(path, payload):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(payload, handle, ensure_ascii=False)
 
 
@@ -161,14 +159,14 @@ def test_bake_writes_an_event_note_payload(game, tmp_path):
     _map_with_event(game, "<LB:\u30de\u30ea\u30fc\u306e\u7814\u7a76\u5ba4>")
     work = str(tmp_path / "work")
     mvkeys.extract(game, work, note_tags=["LB"])
-    with io.open(os.path.join(work, "translations.raw.txt"), "w",
+    with open(os.path.join(work, "translations.raw.txt"), "w",
                  encoding="utf-8", newline="\n") as handle:
         handle.write("@@@data/Map001.json#events[1].note#LB[0]@@@\n"
                      "\u739b\u4e3d\u7684\u7814\u7a76\u5ba4\n")
     rawlib = __import__("translation.rawlib", fromlist=["rawlib"])
     rawlib.to_json(work)
     bake_mod.bake(game, work, apply_unified_font=False)
-    out = json.load(io.open(os.path.join(game, "data", "Map001.json"),
+    out = json.load(open(os.path.join(game, "data", "Map001.json"),
                             encoding="utf-8"))
     assert out["events"][1]["note"] == "<LB:\u739b\u4e3d\u7684\u7814\u7a76\u5ba4>"
 
@@ -223,24 +221,24 @@ def test_bake_writes_note_payloads_end_to_end(game, tmp_path):
     ids = [k["id"] for k in mvkeys.load_keys(work)
            if ".note#" in k["id"]]
     assert len(ids) == 2
-    lines = ["@@@%s@@@" % key_id for key_id in ids]
+    lines = [f"@@@{key_id}@@@" for key_id in ids]
     values = ["\u4f24\u5bb3\u65e0\u6cd5\u901a\u8fc7\u7684\u5bf9\u624b\u4e5f\u5b58\u5728\uff0c\u8bf7\u6ce8\u610f",
               "\u88c5\u5907\u540e\u4f1a\u53d8\u91cd"]
-    with io.open(os.path.join(work, "translations.raw.txt"), "w",
+    with open(os.path.join(work, "translations.raw.txt"), "w",
                  encoding="utf-8", newline="\n") as handle:
-        for key_id, value in zip(lines, values):
+        for key_id, value in zip(lines, values, strict=True):
             handle.write(key_id + "\n" + value + "\n")
     rawlib = __import__("translation.rawlib", fromlist=["rawlib"])
     rawlib.to_json(work)
     bake_mod.bake(game, work, apply_unified_font=False)
 
-    items = json.load(io.open(os.path.join(game, "data", "Items.json"),
+    items = json.load(open(os.path.join(game, "data", "Items.json"),
                               encoding="utf-8"))
     assert items[1]["note"] == ("<\u62e1\u5f35\u8aac\u660e:"
                                 "\u4f24\u5bb3\u65e0\u6cd5\u901a\u8fc7\u7684\u5bf9\u624b"
                                 "\u4e5f\u5b58\u5728\uff0c\u8bf7\u6ce8\u610f>"
                                 "<MNKR_SwitchSell>")
-    armors = json.load(io.open(os.path.join(game, "data", "Armors.json"),
+    armors = json.load(open(os.path.join(game, "data", "Armors.json"),
                                encoding="utf-8"))
     assert "\u88c5\u5907\u540e\u4f1a\u53d8\u91cd" in armors[1]["note"]
     # untouched notes stay byte-identical
@@ -251,16 +249,16 @@ def test_bake_note_write_is_idempotent(game, tmp_path):
     work = str(tmp_path / "work")
     mvkeys.extract(game, work, note_tags=["itemCategory"])
     key_id = "data/Items.json#[2].note#itemCategory[0]"
-    with io.open(os.path.join(work, "translations.raw.txt"), "w",
+    with open(os.path.join(work, "translations.raw.txt"), "w",
                  encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n\u6362\u91d1\u7269\u54c1\n" % key_id)
+        handle.write(f"@@@{key_id}@@@\n\u6362\u91d1\u7269\u54c1\n")
     rawlib = __import__("translation.rawlib", fromlist=["rawlib"])
     rawlib.to_json(work)
     bake_mod.bake(game, work, apply_unified_font=False)
-    first = json.load(io.open(os.path.join(game, "data", "Items.json"),
+    first = json.load(open(os.path.join(game, "data", "Items.json"),
                               encoding="utf-8"))
     bake_mod.bake(game, work, apply_unified_font=False)
-    second = json.load(io.open(os.path.join(game, "data", "Items.json"),
+    second = json.load(open(os.path.join(game, "data", "Items.json"),
                                encoding="utf-8"))
     assert first == second
     assert second[2]["note"] == "<itemCategory:\u6362\u91d1\u7269\u54c1>"
@@ -271,14 +269,14 @@ def test_bake_reports_a_note_tag_that_is_gone(game, tmp_path):
     work = str(tmp_path / "work")
     mvkeys.extract(game, work, note_tags=["itemCategory"])
     key_id = "data/Items.json#[3].note#itemCategory[1]"
-    with io.open(os.path.join(work, "translations.raw.txt"), "w",
+    with open(os.path.join(work, "translations.raw.txt"), "w",
                  encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n\u6362\u91d1\u7269\u54c1\n" % key_id)
+        handle.write(f"@@@{key_id}@@@\n\u6362\u91d1\u7269\u54c1\n")
     rawlib = __import__("translation.rawlib", fromlist=["rawlib"])
     rawlib.to_json(work)
     report = bake_mod.bake(game, work, apply_unified_font=False)
     assert report["applied"] == 1
-    items = json.load(io.open(os.path.join(game, "data", "Items.json"),
+    items = json.load(open(os.path.join(game, "data", "Items.json"),
                               encoding="utf-8"))
     assert items[3]["note"] == ("<itemCategory:\u63db\u91d1\u30a2\u30a4\u30c6\u30e0>"
                                 "<itemCategory:\u6362\u91d1\u7269\u54c1>")
@@ -289,19 +287,19 @@ def test_bake_skips_note_id_when_the_tag_is_gone(game, tmp_path):
     work = str(tmp_path / "work")
     mvkeys.extract(game, work, note_tags=["itemCategory"])
     key_id = "data/Items.json#[2].note#itemCategory[0]"
-    with io.open(os.path.join(work, "translations.raw.txt"), "w",
+    with open(os.path.join(work, "translations.raw.txt"), "w",
                  encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n\u6362\u91d1\u7269\u54c1\n" % key_id)
+        handle.write(f"@@@{key_id}@@@\n\u6362\u91d1\u7269\u54c1\n")
     rawlib = __import__("translation.rawlib", fromlist=["rawlib"])
     rawlib.to_json(work)
-    items = json.load(io.open(os.path.join(game, "data", "Items.json"),
+    items = json.load(open(os.path.join(game, "data", "Items.json"),
                               encoding="utf-8"))
     items[2]["note"] = "<other:x>"
     _dump(os.path.join(game, "data", "Items.json"), items)
     report = bake_mod.bake(game, work, apply_unified_font=False)
     assert report["skipped"] >= 1
     assert not report["applied"]
-    items = json.load(io.open(os.path.join(game, "data", "Items.json"),
+    items = json.load(open(os.path.join(game, "data", "Items.json"),
                              encoding="utf-8"))
     assert items[2]["note"] == "<other:x>"
 
@@ -311,16 +309,16 @@ def test_bake_overwrites_a_changed_payload_at_the_same_id(game, tmp_path):
     work = str(tmp_path / "work")
     mvkeys.extract(game, work, note_tags=["itemCategory"])
     key_id = "data/Items.json#[2].note#itemCategory[0]"
-    with io.open(os.path.join(work, "translations.raw.txt"), "w",
+    with open(os.path.join(work, "translations.raw.txt"), "w",
                  encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n\u6362\u91d1\u7269\u54c1\n" % key_id)
+        handle.write(f"@@@{key_id}@@@\n\u6362\u91d1\u7269\u54c1\n")
     rawlib = __import__("translation.rawlib", fromlist=["rawlib"])
     rawlib.to_json(work)
-    items = json.load(io.open(os.path.join(game, "data", "Items.json"),
+    items = json.load(open(os.path.join(game, "data", "Items.json"),
                               encoding="utf-8"))
     items[2]["note"] = "<itemCategory:\u5225\u306e\u3082\u306e>"
     _dump(os.path.join(game, "data", "Items.json"), items)
     bake_mod.bake(game, work, apply_unified_font=False)
-    items = json.load(io.open(os.path.join(game, "data", "Items.json"),
+    items = json.load(open(os.path.join(game, "data", "Items.json"),
                               encoding="utf-8"))
     assert items[2]["note"] == "<itemCategory:\u6362\u91d1\u7269\u54c1>"

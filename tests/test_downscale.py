@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/downscale_images.py mobile-safe PNG downscaling."""
 import os
 import sys
@@ -113,8 +112,8 @@ class TestScanGlob:
 
 class TestCmdGuard:
     def _cmd(self, root, pattern=None):
-        kwargs = dict(limit=4096, dry_run=True, workers=1, verbose=False,
-                      quiet=False, log_file=None)
+        kwargs = {"limit": 4096, "dry_run": True, "workers": 1, "verbose": False,
+                      "quiet": False, "log_file": None}
         if pattern is not None:
             kwargs["pattern"] = pattern
         return di.cmd(str(root), **kwargs)

@@ -1,37 +1,31 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""Shared Japanese-text detection regexes.
+"""japanese_utils.py - DEPRECATED alias for `rpgmaker.japanese`.
 
-One place to maintain the kana ranges so every tool agrees on what counts
-as "still Japanese".  The canonical KANA deliberately EXCLUDES U+30FB (・),
-U+30FC (ー) and U+30A0: those are punctuation that also appears in already-
-translated Chinese lines (・-prefixed conditions) and would flood templates
-and QC reports with false keys.  Half-width katakana (U+FF71-FF9E) counts
-as kana.
+Kept for one compatibility cycle so an existing ``import japanese_utils``
+(which used to resolve because ``tools/`` was on ``sys.path``) keeps working.
+New code imports ``from rpgmaker import japanese``.
 
-KANA_BLOCKS is the coarser block-range variant (hiragana + katakana code
-blocks, no half-width) used by the ADV text-resource tools; keep it distinct
-so those tools keep their existing detection behavior.
+This shim deliberately does **not** touch ``sys.path``: it resolves whenever
+the repo root is importable, which is true in every supported invocation (the
+pipeline entry points, the test suite's conftest, and the ``tools/*.py``
+scripts that insert the repo root themselves).  Adding a path hack here would
+re-introduce exactly the import magic the package boundary is removing.
 
-KANA_BLOCKS_HW is the block-range + half-width variant (including the
-half-width middle dot U+FF65) formerly inlined in the legacy JSON-chunk QC
-tool (qc_translation_chunks.py); keep the character set so that tool's
-detection stays unchanged.
-
-KANA_PURE_WORD is the anchored "pure kana-ish word" matcher formerly inlined
-in clean_kana_ticks.py: the canonical kana chars plus the punctuation /
-spacing that co-occurs in standalone mouth-sound and author-name tokens.
-Used with full-string matching; deliberately NOT equivalent to KANA (which
-is a search pattern that excludes ー/・).
+Do not add behaviour here: this module must stay a pure re-export.
 """
+import warnings
 
-import re
+from rpgmaker.japanese import (  # noqa: F401
+    KANA,
+    KANA_BLOCKS,
+    KANA_BLOCKS_HW,
+    KANA_PURE_WORD,
+)
 
-KANA = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9e]")
+warnings.warn(
+    "tools.japanese_utils is deprecated; import rpgmaker.japanese instead",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
-KANA_BLOCKS = re.compile(r"[\u3040-\u30ff]")
-
-KANA_BLOCKS_HW = re.compile(r"[\u3040-\u30ff\uff65-\uff9f]")
-
-KANA_PURE_WORD = re.compile(
-    r"^[\u3041-\u3096\u30a1-\u30fa\uff71-\uff9eー～・゛゜\s\"'()（）\-_/]+$")
+__all__ = ["KANA", "KANA_BLOCKS", "KANA_BLOCKS_HW", "KANA_PURE_WORD"]

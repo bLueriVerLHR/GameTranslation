@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 r"""augment_adv_resources.py - Merge custom text-resource JSON files (ADV
 plugins, SNS feeds, etc.) into an existing static-translation work package.
 
@@ -33,7 +32,7 @@ Usage:
 
 import os
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -41,7 +40,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
 sys.path.insert(0, _HERE)                   # sibling tools
 import bake_translation  # noqa: E402
-import japanese_utils  # noqa: E402
+from rpgmaker import japanese as japanese_utils  # noqa: E402
 import plain_io  # noqa: E402
 from rpgmaker import cliutil  # noqa: E402
 
@@ -86,31 +85,31 @@ def walk_resources(game_dir, lang_dirs, tweet_files, order):
     for lang in lang_dirs:
         base = os.path.join(game_dir, "data", "resources", lang)
         if not os.path.isdir(base):
-            log("skip: %s (no such dir)" % base)
+            log(f"skip: {base} (no such dir)")
             continue
         seen = {}
         for stem in order:
             path = os.path.join(base, stem + ".json")
             if not os.path.isfile(path):
-                log("skip: %s (not found)" % os.path.relpath(path, game_dir))
+                log(f"skip: {os.path.relpath(path, game_dir)} (not found)")
                 continue
             data = plain_io.load_json(path)
             if not isinstance(data, dict):
-                log("skip: %s (not an object)" % os.path.relpath(path, game_dir))
+                log(f"skip: {os.path.relpath(path, game_dir)} (not an object)")
                 continue
             for key, val in data.items():
                 if key == "metadata":
                     continue
                 if is_kana_str(val) and val not in seen:
                     seen[val] = True
-                    items.append(("%s/%s" % (lang, stem), val))
+                    items.append((f"{lang}/{stem}", val))
     for tf in tweet_files:
         path = os.path.join(game_dir, "data", "resources", tf)
         if not os.path.isfile(path):
-            log("skip: %s (not found)" % os.path.relpath(path, game_dir))
+            log(f"skip: {os.path.relpath(path, game_dir)} (not found)")
             continue
-        for s in ordered_kana_strings(plain_io.load_json(path)):
-            items.append(("tweets/%s" % tf, s))
+        items.extend((f"tweets/{tf}", s)
+                     for s in ordered_kana_strings(plain_io.load_json(path)))
     return items
 
 
@@ -136,13 +135,13 @@ def augment(work_dir, items, window):
         group_keys[where].append(key)
 
     for where, keys in groups:
-        tpl.update({k: "" for k in keys})
+        tpl.update(dict.fromkeys(keys, ""))
         for k in keys:
             kinds[k] = "story"
         idx = keys.index
         ctx.update({
             k: {
-                "where": "data/resources/%s" % where,
+                "where": f"data/resources/{where}",
                 "window": _window(keys, idx(k), window),
             }
             for k in keys
@@ -173,87 +172,108 @@ def _window(keys, pos, radius):
 
 # ------------------------------------------------------------------- bake
 
-def bake_resources(game_dir, trs, min_coverage, force, lang_dirs,
-                   tweet_files):
-    D = plain_io.load_json(trs)
-    hits = misses = 0
-    miss_samples = []
+class _ResourceFixer:
+    """Replace kana strings using `D`, counting hits/misses/changes.
+
+    The counters are instance state rather than `nonlocal` closures because
+    `fix`/`walk` are mutually recursive and the coverage report is read after
+    every target is baked.
+    """
+
+    #: How many misses are kept as samples for the report.
+    SAMPLE_CAP = 10
+
+    def __init__(self, table):
+        self.table = table
+        self.hits = 0
+        self.misses = 0
+        self.miss_samples = []
+        self.n_changed = 0
+
+    def fix(self, value):
+        """`table[value]` when the string is kana and present, else value."""
+        if not is_kana_str(value):
+            return value
+        if value in self.table:
+            self.hits += 1
+            return self.table[value]
+        self.misses += 1
+        if len(self.miss_samples) < self.SAMPLE_CAP and len(value) > 4:
+            self.miss_samples.append(value[:60])
+        return value
+
+    def walk(self, obj):
+        """Rebuild `obj`, substituting kana strings; `metadata` is skipped."""
+        if isinstance(obj, dict):
+            out = {}
+            for k, v in obj.items():
+                if k == "metadata":
+                    out[k] = v
+                    continue
+                if isinstance(v, str) and is_kana_str(v):
+                    fixed = self.fix(v)
+                    if fixed is not v:
+                        self.n_changed += 1
+                    out[k] = fixed
+                elif isinstance(v, (dict, list)):
+                    out[k] = self.walk(v)
+                else:
+                    out[k] = v
+            return out
+        if isinstance(obj, list):
+            out = []
+            for x in obj:
+                if isinstance(x, (dict, list)):
+                    out.append(self.walk(x))
+                else:
+                    fixed = self.fix(x)
+                    if fixed is not x:
+                        self.n_changed += 1
+                    out.append(fixed)
+            return out
+        return obj
+
+    def coverage(self):
+        """Hit ratio, or 1.0 when nothing was looked up."""
+        total = self.hits + self.misses
+        return self.hits / total if total else 1.0
+
+
+def _resource_targets(game_dir, lang_dirs, tweet_files):
+    """Every JSON under `data/resources/<lang>/` plus the named tweet files."""
     targets = []
     for lang in lang_dirs:
         base = os.path.join(game_dir, "data", "resources", lang)
         if not os.path.isdir(base):
             continue
-        for fn in sorted(os.listdir(base)):
-            if not fn.endswith(".json"):
-                continue
-            targets.append(os.path.join(base, fn))
+        targets.extend(os.path.join(base, fn)
+                       for fn in sorted(os.listdir(base))
+                       if fn.endswith(".json"))
     for tf in tweet_files:
         p = os.path.join(game_dir, "data", "resources", tf)
         if os.path.isfile(p):
             targets.append(p)
-    n_changed = 0
-    for path in targets:
-        data = plain_io.load_json(path)
+    return targets
 
-        def fix(v):
-            nonlocal hits, misses
-            if not is_kana_str(v):
-                return v
-            if v in D:
-                hits += 1
-                return D[v]
-            misses += 1
-            if len(miss_samples) < 10 and len(v) > 4:
-                miss_samples.append(v[:60])
-            return v
 
-        def walk(obj):
-            nonlocal n_changed
-            if isinstance(obj, dict):
-                out = {}
-                for k, v in obj.items():
-                    if k == "metadata":
-                        out[k] = v
-                        continue
-                    if isinstance(v, str) and is_kana_str(v):
-                        fixed = fix(v)
-                        if fixed is not v:
-                            n_changed += 1
-                        out[k] = fixed
-                    elif isinstance(v, (dict, list)):
-                        out[k] = walk(v)
-                    else:
-                        out[k] = v
-                return out
-            if isinstance(obj, list):
-                out = []
-                for x in obj:
-                    if isinstance(x, (dict, list)):
-                        out.append(walk(x))
-                    else:
-                        fixed = fix(x)
-                        if fixed is not x:
-                            n_changed += 1
-                        out.append(fixed)
-                return out
-            return obj
-
-        new = walk(data)
-        plain_io.save_json(path, new)
-    coverage = hits / (hits + misses) if (hits + misses) else 1.0
+def bake_resources(game_dir, trs, min_coverage, force, lang_dirs,
+                   tweet_files):
+    fixer = _ResourceFixer(plain_io.load_json(trs))
+    for path in _resource_targets(game_dir, lang_dirs, tweet_files):
+        plain_io.save_json(path, fixer.walk(plain_io.load_json(path)))
+    coverage = fixer.coverage()
     log("resources coverage: %d hit / %d missed = %.0f%% (changed %d values)"
-        % (hits, misses, coverage * 100, n_changed))
-    for s in miss_samples:
-        log("  MISS: %r" % s)
+        % (fixer.hits, fixer.misses, coverage * 100, fixer.n_changed))
+    for s in fixer.miss_samples:
+        log(f"  MISS: {s!r}")
     if coverage < min_coverage and not force:
-        raise SystemExit("coverage %.0f%% below --min-coverage %.2f; use "
-                         "--force to bake anyway" % (coverage * 100,
-                                                     min_coverage))
+        raise SystemExit(f"coverage {coverage * 100:.0f}% below --min-coverage {min_coverage:.2f}; use "
+                         "--force to bake anyway")
     log("baked resources done")
 
 
 def cmd(game_dir: Annotated[str, cliutil.Argument(help="game directory")],
-        work_dir: Annotated[Optional[str], cliutil.Argument(
+        work_dir: Annotated[str | None, cliutil.Argument(
             help="translation work dir (required unless --bake)")] = None,
         order: Annotated[str, cliutil.Option(
             "--order", help="comma list of resource file stems in story "
@@ -272,6 +292,9 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="game directory")],
         quiet: cliutil.Quiet = False,
         log_file: cliutil.LogFile = None) -> int:
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("augment adv resources", game_dir=game_dir, work_dir=work_dir, trs=trs)
 
     dirs = [x for x in lang_dirs.split(",") if x]
     tweets = [x for x in tweet_files.split(",") if x]

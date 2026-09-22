@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for rpgmaker/proctools.py - the shared external-process runner.
 
 Focused on the four properties every call site depends on: a finite timeout,
@@ -24,10 +23,18 @@ def test_returns_completed_process():
 
 
 def test_utf8_output_is_decoded_not_mojibake():
-    """The child prints CJK; the host locale codec (cp932/cp1252) used to
-    raise UnicodeDecodeError here."""
-    proc = proctools.run([PY, "-c",
-                          "import sys; sys.stdout.write('日本語タイトル')"])
+    """The child writes UTF-8 bytes; they must decode as UTF-8, not as the
+    host locale codec (cp932/cp1252) - which used to raise UnicodeDecodeError.
+
+    The bytes are written straight to the buffer on purpose: the contract
+    under test is the DECODER, and `sys.stdout.write` would make the child
+    encode with its own locale codec, so the test would measure the child's
+    environment instead (it failed that way on Windows/cp1252).
+    """
+    proc = proctools.run(
+        [PY, "-c",
+         "import sys; "
+         "sys.stdout.buffer.write('日本語タイトル'.encode('utf-8'))"])
     assert proc.stdout == "日本語タイトル"
 
 
@@ -93,4 +100,4 @@ def test_tail_is_capped():
 
 def test_argv_text_is_readable():
     assert proctools.argv_text([PY, "-c", "hello world"]) == \
-        "%s -c hello world" % PY
+        f"{PY} -c hello world"

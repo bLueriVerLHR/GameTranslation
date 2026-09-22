@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Extract / rebuild translatable leaf values inside JSON plugin parameters.
 
 RPG Maker MZ/MV plugin parameters often embed multi-KB JSON blobs (quest
@@ -51,8 +50,8 @@ from typing import Annotated
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
 sys.path.insert(0, _HERE)                   # sibling tools
-import japanese_utils  # noqa: E402
-import plugins_io  # noqa: E402
+from rpgmaker import japanese as japanese_utils  # noqa: E402
+from rpgmaker import plugins_io  # noqa: E402
 import plain_io  # noqa: E402
 from rpgmaker import cliutil  # noqa: E402
 
@@ -229,8 +228,7 @@ def iter_string_leaves(param):
     except ValueError:
         yield param
         return
-    for item in walk(parsed):
-        yield item
+    yield from walk(parsed)
 
 
 def collect_leaves_in(o):
@@ -273,18 +271,15 @@ def collect_blob_leaves(blob, exempt, out_leaves, warns, plugin=None,
                     leaves.append(c)
             if not leaves and KANA.search(value):
                 warns.append("code field with kana but no backtick display "
-                             "text (kept raw): %r" % value[:60])
-        elif KANA.search(value):
-            leaves.append(value)
-        elif isinstance(key, str) and key in DISPLAY_KEYS and CJK.search(value):
+                             f"text (kept raw): {value[:60]!r}")
+        elif KANA.search(value) or isinstance(key, str) and key in DISPLAY_KEYS and CJK.search(value):
             leaves.append(value)
         for leaf in leaves:
             if leaf in exempt:
                 continue
             if isinstance(key, str) and key in LOOKUPY_KEYS:
-                warns.append("lookup-y key %r = %r - verify it is not a "
-                             "functional reference before baking"
-                             % (key, leaf[:40]))
+                warns.append(f"lookup-y key {key!r} = {leaf[:40]!r} - verify it is not a "
+                             "functional reference before baking")
             rec = {"plugin": plugin, "param": param, "key": key, "path": path}
             out_leaves.setdefault(leaf, []).append(rec)
             n += 1
@@ -302,6 +297,9 @@ def cmd_extract(game_dir: Annotated[str, cliutil.Argument(
         log_file: cliutil.LogFile = None) -> int:
     """Collect translatable leaves of JSON plugin parameters."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("read plugin json leaves", game_dir=game_dir, work_dir=work_dir)
     exempt_leaves = load_exempt(exempt)
     text = open(os.path.join(game_dir, "js", "plugins.js"),
                 encoding="utf-8").read()
@@ -341,7 +339,7 @@ def cmd_extract(game_dir: Annotated[str, cliutil.Argument(
     print("blobs: %d | leaves: %d (%d chars) | flat strings: %d"
           % (len(blobs), len(leaves), total, len(flat)))
     for w in warns:
-        print("WARN: %s" % w)
+        print(f"WARN: {w}")
     if not exempt:
         print("NOTE: no --exempt file given; review lookup-y keys above.")
     return 0
@@ -360,6 +358,9 @@ def cmd_rebuild(game_dir: Annotated[str, cliutil.Argument(
         log_file: cliutil.LogFile = None) -> int:
     """Rebuild whole plugin-parameter strings from the translated leaves."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("read plugin json leaves", game_dir=game_dir, work_dir=work_dir)
     work = work_dir
     blobs = plain_io.load_json(os.path.join(work, "plugin_blobs.json"))
     trans_dict = plain_io.load_json(os.path.join(work, trans))
@@ -371,7 +372,7 @@ def cmd_rebuild(game_dir: Annotated[str, cliutil.Argument(
     for p in plugins:
         for k, v in (p.get("parameters") or {}).items():
             if isinstance(v, str):
-                param_where.setdefault(v, "%s / %s" % (p.get("name"), k))
+                param_where.setdefault(v, "{} / {}".format(p.get("name"), k))
 
     pairs = {}
     dead = set()
@@ -379,7 +380,7 @@ def cmd_rebuild(game_dir: Annotated[str, cliutil.Argument(
         try:
             decoded = decode_string_json(json.loads(orig))
         except ValueError:
-            print("WARN: unparseable blob: %r" % orig[:60])
+            print(f"WARN: unparseable blob: {orig[:60]!r}")
             continue
         new_decoded = apply_trans(decoded, trans_dict, dead)
         new_param = encode_string_json(new_decoded)
@@ -408,7 +409,7 @@ def cmd_rebuild(game_dir: Annotated[str, cliutil.Argument(
     plain_io.save_json(out, pairs)
     print("blob pairs: %d | dead translations: %d" % (len(pairs), len(dead)))
     for d in sorted(dead):
-        print("  dead: %r" % d[:60])
+        print(f"  dead: {d[:60]!r}")
     if not pairs:
         print("NOTE: no blob pairs - check that translated leaf values differ "
               "from their keys and that blobs match plugins.js.")
@@ -429,11 +430,14 @@ def cmd_apply(game_dir: Annotated[str, cliutil.Argument(
         log_file: cliutil.LogFile = None) -> int:
     """Write rebuilt plugin-parameter blobs into js/plugins.js."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("read plugin json leaves", game_dir=game_dir, work_dir=work_dir)
     from translation import bake as bake_mod          # single plugins.js I/O
 
     pairs_path = pairs if os.path.isabs(pairs) else os.path.join(work_dir, pairs)
     if not os.path.isfile(pairs_path):
-        return cliutil.fail("pairs file not found: %s" % pairs_path)
+        return cliutil.fail(f"pairs file not found: {pairs_path}")
     mapping = plain_io.load_json(pairs_path) or {}
     if not isinstance(mapping, dict) or not mapping:
         return cliutil.fail("pairs file holds no {original: translated} pairs")
@@ -455,7 +459,7 @@ def cmd_apply(game_dir: Annotated[str, cliutil.Argument(
     dead = [original for original in mapping if original not in originals]
     print("applied: %d parameter(s) | dead pairs: %d" % (applied, len(dead)))
     for original in dead[:10]:
-        print("   dead: %r" % original[:70])
+        print(f"   dead: {original[:70]!r}")
     if dead:
         print("REFUSING to write: %d pair(s) match no parameter" % len(dead))
         return 1

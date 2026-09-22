@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """fit_texture_4096.py - fit oversized PNGs to the mobile texture cap without
 breaking pixel-grid addressing.
 
@@ -45,7 +44,7 @@ import typer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpgmaker import cliutil  # noqa: E402
-from rpgmaker import config  # noqa: E402
+from rpgmaker import constants  # noqa: E402
 
 log = logging.getLogger("fit_texture_4096")
 
@@ -240,7 +239,7 @@ def fix_iconset(web_root, limit, dry_run=False):
 def atlas(web_root: Annotated[str, typer.Argument(help="JoiPlay web root")],
           limit: Annotated[int, typer.Option(
               "--limit", help="per-side texture cap in px")] =
-          config.PNG_MAX_DIMENSION,
+          constants.PNG_MAX_DIMENSION,
           dry_run: Annotated[bool, typer.Option(
               "--dry-run", help="report only, don't modify")] = False,
           verbose: cliutil.Verbose = False,
@@ -248,6 +247,9 @@ def atlas(web_root: Annotated[str, typer.Argument(help="JoiPlay web root")],
           log_file: cliutil.LogFile = None) -> int:
     """Re-tile oversized Aseprite sheets (PNG + JSON rects) to fit the cap."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("fit texture", web_root=web_root)
     return fix_atlas(web_root, limit, dry_run)
 
 
@@ -255,7 +257,7 @@ def atlas(web_root: Annotated[str, typer.Argument(help="JoiPlay web root")],
 def iconset(web_root: Annotated[str, typer.Argument(help="JoiPlay web root")],
             limit: Annotated[int, typer.Option(
                 "--limit", help="per-side texture cap in px")] =
-            config.PNG_MAX_DIMENSION,
+            constants.PNG_MAX_DIMENSION,
             dry_run: Annotated[bool, typer.Option(
                 "--dry-run", help="report only, don't modify")] = False,
             verbose: cliutil.Verbose = False,
@@ -263,6 +265,9 @@ def iconset(web_root: Annotated[str, typer.Argument(help="JoiPlay web root")],
             log_file: cliutil.LogFile = None) -> int:
     """Crop img/system/IconSet.png to the cap at a 32 px row boundary."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("fit texture", web_root=web_root)
     return fix_iconset(web_root, limit, dry_run)
 
 

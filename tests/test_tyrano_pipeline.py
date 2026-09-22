@@ -1,5 +1,4 @@
-﻿#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
 """Unit tests for the tyrano build pipeline: tyrano/build.py (asar unpack +
 save backend), tyrano/audio.py (ogg conversion + ref rewrite), tyrano/clean.py
 (MTool residue removal), tyrano/verify.py and the serve command's bind host.
@@ -17,7 +16,7 @@ sys.path.insert(0, os.path.join(REPO, "tools"))
 
 import pytest  # noqa: E402
 
-from rpgmaker import config as rpg_config  # noqa: E402
+from rpgmaker import tool_registry  # noqa: E402
 
 from tyrano import audio as ta  # noqa: E402
 from tyrano import build as tb  # noqa: E402
@@ -203,7 +202,7 @@ class TestAudio:
 
     def test_convert_all_raises_when_ffmpeg_missing(self, tmp_path, monkeypatch):
         root = make_asar_game(str(tmp_path))
-        monkeypatch.setattr(rpg_config, "find_ffmpeg", lambda: None)
+        monkeypatch.setattr(tool_registry, "find_ffmpeg", lambda: None)
         with pytest.raises(FileNotFoundError):
             ta.convert_all(root, workers=1)
 
@@ -284,7 +283,8 @@ class TestClean:
         for fn in ("winmm.dll", "MTool挂载翻译.txt", "翻译文件.json"):
             with open(os.path.join(root, fn), "w", encoding="utf-8") as f:
                 f.write("residue")
-        with open(os.path.join(root, "GameBase_sf.sav"), "w") as f:
+        with open(os.path.join(root, "GameBase_sf.sav"), "w",
+                  encoding="utf-8") as f:
             f.write("save")
         removed = tc.cleanup_all(root)
         for fn in ("winmm.dll", "MTool挂载翻译.txt", "翻译文件.json",

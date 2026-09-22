@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """workspace.py - the translation workspace skeleton and the subagent's MISSION.
 
 The parent (orchestrator) prepares the *mechanical* half of a workspace: the
@@ -12,7 +11,6 @@ language decision - word choice, register, sentence shape - is deliberately
 left to the translator.  It is written in Chinese because it is prompt content
 for a Chinese translation task, not code.
 """
-import io
 import json
 import os
 
@@ -59,13 +57,13 @@ def scaffold(work_dir, stats=None):
         directory = os.path.dirname(path)
         if directory:
             os.makedirs(directory, exist_ok=True)
-        with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(_template(name))
         created.append(name)
     for extra in ("allow_kana.json",):
         path = os.path.join(work_dir, extra)
         if not os.path.isfile(path):
-            with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+            with open(path, "w", encoding="utf-8", newline="\n") as handle:
                 json.dump({"items": [], "note": (
                     "白名单：译文里确实需要保留假名的条目，每项 "
                     '{"match": "字面串或 re:正则", "reason": "为什么"}')},
@@ -75,10 +73,10 @@ def scaffold(work_dir, stats=None):
     if stats is None:
         path = os.path.join(work_dir, "stats.json")
         if os.path.isfile(path):
-            with io.open(path, encoding="utf-8") as handle:
+            with open(path, encoding="utf-8") as handle:
                 stats = json.load(handle)
     mission = os.path.join(work_dir, "MISSION.md")
-    with io.open(mission, "w", encoding="utf-8", newline="\n") as handle:
+    with open(mission, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(mission_text(work_dir, stats or {}))
     if "MISSION.md" not in created:
         created.append("MISSION.md(rewritten)")
@@ -272,6 +270,6 @@ def status_summary(work_dir):
               "pending_unparsable": len(pending_errors)}
     gate_path = os.path.join(work_dir, "gate_report.json")
     if os.path.isfile(gate_path):
-        with io.open(gate_path, encoding="utf-8") as handle:
+        with open(gate_path, encoding="utf-8") as handle:
             report["last_gates_ok"] = json.load(handle).get("ok")
     return report

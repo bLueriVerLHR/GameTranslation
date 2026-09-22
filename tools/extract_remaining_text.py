@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Extract remaining Japanese (kana-bearing) display strings from an
 already-translated build, in STORY ORDER (MapInfos order -> map -> event ->
 page -> command), with a context WINDOW of neighbouring dialogue lines for
@@ -33,9 +32,9 @@ from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ctrl_codes  # noqa: E402
-import japanese_utils  # noqa: E402
+from rpgmaker import japanese as japanese_utils  # noqa: E402
 import plain_io  # noqa: E402
-import plugins_io  # noqa: E402
+from rpgmaker import plugins_io  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
 
@@ -92,9 +91,9 @@ def talk_lines(lst):
         if code in (401, 405):
             out.append((idx, params[0] if params and isinstance(params[0], str) else None))
         elif code == 101 and len(params) >= 5 and isinstance(params[4], str):
-            out.append((idx, "【%s】" % params[4]))
+            out.append((idx, f"【{params[4]}】"))
         elif code == 102 and params and isinstance(params[0], list):
-            out.append((idx, "【选项】%s" % " / ".join(str(x) for x in params[0] if isinstance(x, str))))
+            out.append((idx, "【选项】{}".format(" / ".join(str(x) for x in params[0] if isinstance(x, str)))))
         else:
             out.append((idx, None))
     return out
@@ -123,62 +122,105 @@ def _dict_kana_values(obj):
     return out
 
 
+def _code_block_line(params, col, where, idx, tl):
+    """Codes 401/405: a message box line, plus a short speaker-name line."""
+    if not (params and isinstance(params[0], str) and params[0]):
+        return
+    col.add(params[0], "block-line", where, window_for(idx, tl))
+    if (len(params[0]) <= 14
+            and not ctrl_codes.CTRL_TOKEN.search(params[0])
+            and NAME_LINE.match(params[0].strip())):
+        col.add_name(params[0].strip())
+
+
+def _code_choice(params, col, where, idx, tl):
+    """Code 102: the choice captions (a list of display strings)."""
+    if not (params and isinstance(params[0], list)):
+        return
+    for x in params[0]:
+        if isinstance(x, str) and x:
+            col.add(x, "choice", where, window_for(idx, tl))
+
+
+def _code_event_text(code, params, col, where, idx, tl):
+    """Codes in EVENT_TEXT_IDX: text operands, indexed per code."""
+    for pidx in EVENT_TEXT_IDX[code]:
+        if pidx < len(params) and isinstance(params[pidx], str) and params[pidx]:
+            if code == 101 and len(params) >= 5:
+                col.add_name(params[4])
+            col.add(params[pidx], "event-text", where, window_for(idx, tl))
+
+
+def _code_script_operand(params, col, where, idx, tl):
+    r"""Code 122: display strings held in script operands.
+
+    ``operandType == 4`` stores a DISPLAY string in a variable (shown later via
+    ``\V[n]``), so those are keys.  Only string-LITERAL operands (leading
+    quote) qualify - any other script expression is functional.
+    """
+    if len(params) > 3 and params[3] == 4:
+        if len(params) > 4 and isinstance(params[4], str) and params[4] \
+                and params[4][0] in "'\"" and QUOTED.search(params[4]):
+            col.add(params[4], "script-var", where, window_for(idx, tl))
+        return
+    for pidx in (3, 4):
+        if pidx < len(params) and isinstance(params[pidx], str) and params[pidx]:
+            col.add(params[pidx], "event-text", where, window_for(idx, tl))
+
+
+def _code_script_line(params, col, where, idx, tl):
+    """Codes 355/655: a script line whose quoted literal carries kana."""
+    if params and isinstance(params[0], str) and params[0] \
+            and QUOTED.search(params[0]):
+        col.add(params[0], "script", where, window_for(idx, tl))
+
+
+def _code_plugin_arg(params, col, where, idx, tl):
+    """Code 357: kana-bearing string VALUES in a plugin command's arg dict.
+
+    ``params[2]`` is the Japanese command NAME - a functional lookup key the
+    plugin code matches - and is never extracted.
+    """
+    if len(params) > 3 and isinstance(params[3], dict):
+        for v in _dict_kana_values(params[3]):
+            col.add(v, "plugin-arg", where, window_for(idx, tl))
+
+
+def _code_comment(params, col, where, idx, tl):
+    """Code 408: a comment, unless it is a directive the engine parses."""
+    if params and isinstance(params[0], str) and params[0] \
+            and not DIRECTIVE.match(params[0]):
+        col.add(params[0], "help", where, window_for(idx, tl))
+
+
 def walk_commands(cmds, col, where):
+    """Collect the display strings of one command list, in order.
+
+    Dispatch is by command code; every handler shares the ``(params, col,
+    where, idx, tl)`` shape and is silent when its operands do not match, so
+    the chain reads as a table rather than 40 nested branches.
+    """
     tl = talk_lines(cmds)
     for idx, cmd in enumerate(cmds):
         code = cmd.get("code")
         params = cmd.get("parameters")
         if not isinstance(params, list):
             continue
-        if code in (401, 405) and params and isinstance(params[0], str) and params[0]:
-            col.add(params[0], "block-line", where, window_for(idx, tl))
-            if (len(params[0]) <= 14
-                    and not ctrl_codes.CTRL_TOKEN.search(params[0])
-                    and NAME_LINE.match(params[0].strip())):
-                col.add_name(params[0].strip())
-        elif code == 102 and params and isinstance(params[0], list):
-            for x in params[0]:
-                if isinstance(x, str) and x:
-                    col.add(x, "choice", where, window_for(idx, tl))
+        args = (params, col, where, idx, tl)
+        if code in (401, 405):
+            _code_block_line(*args)
+        elif code == 102:
+            _code_choice(*args)
         elif code in EVENT_TEXT_IDX:
-            for pidx in EVENT_TEXT_IDX[code]:
-                if pidx < len(params) and isinstance(params[pidx], str) \
-                        and params[pidx]:
-                    if code == 101 and len(params) >= 5:
-                        col.add_name(params[4])
-                    col.add(params[pidx], "event-text", where, window_for(idx, tl))
+            _code_event_text(code, *args)
         elif code == 122:
-            # script operands (operandType == 4) store DISPLAY strings in
-            # variables (shown later via \V[n]); include them as keys.  Only
-            # string-literal operands (leading quote) are extracted - other
-            # script expressions are functional.
-            if len(params) > 3 and params[3] == 4:
-                if len(params) > 4 and isinstance(params[4], str) and params[4] \
-                        and params[4][0] in "'\"" and QUOTED.search(params[4]):
-                    col.add(params[4], "script-var", where, window_for(idx, tl))
-            else:
-                for pidx in (3, 4):
-                    if pidx < len(params) and isinstance(params[pidx], str) \
-                            and params[pidx]:
-                        col.add(params[pidx], "event-text", where, window_for(idx, tl))
+            _code_script_operand(*args)
         elif code in (355, 655):
-            # script lines whose quoted string literal contains kana are
-            # display text (e.g. BattleManager._logWindow.addText('...')).
-            if params and isinstance(params[0], str) and params[0] \
-                    and QUOTED.search(params[0]):
-                col.add(params[0], "script", where, window_for(idx, tl))
+            _code_script_line(*args)
         elif code == 357:
-            # plugin command arguments: kana-bearing string VALUES in the arg
-            # dict are display text (DTextPicture text, log-window lines,
-            # shop names...).  params[2] is the Japanese command NAME (a
-            # functional lookup key the plugin code matches) - never extracted.
-            if len(params) > 3 and isinstance(params[3], dict):
-                for v in _dict_kana_values(params[3]):
-                    col.add(v, "plugin-arg", where, window_for(idx, tl))
+            _code_plugin_arg(*args)
         elif code == 408:
-            if params and isinstance(params[0], str) and params[0] \
-                    and not DIRECTIVE.match(params[0]):
-                col.add(params[0], "help", where, window_for(idx, tl))
+            _code_comment(*args)
 
 
 def process_db(obj, col, where=""):
@@ -224,7 +266,7 @@ def collect_values(obj, col):
             collect_values(v, col)
 
 
-class Collector(object):
+class Collector:
     def __init__(self):
         self.order = []                    # keys in story order
         self.kind_of = {}
@@ -265,7 +307,7 @@ def extract_plugin_text(game_dir, col):
         # Intentional catch-all: parse_plugins_js() is a heuristic JS parser;
         # on any failure (ValueError/IndexError/TypeError/KeyError from
         # malformed plugin params) we skip plugin text rather than abort.
-        log("WARN: plugins.js parse failed (%s) - plugin text skipped" % e)
+        log(f"WARN: plugins.js parse failed ({e}) - plugin text skipped")
         return 0
     n = 0
     for where, val in plugins_io.iter_plugin_strings(plugins, KANA):
@@ -288,33 +330,31 @@ def build_name_macros(data_dir):
     return macros
 
 
-def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
-        out_dir: Annotated[str, cliutil.Argument(
-            help="work folder to write the translation package into")],
-        no_plugins: Annotated[bool, cliutil.Option(
-            "--no-plugins",
-            help="skip js/plugins.js parameter text extraction")] = False,
-        verbose: cliutil.Verbose = False,
-        quiet: cliutil.Quiet = False,
-        log_file: cliutil.LogFile = None) -> int:
-    """Extract the remaining (untranslated) kana strings in story order."""
-    cliutil.setup_logging(verbose, quiet, log_file)
-
-    game_dir = os.path.abspath(game_dir)
-    out_dir = os.path.abspath(out_dir)
-    data_dir = os.path.join(game_dir, "data")
-    os.makedirs(out_dir, exist_ok=True)
-
-    col = Collector()
-
+def _collect_mapinfos_order(data_dir):
+    """`[(id, name)]` from MapInfos.json in story order (empty when absent)."""
     mi_path = os.path.join(data_dir, "MapInfos.json")
-    map_order = []
-    if os.path.exists(mi_path):
-        for x in plain_io.load_json(mi_path):
-            if x:
-                map_order.append((x["id"], x.get("name", "")))
+    if not os.path.exists(mi_path):
+        return []
+    return [(x["id"], x.get("name", "")) for x in plain_io.load_json(mi_path) if x]
 
-    # 1) maps in story order
+
+def _map_events(data):
+    """`[(ev, [command_list, ...])]` for one map's events, in id order.
+
+    One entry per event (not per command list) so the caller can add the event
+    name exactly once before walking its pages, as the pre-split code did.
+    """
+    out = []
+    for ev in sorted(ev_containers(data), key=lambda e: e.get("id", 0)):
+        lists = [ev["list"]] if isinstance(ev.get("list"), list) else []
+        lists.extend(pg["list"] for pg in ev.get("pages") or []
+                     if isinstance(pg, dict) and isinstance(pg.get("list"), list))
+        out.append((ev, lists))
+    return out
+
+
+def _collect_maps_in_order(data_dir, map_order, col):
+    """Walk every map in MapInfos order (the story order)."""
     for mid, mname in map_order:
         path = os.path.join(data_dir, "Map%03d.json" % mid)
         if not os.path.exists(path):
@@ -327,54 +367,50 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
         disp = data.get("displayName") or ""
         if disp:
             col.add(disp, "displayName", mname, [])
-        for ev in sorted(ev_containers(data), key=lambda e: e.get("id", 0)):
-            where = "%s / EV%03d %s" % (mname or path, ev.get("id", 0), ev.get("name") or "")
+        for ev, lists in _map_events(data):
+            where = "%s / EV%03d %s" % (mname or path, ev.get("id", 0),
+                                        ev.get("name") or "")
             if ev.get("name"):
                 col.add(ev["name"], "event-name", mname, [])
-            lists = []
-            if isinstance(ev.get("list"), list):
-                lists.append(ev["list"])
-            for pg in ev.get("pages") or []:
-                if isinstance(pg, dict) and isinstance(pg.get("list"), list):
-                    lists.append(pg["list"])
             for lst in lists:
                 walk_commands(lst, col, where)
 
-    # 2) remaining map files not in MapInfos (defensive)
+
+def _collect_maps_not_in_mapinfos(data_dir, map_order, col):
+    """Walk map files MapInfos does not list (defensive)."""
+    known = {mid for mid, _ in map_order}
     for fname in sorted(os.listdir(data_dir)):
         m = re.match(r"Map(\d+)\.json", fname)
-        if not m:
-            continue
-        if int(m.group(1)) in {x for x, _ in map_order}:
+        if not m or int(m.group(1)) in known:
             continue
         data = plain_io.load_json(os.path.join(data_dir, fname))
         if not isinstance(data, dict):
             continue
-        for ev in sorted(ev_containers(data), key=lambda e: e.get("id", 0)):
-            where = "%s / %s" % (fname, ev.get("name") or "")
+        for ev, lists in _map_events(data):
+            where = "{} / {}".format(fname, ev.get("name") or "")
             if ev.get("name"):
                 col.add(ev["name"], "event-name", fname, [])
-            lists = []
-            if isinstance(ev.get("list"), list):
-                lists.append(ev["list"])
-            for pg in ev.get("pages") or []:
-                if isinstance(pg, dict) and isinstance(pg.get("list"), list):
-                    lists.append(pg["list"])
             for lst in lists:
                 walk_commands(lst, col, where)
 
-    # 3) CommonEvents
-    ce_path = os.path.join(data_dir, "CommonEvents.json")
-    if os.path.exists(ce_path):
-        data = plain_io.load_json(ce_path)
-        for ev in sorted(ev_containers(data), key=lambda e: e.get("id", 0)):
-            where = "CommonEvents / EV%03d %s" % (ev.get("id", 0), ev.get("name") or "")
-            if ev.get("name"):
-                col.add(ev["name"], "event-name", "CommonEvents", [])
-            if isinstance(ev.get("list"), list):
-                walk_commands(ev["list"], col, where)
 
-    # 4) System + DB files (UI, no story context needed)
+def _collect_common_events(data_dir, col):
+    """Walk CommonEvents.json (shared story text)."""
+    ce_path = os.path.join(data_dir, "CommonEvents.json")
+    if not os.path.exists(ce_path):
+        return
+    data = plain_io.load_json(ce_path)
+    for ev in sorted(ev_containers(data), key=lambda e: e.get("id", 0)):
+        where = "CommonEvents / EV%03d %s" % (ev.get("id", 0),
+                                             ev.get("name") or "")
+        if ev.get("name"):
+            col.add(ev["name"], "event-name", "CommonEvents", [])
+        if isinstance(ev.get("list"), list):
+            walk_commands(ev["list"], col, where)
+
+
+def _collect_system_and_db(data_dir, col):
+    """Walk System.json and every remaining database JSON (UI text)."""
     sys_path = os.path.join(data_dir, "System.json")
     if os.path.exists(sys_path):
         process_system(plain_io.load_json(sys_path), col)
@@ -383,41 +419,76 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
                 or re.match(r"Map\d+\.json", fname) or fname == "MapInfos.json" \
                 or fname == "CommonEvents.json":
             continue
-        data = plain_io.load_json(os.path.join(data_dir, fname))
-        process_db(data, col, fname)
+        process_db(plain_io.load_json(os.path.join(data_dir, fname)), col, fname)
 
-    if not no_plugins:
-        n = extract_plugin_text(game_dir, col)
-        if n:
-            log("plugin parameter text: %d strings" % n)
 
-    template = {k: "" for k in col.order}
-    kinds = {k: col.kind_of[k] for k in col.order}
-    ctx = {k: col.context[k] for k in col.order}
+def _collect_names(data_dir, col):
+    """Speaker-name candidates: every actor name plus the message boxes."""
     names = {}
     actors_path = os.path.join(data_dir, "Actors.json")
     if os.path.exists(actors_path):
         for a in plain_io.load_json(actors_path) or []:
             if a and a.get("name"):
                 names[a["name"]] = [""]
-    for cand, n in col.name_cands.most_common(80):
+    for cand, _count in col.name_cands.most_common(80):
         names.setdefault(cand, [""])
+    return names
 
-    with open(os.path.join(out_dir, "template.json"), "w", encoding="utf-8") as f:
-        json.dump(template, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "kinds.json"), "w", encoding="utf-8") as f:
-        json.dump(kinds, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "context.json"), "w", encoding="utf-8") as f:
-        json.dump(ctx, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "names.json"), "w", encoding="utf-8") as f:
-        json.dump(names, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "name_macros.json"), "w",
-              encoding="utf-8") as f:
-        json.dump(build_name_macros(data_dir), f, ensure_ascii=False, indent=1)
+
+def _write_package(out_dir, col, names, name_macros):
+    """Write the translation package (template/kinds/context/names)."""
+    payloads = {
+        "template.json": dict.fromkeys(col.order, ""),
+        "kinds.json": {k: col.kind_of[k] for k in col.order},
+        "context.json": {k: col.context[k] for k in col.order},
+        "names.json": names,
+        "name_macros.json": name_macros,
+    }
+    for fname, payload in payloads.items():
+        with open(os.path.join(out_dir, fname), "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=1)
+
+
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
+        out_dir: Annotated[str, cliutil.Argument(
+            help="work folder to write the translation package into")],
+        no_plugins: Annotated[bool, cliutil.Option(
+            "--no-plugins",
+            help="skip js/plugins.js parameter text extraction")] = False,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Extract the remaining (untranslated) kana strings in story order."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("extract remaining text", game_dir=game_dir, out_dir=out_dir)
+
+    game_dir = os.path.abspath(game_dir)
+    out_dir = os.path.abspath(out_dir)
+    data_dir = os.path.join(game_dir, "data")
+    os.makedirs(out_dir, exist_ok=True)
+
+    col = Collector()
+    map_order = _collect_mapinfos_order(data_dir)
+
+    # 1) maps in story order, 2) leftovers, 3) CommonEvents, 4) System + DB
+    _collect_maps_in_order(data_dir, map_order, col)
+    _collect_maps_not_in_mapinfos(data_dir, map_order, col)
+    _collect_common_events(data_dir, col)
+    _collect_system_and_db(data_dir, col)
+
+    if not no_plugins:
+        n = extract_plugin_text(game_dir, col)
+        if n:
+            log("plugin parameter text: %d strings" % n)
+
+    _write_package(out_dir, col, _collect_names(data_dir, col),
+                   build_name_macros(data_dir))
 
     log("template keys: %d" % len(col.order))
-    log("by kind: %s" % dict(col.counts.most_common()))
-    log("order sample: %s" % col.order[:8])
+    log(f"by kind: {dict(col.counts.most_common())}")
+    log(f"order sample: {col.order[:8]}")
     return 0
 
 

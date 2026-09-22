@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Serve a game folder over HTTP for a browser/JoiPlay smoke test.
 PC browsers block RPG Maker's `file://` XHR, so tests must run over HTTP.
 

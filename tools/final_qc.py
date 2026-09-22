@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """final_qc.py - Final QC on the MERGED translation file (translated.json /
 completion.json), after the per-chunk pass.
 
@@ -23,7 +22,7 @@ from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ctrl_codes  # noqa: E402
-import japanese_utils  # noqa: E402
+from rpgmaker import japanese as japanese_utils  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpgmaker import cliutil  # noqa: E402
@@ -59,9 +58,8 @@ def collect(p, exemptions=()):
             continue
         if not v.strip():
             found["empty"].append(k)
-        if KANA.search(v):
-            if not any(ex.search(v) for ex in exemptions):
-                found["kana"].append((k, v))
+        if KANA.search(v) and not any(ex.search(v) for ex in exemptions):
+            found["kana"].append((k, v))
         if v.count("\n") != k.count("\n"):
             found["lines"].append((k, v))
         if "\\\\" in v:

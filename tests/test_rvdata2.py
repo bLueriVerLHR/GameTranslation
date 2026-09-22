@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/rvdata2_io.py Ruby Marshal 4.8 decoder.
 
 Streams are hand-crafted per the marshal spec (header \\x04\\x08), so the

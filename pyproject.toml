@@ -12,7 +12,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "GameTranslation"
-version = "1.0.0"
+# Single source of truth: rpgmaker/__init__.py's __version__.  Two literals
+# (here and in the package) used to drift, and the wheel then disagreed with
+# the installed module about what version it was.
+dynamic = ["version"]
 description = "Local toolkit for JP->ZH translation and playable builds (RPG Maker MZ/MV, TyranoScript, KiriKiri, Unity, Wolf RPG)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -54,20 +57,30 @@ gt-tyrano = "rpgmaker.cli:tyrano_main"
 images = ["Pillow>=10", "numpy>=1.24", "numba>=0.59"]
 unity = ["UnityPy>=1.20"]
 fonts = ["fonttools>=4.40"]
-dev = ["pytest>=8", "pytest-xdist>=3", "pytest-cov>=5", "ruff>=0.5"]
+dev = ["pytest>=8", "pytest-xdist>=3", "pytest-cov>=5", "ruff>=0.5", "mypy>=1.11", "hypothesis>=6", "PyYAML>=6", "tomli>=2; python_version<'3.11'"]
 
 [tool.setuptools]
-# Real packages (each has __init__.py): rpgmaker / kirikiri / tyrano / wolfrpg
-# / unity plus the unity.rmunite subpackage.
+# Every package a documented entry point imports.  The list is explicit (not
+# auto-discovery) because the repo root also holds test/tool scaffolding that
+# must not be installed.
 #
-# tools/ has an __init__.py but is deliberately NOT declared as a package: its
-# scripts import each other as top-level modules via the sys.path convention
-# (e.g. `import plain_io`), and nothing outside the repo installs them (the
-# `gt` CLI does not need tools/).  Treat tools/ as a script directory.
+# translation/ and tools/ were missing here, which made the installed artifact
+# unusable: `python -m translation.cli` is a documented entry point, and the
+# `gt` CLI itself reaches `tools` through rpgmaker.plugincompat.  A built wheel
+# carried 68 members with translation/tools/ui_lang_zh.json all absent, while
+# an editable install hid the defect by importing straight from the checkout.
+# tests/test_wheel_contents.py now pins this, so the list cannot silently
+# regress again.
+#
+# The sys.path convention inside tools/ (`import plain_io`) keeps working in an
+# installed wheel because those modules compute the sibling path from their own
+# __file__ and it resolves to <site-packages>/tools.
 packages = [
     "rpgmaker",
     "kirikiri",
     "kirikiri.kag",
+    "translation",
+    "tools",
     "tyrano",
     "wolfrpg",
     "unity",
@@ -75,10 +88,11 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
-# The KAG3 converter's shim sources are real .js/.css files read through
-# importlib.resources (kirikiri/kag/shims.py), so a non-editable install must
-# ship them too.
+# Non-Python runtime data an installed copy must ship:
+#   kirikiri.kag  - the converter's .js/.css shim sources (importlib.resources)
+#   tyrano        - the reusable engine UI mapping, loaded by `localize-ui`
 "kirikiri.kag" = ["js/*.js", "js/*.css"]
+"tyrano" = ["ui_lang_zh.json"]
 
 [tool.pytest.ini_options]
 # tests/ is the only test root: stated explicitly so a bare `pytest` cannot
@@ -88,9 +102,34 @@ testpaths = ["tests"]
 # `-n auto` (1163 tests).  The suite is parallel-safe (every test builds its
 # own tmp game and binds its own free port); `-n 0` runs it serially.
 addopts = "-n auto"
+# Layers (PLAN Phase 5 task 2).  A marker means "this test needs something the
+# PR runner may not have", so the fast layer is exactly the unmarked tests:
+#   pytest tests -m "not slow and not media and not node and not engine_runtime"
+# Only tests whose *dependency is the point* carry a marker - a test that
+# happens to import PIL for a PNG helper stays unmarked.  `--strict-markers`
+# turns a typo into a collection error, and `markers` below is the single
+# registry; `tests/test_test_layers.py` fails when a test uses an external
+# dependency without declaring the matching marker.
+markers = [
+    "slow: takes over ~5 s or builds/installs an artifact (nightly layer)",
+    "media: needs a real codec/container (PyAV libvpx/libvorbis, ffmpeg binary)",
+    "node: needs an external Node.js binary (rpgmaker.tool_registry.find_node)",
+    "engine_runtime: needs a real engine install or game tree present locally",
+    "wsl: only meaningful inside WSL (Windows/WSL bridge or /mnt paths)",
+    "browser: needs browser/page automation",
+    "device: needs an Android/JoiPlay device (never runs in CI)",
+]
+strict_markers = true
+
+[tool.setuptools.dynamic]
+version = {attr = "rpgmaker.__version__"}
 
 [tool.coverage.run]
-source = ["rpgmaker", "kirikiri", "tyrano", "wolfrpg", "unity", "tools"]
+source = ["rpgmaker", "kirikiri", "tyrano", "wolfrpg", "unity", "tools",
+          "translation"]
+# Branch coverage: a gate that never sees the untaken branch of a
+# `if`/`match` cannot tell a translated case from an unexercised one.
+branch = true
 omit = ["tests/*", "*/__init__.py"]
 
 [tool.coverage.report]
@@ -100,22 +139,154 @@ skip_covered = true
 # depends on whatever ruff config the machine happens to have (a global
 # "select = ALL" produced 1112 findings, most of them style).
 #
+# The burn-down budgets live next to the rules they gate; the sections below
+# read in that order.
+#
 # The selected set is the bug-focused one:
 #   F  - pyflakes: undefined names, unused imports/variables, redefinitions
 #   E9 - syntax/IO errors
+#   B  - flake8-bugbear: loop-variable capture, bare except, zip without
+#        `strict=`, `raise` inside `except` without `from` (real defects)
+#   C4 - flake8-comprehensions: a comprehension that rebuilds what the
+#        builtin already builds (a performance-only, behaviour-safe class)
+#   PIE - flake8-pie: redundant constructs (`startswith` twice, useless pass)
+#   RET - flake8-return: an assignment that exists only to be returned
+#   UP  - pyupgrade: legacy syntax with a modern equivalent
+#   SIM - flake8-simplify: an equivalent but shorter control-flow shape
+#   PERF - perflint: a loop that rebuilds something the builtin already builds
+#
 # Deliberately NOT selected (they would fail on the repo's own conventions
 # rather than on defects): E402 and the rest of the E4/E7 groups (the
 # sys.path-import convention is already covered by the explicit `# noqa: E402`
-# markers), E501 line length, and the whole stylistic/unused-noqa families
-# (UP/SIM/RUF/I).  Run `ruff check --select ALL` by hand to see what those
-# would report before widening this list.
+# markers), E501 line length, and `I` (import sorting), which has to wait for
+# the `sys.path` cleanup.
+#
+# `UP031`/`UP030`/`SIM115` are selected but ignored, gated by a COUNT in
+# `[tool.gametranslation.lint-burndown]` instead: they are pure modernisation
+# with no defect in them, and the repo has ~640 legacy sites whose mechanical
+# rewrite is a real (if small) behaviour risk - `"%d" % n` becomes `f"{n:d}"`,
+# which raises on a float where `%d` truncated.  `SIM115` is the same story:
+# 224 sites, 95 of them `json.load(open(...))` where the handle is closed by
+# refcount, and 80 `open(...).read()` one-liners.  Rewriting them in bulk is a
+# follow-up with its own review; the count only goes DOWN, so the debt cannot
+# grow silently.  Run
+#   ruff check --select UP031,UP030,SIM115 --statistics .
+# to see the current shape.
+[tool.gametranslation.lint-burndown]
+# Not a ruff option: read by tests/test_lint.py
+# (`test_the_printf_and_open_budgets_only_shrink`).  Lower a number as sites
+# are rewritten; never raise one to make a new violation pass.
+up031 = 414
+up030 = 1
+sim115 = 224
+
+[tool.mypy]
+# Phase 6 task 2.  One checker only, never mypy *and* pyright (plan §7).
+#
+# Two tiers, because the repo has ~1163 functions without annotations and
+# demanding all of them at once would mean a single unreviewable commit:
+#
+#   1. every module is checked WITH body checking on (``check_untyped_defs``),
+#      so an unannotated function's body is still analysed and a wrong call is
+#      still caught.  The outstanding error COUNT is budgeted in
+#      ``[tool.gametranslation.mypy-burndown]`` and may only go down.
+#   2. modules that are already clean under this same flag set are listed in
+#      ``[tool.gametranslation.mypy-strict]`` and held at ZERO errors by
+#      ``tools/mypy_check.py``, so a cleaned module cannot silently regress
+#      while the global count absorbs the slack.
+#
+# The next rung is ``disallow_untyped_defs`` (annotated signatures).  Measured
+# this round it is already satisfied by 12 files, but most of them are trivially
+# so because they define nothing: the eight ``__init__.py`` files plus
+# ``rpgmaker/constants.py``, ``rpgmaker/japanese.py``,
+# ``tools/japanese_utils.py`` and ``tools/rpgmaker_constants.py``.  The honest
+# reading is that the annotated-signature rung has barely started; modules move
+# there as their signatures are annotated.
+#
+# ``no_site_packages`` is load-bearing: this repo targets 3.10 but the venv
+# runs 3.12, and numpy's bundled ``__init__.pyi`` uses ``type`` statements
+# (3.12-only syntax).  Following it into site-packages made mypy abort with
+# ``Type statement is only supported in Python 3.12 and greater`` and check
+# NOTHING while still exiting non-zero - a gate that cannot pass and cannot
+# measure.  Third-party packages are typed Any here on purpose.
+#
+# ``platform`` is pinned for the same reason, one level down: without it mypy
+# types the standard library for the *host* OS, so a Windows-only attribute
+# (``ctypes.windll``) is an error on Linux CI and fine locally, and the same
+# commit measures 189 errors there and 188 here.  A budget that depends on
+# which runner reads it cannot be enforced, and CI caught exactly that
+# (mypy: 189 error(s), budget 188).  The offending line was rewritten to
+# ``getattr(ctypes, "windll", None)`` as well, so the two platforms agree;
+# pinning keeps the next such site from silently splitting the budget again.
+python_version = "3.10"
+platform = "linux"
+no_site_packages = true
+ignore_missing_imports = true
+show_error_codes = true
+
+# Checked, but a lower bar than the strict group.
+check_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[tool.gametranslation.mypy-burndown]
+# Not a mypy option: read by tests/test_mypy.py
+# (`test_the_error_budget_only_shrinks`).  Phase 6 task 2 is a burndown, not a
+# one-shot rewrite - the count measures how much of the repo still carries
+# implicit Any from unannotated defs and untyped containers.  Lower it as
+# modules are annotated; never raise it to admit new debt.
+#
+# Measured with:
+#   python -m mypy rpgmaker kirikiri tyrano wolfrpg unity translation tools
+#
+# The count must not depend on the host OS (see the ``platform`` note above
+# ``[tool.mypy]``), so it is measured under that pinned platform.
+errors = 188
+
+[tool.gametranslation.mypy-strict]
+# Modules ``tools/mypy_check.py`` holds at zero errors.  Sorted; add a module
+# only once it is clean, never remove one to make a change pass.  Deleting a
+# module while it is still listed fails the check (a stale entry would
+# otherwise silently shrink the guarded surface).
+modules = [
+    "rpgmaker/archive.py",
+    "rpgmaker/assets.py",
+    "rpgmaker/config.py",
+    "rpgmaker/constants.py",
+    "rpgmaker/deliverables.py",
+    "rpgmaker/detect.py",
+    "rpgmaker/fontpolicy.py",
+    "rpgmaker/inventory.py",
+    "rpgmaker/japanese.py",
+    "rpgmaker/jssyntax.py",
+    "rpgmaker/platform.py",
+    "rpgmaker/proctools.py",
+    "rpgmaker/serve.py",
+    "rpgmaker/settings.py",
+    "rpgmaker/textencoding.py",
+    "rpgmaker/tool_registry.py",
+    "rpgmaker/workspace.py",
+    "tyrano/tyrano_extract.py",
+]
+
 [tool.ruff]
 target-version = "py310"          # matches requires-python
 extend-exclude = [
     ".venv",
     ".tmp",
-    "docs/table",                 # local, gitignored game data
+    ".private",                    # local, gitignored private data
+    ".asset",                      # local, gitignored font assets
+    "docs/table",                 # legacy local data (pre-migration)
 ]
 
 [tool.ruff.lint]
-select = ["F", "E9"]
+select = ["F", "E9", "B", "C4", "PIE", "RET", "UP", "SIM", "PERF"]
+ignore = [
+    # Counted by the burn-down budget above, not waived: still selected so the
+    # count can be measured, ignored so they do not fail the clean run.
+    "UP031",   # %-formatting
+    "UP030",   # ''.format(a=1)
+    "SIM115",  # open-without-with
+]

@@ -10,6 +10,16 @@
 > [Tyrano](experience-tyrano.md) ·
 > [经验库索引](experience.md)。
 
+## 路径安全门禁的两种漏检
+
+- 只比较输入与输出同侧，不等于处理器也在同侧；所有路径都属于 Windows
+  时，WSL 原生 Python 仍不得读写。档案入口需分别验证源、目标和处理器。
+- 相对输出补后缀、解析链接与路径绝对化会改变实际访问对象。应先确定真正
+  输出路径，再执行安全检查；不能绝对化后丢掉原有相对文件名补后缀的语义。
+  此类重构必须保留原文件名契约测试，不能为了类型改造修改期望值。
+- 测试构建与变异副本必须显式排除私有数据目录。临时副本不是保密边界，
+  即使内容最终不进入 wheel，也不应读取或复制本地私有资料。
+
 ## 1. 工具补丁（已应用）
 
 - **`verify.py`**：关键文件检查接受 MV 的 `js/rpg_core.js`（原来硬编码
@@ -155,10 +165,11 @@ repack 会话中该修复已应用（8 部电影随包）。
   都失败也打印 "ALL 200 OK"。已在 `serve.py` 修 — 任何非 200 或失败请求
   现在都失败测试。拿不准仍用 `Invoke-WebRequest` 直接验真实 URL。
 - no-cache 处理器意味着加资源后普通刷新即可。
-- 工具路径已不再写在文档/代码里：所有外部程序由 `rpgmaker/config.py` 的
-  `TOOLS` 表解析（环境变量 → 本地配置 → 探测 → PATH）。需要知道某个程序
-  实际在哪里时跑 `python pipeline.py doctor`（列出每个程序解析到的路径与
-  来源），不靠猜、也不靠搜盘。
+- 工具路径已不再写在文档/代码里：所有外部程序由
+  `rpgmaker/tool_registry.py` 的 `TOOLS` 表解析（环境变量 → 本地配置 →
+  探测 → PATH）。需要知道某个程序实际在哪里时跑
+  `python pipeline.py doctor`（列出每个程序解析到的路径与来源，并按其
+  `ToolStatus` 把缺失分成 `[MISS]` / `[WARN]`），不靠猜、也不靠搜盘。
 - PowerShell 坑：`Start-Process -ArgumentList` 弄坏带空格参数；传单个
   预引号字符串（`'serve "' + $folder + '" -p 8100'`）并含脚本路径。
 
@@ -262,6 +273,68 @@ wheel **有** libvpx-vp9 与 libopus，所以整段可以进程内。在真实�
 `doctor` 从 13 项变 11 项。**判据：没有任何生产调用者的 finder/工具条目就是
 死代码**，不要因为「以后可能用」留着。
 
+## 11. 门禁自身的失败模式（2026-09，platform 重构阶段）
+
+重构时期写的几道「静态扫描门禁」本身出错，而且错的方式比被扫对象更隐蔽，
+故单独记一节。**共同教训：一次性验证过的检查会腐化，必须变成门禁；而门禁
+必须能真的失败——写完要故意造一个违规，确认它变红。**
+
+### 11.1 门禁扫不到未跟踪文件（`git ls-files` 盲点）
+
+多个门禁用 `git ls-files <pattern>` 枚举文件，而该命令**不包含未跟踪文件**。
+新写的模块因此在提交之前对门禁不可见。犯过两次：
+
+- `tests/test_tool_registry.py` 的死 resolver 门禁：当时 7 个新模块全未跟踪，
+  于是漏掉了 `find_powershell` 的真实调用者。
+- `tests/test_text_io_portability.py` 的文本 I/O 门禁：新模块含依赖 locale 的
+  `open()` 时，提交前扫不到。
+
+修法：一律加 `--cached --others --exclude-standard`（gitignored 仍被排除，所以
+`.venv/`、`.tmp/`、私有数据目录不受影响）。已同步到 inventory / package
+boundaries / config facade / text I/O 四处门禁。
+
+### 11.2 pathspec 写错 → 门禁几乎空转（比盲点更危险）
+
+`tests/test_inventory.py` 用 `git ls-files ":(glob)*.py"` 枚举生产文件。
+**这个规格只匹配仓库根目录的文件**——实测返回 1 个文件
+（`pipeline.py`），而正确应为 238 个。后果：
+
+- 「每个生产文件都必须登记在 inventory」这道门禁在**将近整仓范围内空转**；
+- 包目录看起来是空的，于是永远没有「未分类文件」可报；
+- 顺带掩盖了一个真实缺口：`rpgmaker/inventory.py` 自己从未被登记。
+
+关键对比（实测）：
+
+| pathspec | 命中数 |
+|---|---|
+| `*.py` | 238 |
+| `:(glob)*.py` | **1**（只有 `pipeline.py`） |
+| `:(glob)**/*.py` | 238 |
+| `:(glob)**/**/*.py` | 238 |
+
+`**/` 前缀（或 `:(glob)` 魔法的正确用法）才是递归的关键。修法除了补前缀，
+还加了**「扫描结果过少即断言失败」**的下限（inventory >100、package
+ boundaries >50），并在 docstring 里写明两个坑——因为这种错误的特征不是
+崩溃，而是安静地通过。
+
+### 11.3 已在 CI 里、但从不读锁的检查
+
+`uv.lock` 在第 1 阶段被手工验证过 `uv lock --check`，但**没有变成门禁**。
+第 4 阶段往 dev 依赖加 `hypothesis>=6` 后锁文件静默过期，而所有 CI 任务都
+用 pip 从 `pyproject.toml` 安装、从不读锁，所以无一道现有门禁能发现。修法：
+新增 `tests/test_lockfile.py`（`uv lock --check` + 断言 `uv.lock` 被 git
+跟踪）与 CI 的 `lock` 任务。
+
+### 11.4 静默的假通过（相同类型的第三例）
+
+`tests/test_tyrano_pipeline.py` 曾 `monkeypatch.setattr(rpg_config,
+"find_ffmpeg", ...)`，而模块拆分后 `tyrano/audio.py` 读的是
+`rpgmaker.tool_registry`；该测试之所以一直是绿的，只是因为**本机真的没装
+ffmpeg**（`find_ffmpeg()` 本来就返回 None）。修法：patch 真正的归属模块。
+**模块拆分后，要 grep 被测工具自己的命名空间**——
+`monkeypatch.setattr(<tool>.<module>, ...)` 的形式用 `grep config.<name>`
+是看不到的。
+
 ## 9. 工具链改用现成包（2026-09 重构）
 
 原则：同一个能力只留一个封装层，且优先用维护中的包（AGENTS.md
@@ -318,3 +391,90 @@ ffprobe**。实测（2 s/44.1 kHz 立体声，libvorbis）：duration 2.002902
   （`cli._run`）把 0 吞掉、非零上抛——测试才能断言「成功返回 / 失败 SystemExit」。
 - `pip install -e ".[unity]"` 会顺带装 `attrs`（UnityPy 的依赖）；
   我们自己的代码仍然不用 attrs/pydantic（数据不可信的降级设计）。
+
+## 12. `.ks` 编码探测的字节序反转：两份拷贝各自都错（2026-09）
+
+KiriKiri 与 TyranoScript 的 `.ks` 用同一套「探测编码」逻辑，但**历史上是
+两份拷贝**（`kirikiri/ks_extract.py` 一份、`tyrano/tyrano_extract.py` 一份）。
+第 5 阶段把它们合并到 core（`rpgmaker/textencoding.py`）时才发现：
+**两份拷贝里那一行都是错的，所以谁也纠正不了谁。**
+
+### 12.1 缺陷：无 BOM 的 UTF-16 字节序取反
+
+无 BOM 时靠「空字节落在哪个奇偶位」判断字节序，原实现是：
+
+```python
+return "utf-16-be" if odd > even else "utf-16"
+```
+
+实测（真实 KAG3 场景文本，112 字节 / 38 个空字节）：
+
+| 实际编码 | even_null | odd_null | 原判定 | 正确 |
+|---|---|---|---|---|
+| UTF-16 **LE**（无 BOM） | 0 | 38 | `utf-16-be` ✗ | LE |
+| UTF-16 **BE**（无 BOM） | 38 | 0 | `utf-16`（本机 LE）✗ | BE |
+
+**两个方向都刚好取反。** 机理：UTF-16 里近乎 ASCII 的文本每个字符带一个
+空字节，那是**高字节** —— LE 时落在奇数偏移，BE 时落在偶数偏移。原式把
+「奇数位空字节多」判成了 BE，正好相反。
+
+### 12.2 后果不止是读错：回写会把文件也写坏
+
+`tools/apply_ks_translation.py::patch_file` 用探测到的名字回写：
+
+```python
+text, enc = ks_extract.load_ks(src_path)   # enc 可能是错的
+...
+encoded = data.encode(enc)                 # 于是用错误字节序写出
+```
+
+`data.encode("utf-16-be")` **不写 BOM**，所以「无 BOM 的 UTF-16LE 原文」
+会被换成「无 BOM 的 UTF-16BE 打补丁文件」—— 读一次错、写一次错，引擎那边
+再按 LE 解释，等于整篇报废。翻译流水线里这不是崩溃而是**静默**：
+`errors="replace"` 保证谁都不抛异常，提取出的键表是乱码或空的，QC 只会报
+「覆盖率为 0」。
+
+### 12.3 为什么原有单测没抓住
+
+原有 `tests/test_tyrano_extract.py::TestEncoding` 只断言带 BOM 的形式，
+但 `"...".encode("utf-16-be")` **根本不写 BOM** —— 于是那条「BE」用例喂进去
+的其实是无 BOM 的 BE 字节，却按 `utf-16-be` 断言；**期望值恰好等于错误
+答案，于是蒙对**。（LE 那条用 `encode("utf-16")` 会带 BOM，走的是 BOM 分支，
+所以也没覆盖无 BOM 路径。）
+
+三条教训：
+
+1. 断言要写**实测出来**的值（用探针打印 hex + 奇偶空字节数），不要写
+   「我想它应该是」；期望值与实现同错时测试是零信息。
+2. BOM/无 BOM × LE/BE 是**四种组合**，每种都要一条；`encode("utf-16-be")`
+   不是「带 BOM 的 BE」。
+3. 短样本靠不住：12 字节 / 1 个空字节低于 `nulls > len//8` 阈值，会走
+   Shift-JIS 分支，所以测试要用**真实长度**的场景文本，否则测的不是那条
+   分支。
+
+### 12.4 现在的防线
+
+- `rpgmaker/textencoding.py` 是唯一实现（core 级），两个引擎都从中
+  re-export；`ks_extract.detect_encoding is textencoding.detect_encoding`
+  按 **identity** 断言（同一对象，不是又抄一份）。
+- `tests/test_textencoding.py::TestByteOrder` 覆盖四种组合 + 端到端
+  round-trip + 「两种字节序必须给出不同答案」。
+- `tests/test_textencoding.py::TestBothEnginesShareOneImplementation`
+  额外断言 `tyrano/tyrano_extract.py` 源码里不再出现 `kirikiri`
+  （跨引擎 import 由 `tests/test_package_boundaries.py` 统一拦，这里钉住
+  这个具体缺陷）。
+- 变异验证（写完门禁必须确认它能变红）：把那一行改回取反 → **6 个用例
+  变红**；把探测改成「无 BOM 时永远返回 `utf-8`」→ **2 个用例变红**。
+
+### 12.5 一般教训：去重本身就是一种测试
+
+同一个 bug 在 N 份拷贝里就是 N 份 bug，而且**互相掩盖** —— 看起来「两个
+引擎行为一致」，其实是一致地错。合并重复实现时如果只做机械搬运，缺陷会被
+原样搬进新家、而且更难发现（现在只有一处可看，反而像是对的）。所以：
+
+1. 合并重复实现前，先给被合并的行为写**基于实测的性质测试**，再搬；
+2. 搬完必须做**变异验证**：「搬过来还是绿的」只说明老测试弱，不说明新代
+   码对；
+3. 跨引擎共享的逻辑一律放 core（第 3 阶段任务 7 的规则），
+   `tests/test_package_boundaries.py` 会拦下再抄一份的尝试 —— 这道门禁正是
+   在本次合并里抓到了 `tyrano → kirikiri` 的边。

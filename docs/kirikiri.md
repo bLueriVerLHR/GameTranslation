@@ -212,8 +212,8 @@ KiriKiri 走系统字体（GDI/DirectWrite）：游戏配置的日文字体缺 G
 方块。常见解法：给系统/游戏安装**合并中文字体**
 （`kirikiri/merge_font.py <中文字体> <日文字体> <out.ttf>`，中文在前，
 字形优先级归中文；日文字体补齐中文字体缺的汉字），或按游戏调整
-config.tjs 的 Font 设置。**每个游戏的具体做法不同，跑通的方案记入
-`docs/table/<Game>/notes.md`（不入库）。**
+config.tjs 的 Font 设置。**每个游戏的具体做法不同，跑通的方案记入该
+游戏的本地工作区笔记（不入库，见 `docs/reference/local-layout.md`）。**
 
 ## 7. 与 Wolf RPG 流程的异同
 

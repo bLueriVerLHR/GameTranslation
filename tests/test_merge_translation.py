@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/merge_translation.py - the final merge step that
 combines agent chunk output + prefilled (MTool exact hits) + terminology sweep
 into translated.json.

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/scenario_common.py - the shared glue of the
 scenario-file translation chain builders (build_ks_translation /
 build_tyrano_translation).

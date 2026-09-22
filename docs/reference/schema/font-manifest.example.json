@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "fonts": [
+    {
+      "id": "common-zh",
+      "file": "<font-file>.otf",
+      "postscript_name": "<PostScript-Name>",
+      "family": "<family name as the engine registers it>",
+      "purpose": "unified zh/ja/latin UI font",
+      "license": "<license that permits redistribution in a build>",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "coverage": {
+        "covers_gb_simplified": true,
+        "covers_japanese_kana": false,
+        "notes": "kana is delegated to the japanese fallback face"
+      },
+      "size_bytes": 1
+    },
+    {
+      "id": "common-ja",
+      "file": "<japanese-font-file>.otf",
+      "postscript_name": "<PostScript-Name>",
+      "family": "<family name as the engine registers it>",
+      "purpose": "japanese kana fallback face used via unicode-range",
+      "license": "<license that permits redistribution in a build>",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "coverage": {
+        "covers_gb_simplified": false,
+        "covers_japanese_kana": true
+      },
+      "size_bytes": 1
+    }
+  ]
+}

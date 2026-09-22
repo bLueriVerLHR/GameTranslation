@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """rawlib.py - the raw translation library, rewrites, and the five hard gates.
 
 The translation subagent never touches JSON: it appends *raw* text to one file
@@ -26,15 +25,15 @@ Operations:
 ``to_json``          - raw library + keys.jsonl -> translated.json (escaping)
 ``run_gates``        - the five hard gates; baking is refused unless all pass
 """
-import io
 import json
 import os
 import re
 from collections import OrderedDict
 
 from . import mvkeys
-from .codes import (KANA_LETTERS_RE, has_text_parameter, parameter_of,
-                    parse_codes, parse_code_sequence, split_keep_codes)
+from .codes import (KANA_LETTERS_RE, bracket_pair, has_text_parameter,
+                    parameter_of, parse_codes, parse_code_sequence,
+                    split_keep_codes)
 
 __all__ = ["HEADER_RE", "read_library", "write_library", "append_block",
            "read_jsonl", "read_jsonl_report", "append_jsonl", "apply_rewrites",
@@ -63,11 +62,39 @@ def read_library(path):
     and the coverage gate (every key needs a value) could never go green.
     A hand-written batch with a stray trailing blank line now fails that gate
     with a clear message instead of being silently normalized away.
+
+    The file is opened with ``newline="\n"`` on purpose, and that is subtle.
+    The two obvious settings are both wrong:
+
+    * the default (universal newlines) folds a lone ``\r`` into a line break,
+      so a value ``"a\rb"`` came back as ``"a\nb"``;
+    * ``newline=""`` looks like the fix ("do not translate line endings") but
+      still **splits** on a lone ``\r`` - it only stops translating what it
+      yields.  Measured: ``b"@@@k@@@\na\rb\n"`` gives the lines
+      ``['@@@k@@@\n', 'a\r', 'b\n']`` in both modes, i.e. three lines, and the
+      CR is gone once ``bare`` strips it.
+
+    Only ``newline="\n"`` treats a bare CR as ordinary data.  It does not lose
+    the CRLF contract: ``rstrip("\r")`` still strips the CR of a ``\r\n`` pair,
+    so such a file reads exactly as before.
+
+    Why this matters: ``append_block`` writes the value verbatim, so a bare CR
+    reached the disk and could never be read back - a value the library could
+    store but not load.  That was a real latent defect, not a theoretical one;
+    the old property-test generator hid it by filtering ``\r`` out.
+
+    Two shapes still cannot round-trip, both pinned by
+    ``TestBareCarriageReturn``: a value *ending* in a bare CR (its CR is
+    indistinguishable from a CRLF tail), and an interior ``\r\n`` (reassembled
+    as two lines and rejoined with LF).  Both are acceptable because the
+    line-break gate counts ``\n`` only (:func:`line_problems`), and a
+    translation value is plain text.
     """
     values = OrderedDict()
     current = None
     chunks = []
-    with io.open(path, encoding="utf-8", errors="replace") as handle:
+    with open(path, encoding="utf-8", errors="replace",
+                 newline="\n") as handle:
         for number, line in enumerate(handle, 1):
             bare = line.rstrip("\n").rstrip("\r")
             match = HEADER_RE.match(bare)
@@ -92,18 +119,18 @@ def read_library(path):
 
 def write_library(path, values):
     """Rewrite the whole library from ``{id: text}`` (used after rewrites)."""
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         for key, text in values.items():
-            handle.write("@@@%s@@@\n%s\n" % (key, text))
+            handle.write(f"@@@{key}@@@\n{text}\n")
     return path
 
 
 def append_block(path, key_id, text):
     """Append one translated block (the subagent's only write operation)."""
     if "@@@" in key_id:
-        raise ValueError("id must not contain '@@@': %r" % key_id)
-    with io.open(path, "a", encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n%s\n" % (key_id, text))
+        raise ValueError(f"id must not contain '@@@': {key_id!r}")
+    with open(path, "a", encoding="utf-8", newline="\n") as handle:
+        handle.write(f"@@@{key_id}@@@\n{text}\n")
     return path
 
 
@@ -112,7 +139,7 @@ def read_jsonl(path):
     if not os.path.isfile(path):
         return []
     out = []
-    with io.open(path, encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         for number, line in enumerate(handle, 1):
             line = line.strip()
             if not line:
@@ -121,7 +148,7 @@ def read_jsonl(path):
                 out.append(json.loads(line))
             except ValueError as error:
                 raise ValueError("%s:%d: bad JSON line (%s)"
-                                 % (path, number, error))
+                                 % (path, number, error)) from error
     return out
 
 
@@ -138,7 +165,7 @@ def read_jsonl_report(path):
     records, errors = [], []
     if not os.path.isfile(path):
         return records, errors
-    with io.open(path, encoding="utf-8", errors="replace") as handle:
+    with open(path, encoding="utf-8", errors="replace") as handle:
         for number, line in enumerate(handle, 1):
             line = line.strip()
             if not line:
@@ -152,7 +179,7 @@ def read_jsonl_report(path):
 
 def append_jsonl(path, record):
     """Append one object to a JSONL file (one line, UTF-8, LF)."""
-    with io.open(path, "a", encoding="utf-8", newline="\n") as handle:
+    with open(path, "a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     return path
 
@@ -222,7 +249,7 @@ def apply_rewrites(work_dir, report_path=None):
               len({k for entry in applied for k in entry["ids"]}),
               "applied": applied}
     out = report_path or os.path.join(work_dir, "rewrite_report.json")
-    with io.open(out, "w", encoding="utf-8", newline="\n") as handle:
+    with open(out, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(report, handle, ensure_ascii=False, indent=1)
         handle.write("\n")
     return report
@@ -256,13 +283,13 @@ def to_json(work_dir, out_path=None):
     json_path = out_path or os.path.join(work_dir, "translated.json")
     ids_path = os.path.join(out_dir, "translated_ids.json")
     for path, payload in ((json_path, by_text), (ids_path, by_id)):
-        with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=1)
             handle.write("\n")
     report = {"keys": len(keys), "translated": len(by_id),
               "unique_sources": len(by_text), "conflicts": conflicts[:50],
               "translated_json": json_path, "translated_ids": ids_path}
-    with io.open(os.path.join(work_dir, "to_json_report.json"), "w",
+    with open(os.path.join(work_dir, "to_json_report.json"), "w",
                  encoding="utf-8", newline="\n") as handle:
         json.dump(report, handle, ensure_ascii=False, indent=1)
         handle.write("\n")
@@ -273,7 +300,7 @@ def _allowlist(work_dir):
     path = os.path.join(work_dir, "allow_kana.json")
     if not os.path.isfile(path):
         return []
-    with io.open(path, encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         data = json.load(handle)
     items = data.get("items") if isinstance(data, dict) else data
     return [item for item in (items or []) if isinstance(item, dict)
@@ -297,22 +324,30 @@ def code_problems(source_text, target_text):
     Codes are compared one by one; the only tolerated difference is inside a
     *textual* parameter - a name box (``\\nc<チンピラ>``) shows a name to the
     player, so it must be translated, while a numeric argument (``\\px[200]``)
-    must survive byte for byte.  The bracket shape is checked either way.
+    must survive byte for byte.  The **bracket shape is checked either way**:
+    the delimiters decide which token the engine scans for, so ``\\nc<name>``
+    rewritten as ``\\nc[name]`` changes the code even though the key is still
+    ``NC`` (``tests/test_translation_properties.py`` pins this).
     """
     source = parse_code_sequence(source_text)
     target = parse_code_sequence(target_text)
     if [key for key, _ in source] != [key for key, _ in target]:
-        return ["code sequence: %s -> %s"
-                % ([tok for _, tok in source], [tok for _, tok in target])]
+        return [f"code sequence: {[tok for _, tok in source]} -> {[tok for _, tok in target]}"]
     problems = []
-    for (_, source_token), (_, target_token) in zip(source, target):
+    # The token-key sequence was just compared, so both lists are the same
+    # length; `strict` states that instead of relying on zip's silent
+    # truncation, which is this repository's documented failure mode.
+    for (_, source_token), (_, target_token) in zip(source, target,
+                                                    strict=True):
         if source_token == target_token:
+            continue
+        if bracket_pair(source_token) != bracket_pair(target_token):
+            problems.append(f"code parameter brackets: {source_token} -> {target_token}")
             continue
         if has_text_parameter(source_token) \
                 and parameter_of(target_token) is not None:
             continue
-        problems.append("code parameter: %s -> %s"
-                        % (source_token, target_token))
+        problems.append(f"code parameter: {source_token} -> {target_token}")
     return problems
 
 
@@ -465,15 +500,12 @@ def validate_blocks(work_dir, values):
         if not text.strip():
             problems.append((key_id, "empty translation"))
             continue
-        for message in code_problems(entry["ja"], text):
-            problems.append((key_id, message))
-        for message in structure_problems(entry["ja"], text):
-            problems.append((key_id, message))
-        for message in line_problems(entry["ja"], text):
-            problems.append((key_id, message))
+        problems.extend((key_id, message) for message in code_problems(entry["ja"], text))
+        problems.extend((key_id, message) for message in structure_problems(entry["ja"], text))
+        problems.extend((key_id, message) for message in line_problems(entry["ja"], text))
         residue, _allowed = kana_problem(text, items)
         if residue:
-            problems.append((key_id, "kana residue: %s" % residue[:40]))
+            problems.append((key_id, f"kana residue: {residue[:40]}"))
     return problems
 
 
@@ -505,14 +537,14 @@ def append_batch(work_dir, batch_path, note=None, fix_leading=False):
     if problems:
         return {"added": 0, "fixed": fixed, "problems": problems}
     library = os.path.join(work_dir, LIBRARY_NAME)
-    with io.open(library, "a", encoding="utf-8", newline="\n") as handle:
+    with open(library, "a", encoding="utf-8", newline="\n") as handle:
         for key_id, text in values.items():
-            handle.write("@@@%s@@@\n%s\n" % (key_id, text))
+            handle.write(f"@@@{key_id}@@@\n{text}\n")
     if note:
         append_jsonl(os.path.join(work_dir, "progress.jsonl"),
                      {"note": note, "added": len(values),
                       "fixed_leading": fixed,
-                      "ids": [key for key in list(values)[:3]]})
+                      "ids": list(list(values)[:3])})
     return {"added": len(values), "fixed": fixed, "problems": []}
 
 
@@ -539,10 +571,12 @@ def _gate_codes(keys, values):
         if not problems:
             problems = structure_problems(entry["ja"], text)
         if not problems:
+            # `code_problems` above returns empty only when the key sequences
+            # are identical, so the two parses are the same length.
             if any(source_token != target_token for (_, source_token),
                    (_, target_token)
                    in zip(parse_code_sequence(entry["ja"]),
-                          parse_code_sequence(text))):
+                          parse_code_sequence(text), strict=True)):
                 translated_parameters += 1
             continue
         mismatch.append({"id": entry["id"], "where": entry["where"],
@@ -647,10 +681,10 @@ def _gate_lines(keys, values):
         text = values.get(entry["id"])
         if not text:
             continue
-        for message in line_problems(entry["ja"], text):
-            mismatched.append({"id": entry["id"], "where": entry["where"],
-                               "reason": message, "source": entry["ja"][:80],
-                               "value": text[:80]})
+        mismatched.extend({"id": entry["id"], "where": entry["where"],
+                           "reason": message, "source": entry["ja"][:80],
+                           "value": text[:80]}
+                          for message in line_problems(entry["ja"], text))
     return {
         "name": "line_breaks",
         "ok": not mismatched,
@@ -675,7 +709,7 @@ def run_gates(work_dir, out_path=None):
         "gates": gates,
     }
     path = out_path or os.path.join(work_dir, "gate_report.json")
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(report, handle, ensure_ascii=False, indent=1)
         handle.write("\n")
     return report
@@ -704,8 +738,7 @@ def gate_markdown(report):
             detail = "%d open of %d" % (gate["open"], gate["entries"])
             if gate.get("unparsable"):
                 detail += ", %d unparsable" % gate["unparsable"]
-        lines.append("| %s | %s | %s |"
-                     % (gate["name"], "PASS" if gate["ok"] else "**FAIL**",
+        lines.append("| {} | {} | {} |".format(gate["name"], "PASS" if gate["ok"] else "**FAIL**",
                         detail))
     lines.append("")
     return "\n".join(lines)

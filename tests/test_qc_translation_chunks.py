@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/qc_translation_chunks.py - QC, repair and merge for
 the legacy JSON-chunk work packages.
 

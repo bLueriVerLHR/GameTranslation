@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for kirikiri/xp3pack.py - the krkrz XP3 archive packer.
 
 The produced archives are read back with the xp3tool parser (the same
@@ -149,7 +148,7 @@ class TestBuildIndex:
     def test_names_stored_utf16le(self):
         raw = xp3pack.build_index([("名前.txt", 19, 4, 1)])
         assert "名前.txt".encode("utf-16-le") in raw
-        assert "名前.txt".encode("utf-8") not in raw
+        assert "名前.txt".encode() not in raw
 
     def test_segm_record_layout(self):
         # one raw segment of size 7 at offset 1234: 28-byte record with
@@ -213,8 +212,8 @@ class TestPack:
 
     def test_unicode_names_roundtrip(self, tmp_path):
         indir = tmp_path / "in"
-        files_data = [("scenario/名前.ks", "こんにちは".encode("utf-8")),
-                      ("台词/中文.md", "你好世界".encode("utf-8"))]
+        files_data = [("scenario/名前.ks", "こんにちは".encode()),
+                      ("台词/中文.md", "你好世界".encode())]
         write_tree(indir, files_data)
         out = tmp_path / "out.xp3"
         xp3pack.pack(str(indir), str(out))
@@ -281,7 +280,7 @@ class TestPack:
         indir = tmp_path / "in"
         payloads = [("a.txt", b"alpha"), ("empty.bin", b""),
                     ("sub/b.dat", bytes(range(256)) * 40),
-                    ("scenario/名前.ks", "こんにちは".encode("utf-8"))]
+                    ("scenario/名前.ks", "こんにちは".encode())]
         write_tree(indir, payloads)
         out = tmp_path / "out.xp3"
         xp3pack.pack(str(indir), str(out))

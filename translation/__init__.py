@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """translation - the v2 translation workflow toolkit (one subagent, one game).
 
 Design: `.tmp/TRANSLATION_WORKFLOW_V2.md`.  Shape of the system:

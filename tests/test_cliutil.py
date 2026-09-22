@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for rpgmaker/cliutil.py - the shared CLI conventions.
 
 The contract the tools rely on: a command function RETURNS its exit code,
@@ -34,7 +33,7 @@ def make_app():
             raise typer.Exit(code=99)
         if code == 98:
             raise ValueError("not a CLI error")
-        print("work=%s" % work_dir)
+        print(f"work={work_dir}")
         return code
 
     return cliutil.command_app(cmd, help="test app")
@@ -101,7 +100,7 @@ class TestSubcommands:
         @application.command()
         def first(name: Annotated[str, typer.Argument()]) -> int:
             """First command."""
-            print("first %s" % name)
+            print(f"first {name}")
             return 0
 
         @application.command()

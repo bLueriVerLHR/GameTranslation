@@ -1,0 +1,279 @@
+name: CI
+
+# The repo is developed on Windows and WSL, so the matrix runs both operating
+# systems on purpose: the Windows runner uses cp1252 by default, which is what
+# caught the missing `encoding="utf-8"` defects that a Linux-only CI would have
+# hidden forever.  Do NOT set PYTHONUTF8 here - it would mask exactly those.
+#
+# No secrets are needed and no game data is required: the local private data
+# directories (dictionaries, fonts, machine config - see
+# docs/reference/local-layout.md) are gitignored, so every test must pass on a
+# clean checkout (tests/test_wheel_contents.py and the font tests assert that
+# contract).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # 03:17 UTC daily - the nightly layer, offset from the hour so it does not
+    # queue behind every other project's cron.
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[images,fonts,dev]"
+
+      - name: Compile every source file
+        run: python -m compileall -q rpgmaker kirikiri tyrano wolfrpg unity translation tools tests
+
+      - name: Lint (ruff, rules pinned in pyproject.toml)
+        run: python -m ruff check .
+
+      - name: Type budgets (mypy)
+        # One checker only - mypy, never mypy *and* pyright (plan section 7).
+        # tools/mypy_check.py distinguishes "mypy could not run" from "errors
+        # found", which a bare `mypy` invocation cannot.
+        run: python tools/mypy_check.py
+
+      - name: Documentation tree is in sync with the repo
+        run: python tools/check_docs.py
+
+      - name: Public-repo hygiene
+        run: python -m pytest tests/test_repo_hygiene.py -q -n 0
+
+      - name: Skip inventory
+        # PLAN Phase 5 task 9: a green suite still hides WHAT is missing, so
+        # every skip must name a capability.  Fails on an unexplained one.
+        run: python tools/skip_report.py --verbose
+
+      - name: Unit and contract tests (PR layer)
+        # The markers are the layer taxonomy.  slow / media / node /
+        # engine_runtime need a codec build, an external binary or a real
+        # engine tree, and wsl / browser / device cannot run on a hosted
+        # runner at all; those run in the nightly job (or by hand).  The
+        # expression below is mirrored in tests/test_test_layers.py, which
+        # fails if this job stops selecting the fast layer or a marker is
+        # registered without a home.
+        run: python -m pytest tests -q --junitxml=junit.xml -m "not slow and not media and not node and not engine_runtime and not wsl and not browser and not device"
+
+      - name: Upload test reports
+        # Diagnostic artifacts for a failed run; harmless when green.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-${{ matrix.os }}-py${{ matrix.python }}
+          path: junit.xml
+          if-no-files-found: ignore
+
+  coverage:
+    # Coverage runs once: the number is the same on both OSes, and the
+    # combined branch figure is what later phases gate on.
+    name: coverage (branch)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[images,fonts,dev]"
+
+      - name: Measure branch coverage
+        # The full suite on purpose: no marker filter, so the nightly layers
+        # are measured too (they run here, not only at night, because this job
+        # installs the codecs).  A `-m` filter would hide exactly the paths the
+        # nightly job exists to cover.
+        #
+        # The full suite cannot cover everything even here: numba's
+        # `@njit(cache=True)` bodies never register as executed (only the
+        # `def` line does), so `kirikiri/tlg.py` sits near 48% on every host
+        # and that floor is held by a waiver, not by a measurement.  See
+        # tests/README.md section 3 before re-recording it.
+        run: python -m pytest tests -q --cov --cov-branch --cov-report=xml --cov-report=term --cov-report=json:coverage.json
+
+      - name: Enforce the recorded coverage floors
+        # PLAN Phase 5 task 4: a coverage NUMBER that nobody compares against a
+        # floor is decoration.  The floors live in tests/coverage_floor.json and
+        # may only hold or rise; a regression fails here.
+        run: python tools/check_coverage.py coverage.json
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: |
+            coverage.xml
+            coverage.json
+          if-no-files-found: ignore
+
+  lock:
+    # The lockfile is committed, so a dependency added to pyproject.toml
+    # without re-running `uv lock` would let a clean environment resolve a
+    # different dev toolchain than the one tested here.  That drift is silent:
+    # it happened once between Phase 1 (where the lock was verified) and
+    # Phase 4 (which added `hypothesis`), and no other job would have caught
+    # it because every job installs with pip from pyproject.toml, never from
+    # the lock.
+    name: uv.lock is in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check the lockfile against pyproject.toml
+        run: |
+          python -m pip install --upgrade pip uv
+          python -m uv lock --check --no-progress
+
+  wheel:
+    name: installed artifact is usable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the wheel and test dependencies
+        # The job previously installed only `build`, so the pytest step could
+        # not run at all (`unrecognized arguments`, no pytest, no runtime
+        # deps).  The wheel itself is then installed WITH its declared
+        # dependencies, which is the shape an operator gets from `pip install`.
+        run: |
+          python -m pip install --upgrade pip build pytest pytest-xdist setuptools
+          python -m build --wheel
+          python -m pip install dist/*.whl
+
+      - name: Assert the wheel ships every documented entry point
+        # The same check lives in tests/test_wheel_contents.py; it runs here
+        # too so a packaging regression fails a job that is named after it.
+        run: python -m pytest tests/test_wheel_contents.py -q -n 0
+
+  audit:
+    # PLAN.md Phase 1 task 8.  Only defects with an available fix should
+    # block; the local package itself is not on PyPI, so a finding that names
+    # `gametranslation` is reported and ignored rather than gateable.
+    name: dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          python -m pip install -e ".[images,fonts,dev]"
+
+      - name: Audit installed dependencies
+        run: python -m pip_audit --progress-spinner off
+
+  nightly:
+    # The layers excluded from PRs still have to run somewhere, or marking a
+    # test is the same as deleting it (PLAN.md Phase 5 task 3).  Each layer
+    # keeps its own step so a red run says which capability broke, and
+    # `continue-on-error` is deliberately NOT used: a broken layer must be
+    # visible rather than soak quietly.
+    name: nightly layers (slow, media, node, engine runtime)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[images,fonts,dev]"
+
+      - name: "Media layer (real codecs: libvpx-vp9, libvorbis)"
+        run: python -m pytest tests -q -m "media" --junitxml=junit-media.xml
+
+      - name: Node layer (external Node.js binary)
+        run: python -m pytest tests -q -m "node" --junitxml=junit-node.xml
+
+      - name: Engine runtime layer (a real engine tree must be present)
+        # Nothing provides `.tools/tyranoscript` in CI, so this step is
+        # expected to report the skip; it exists to fail loudly the day CI
+        # does provision an engine and the layer silently stops running.
+        run: python -m pytest tests -q -m "engine_runtime" --junitxml=junit-engine.xml
+
+      - name: Slow layer (numba JIT, artifact builds, mutation table)
+        # Includes tests/test_mutation_detection.py::TestMutationsAreDetected
+        # (PLAN Phase 5 task 6's detection proof).  It needs no Node, codec or
+        # engine install - every attributed selector is hermetic - but it
+        # copies the repo and spawns pytest per entry, which is why it is
+        # `slow` rather than a PR step.
+        run: python -m pytest tests -q -m "slow" --junitxml=junit-slow.xml
+
+      - name: Install pytest-randomly (nightly only)
+        run: python -m pip install pytest-randomly
+
+      - name: Random order (the suite must not depend on execution order)
+        # PLAN.md Phase 5 acceptance: "stable under random order and xdist".
+        # `pytest-randomly` is deliberately NOT in the [dev] extra: it activates
+        # through an entry point, so installing it would shuffle EVERY local
+        # and PR run and make the fast gate irreproducible.  It lives here
+        # instead, which turns a one-off verification into a nightly gate - the
+        # lesson this repo has now recorded twice (a check verified by hand
+        # rots; it has to become a gate).
+        run: python -m pytest tests -q -p randomly -m "not slow and not media and not node and not engine_runtime and not wsl and not browser and not device" --junitxml=junit-random.xml
+
+      - name: Upload nightly reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-nightly
+          path: junit-*.xml
+          if-no-files-found: ignore

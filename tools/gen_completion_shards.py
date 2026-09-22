@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Split the remaining-text template (STORY ORDER) into subagent chunks.
 
 - chunks/chunk_NN.ja.txt     keys ONLY: one Japanese key per line, no quotes,
@@ -79,6 +78,152 @@ RULES = """## Rules (batch-append contract, mandatory)
 """
 
 
+def _load_work_inputs(work, mtool_dict, tone):
+    """Load template/kinds/context + the MTool dict + the tone block.
+
+    Returns ``(tmpl, kinds, ctx, ordered, dict_entries, tone_text)``.
+    """
+    tmpl = plain_io.load_json(os.path.join(work, "template.json"))
+    kinds = plain_io.load_json(os.path.join(work, "kinds.json"))
+    ctx = plain_io.load_json(os.path.join(work, "context.json"))
+    ordered = list(tmpl.keys())          # already in story order
+
+    entries = {}
+    if mtool_dict and os.path.exists(mtool_dict):
+        entries = plain_io.load_json(mtool_dict)
+    elif mtool_dict:
+        log.warning("translation dict not found, glossary stays empty: %s",
+                    mtool_dict)
+
+    if tone:
+        with open(tone, encoding="utf-8-sig") as f:
+            tone = f.read().strip() + "\n"
+    else:
+        tone = load_tone(work)
+    return tmpl, kinds, ctx, ordered, entries, tone
+
+
+def _build_glossary(entries, tmpl):
+    """Short name-like dict entries that actually occur in the template.
+
+    The membership test runs against the whole template at once (C-level)
+    instead of O(dict x template) per-entry scans - critical for 30k+ key
+    templates.
+    """
+    joined = "\x00".join(tmpl)
+    glossary = {}
+    for k, v in entries.items():
+        if not v or k == v or not NAMEISH.match(k) or len(k) > 14:
+            continue
+        if len(k) < 3 or len(v) < 2:
+            continue
+        if k in joined:
+            glossary[k] = v
+    return glossary
+
+
+def _split_chunks(ordered, max_chars):
+    """Split keys in story order by total char length.
+
+    The packing is already maximal - a non-final chunk cannot take the next
+    key without exceeding `max_chars` - so the "merge small adjacent chunks"
+    pass that used to follow could never fire (verified by
+    `tests/test_gen_completion_shards.py::test_no_chunk_may_be_extended`).
+    It was removed rather than left as dead code.
+    """
+    chunks = []
+    cur, cur_size = [], 0
+    for k in ordered:
+        if cur and cur_size + len(k) > max_chars:
+            chunks.append(cur)
+            cur, cur_size = [], 0
+        cur.append(k)
+        cur_size += len(k)
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def _chunk_maps(keys, ctx):
+    """Which maps/files a chunk spans, in first-seen order.
+
+    `where` is the human-readable location written by build_translation.py:
+    "<map name> / EV%03d <event name>" for map events, plain file names
+    ("Actors.json") for DB keys, "" for keys with no location.  The label
+    before the first "/" is therefore the map/file the chunk starts in.
+    """
+    maps = []
+    for k in keys:
+        loc = ctx.get(k, {}).get("where", "")
+        m = re.match(r"([^/]+)", loc)
+        if m and m.group(1).strip() not in maps:
+            maps.append(m.group(1).strip())
+    return maps
+
+
+def _chunk_transcript(keys, ctx, window, truncate):
+    """The `## Scene transcript` block: `[K]` keys + `|` context lines."""
+    lines = ["## Scene transcript (dialogue in story order; [K] = key to "
+              "translate; | = context line)", ""]
+    last_win = []
+    win_cap = 2 * window + 1
+    for k in keys:
+        info = ctx.get(k, {})
+        where = info.get("where", "")
+        win = (info.get("window") or [])[:win_cap]
+        lines.append(f"[K] {k}   <= {where}")
+        lines.extend(f"  | {w[:truncate]}" for w in win
+                     if w != k and w not in last_win)
+        last_win = [w for w in win if w != k]
+    return lines
+
+
+def _write_chunk(chunks_dir, n, keys, kinds, ctx, glossary, carry, tone,
+                 window, truncate):
+    """Write one chunk's ja.txt + meta.json + context.md."""
+    base = os.path.join(chunks_dir, "chunk_%02d" % n)
+    plain_io.save_lines(base + ".ja.txt", keys)
+    with open(base + ".meta.json", "w", encoding="utf-8") as f:
+        json.dump({"maps": _chunk_maps(keys, ctx)}, f, ensure_ascii=False,
+                  indent=1)
+
+    lines = [
+        "# Chunk %02d - %d keys - translate ALL keys in ONE pass" % (n, len(keys)),
+        "",
+        "chunk_NN.ja.txt: %d keys (one per line).  Write chunk_NN.zh.txt:"
+        % len(keys),
+        "exactly %d lines, 1:1 in the same order." % len(keys),
+        "",
+        RULES,
+        "",
+    ]
+    if tone:
+        lines += [tone.rstrip(), ""]
+    if carry:
+        lines += ["## Carry-over: tail of the previous chunk (already translated - KEEP these translations consistent)", ""]
+        lines += [f"- {t}" for t in carry]
+        lines += [""]
+    joined_keys = "\x00".join(keys)
+    terms = sorted({v for g, v in glossary.items() if g in joined_keys})[:40]
+    if terms:
+        lines += ["## Known short-term translations (from the game's MTool dict - reuse for consistency, ignore if irrelevant)", ""]
+        lines += [f"- {t}" for t in terms]
+        lines += [""]
+    lines += _chunk_transcript(keys, ctx, window, truncate)
+    with open(base + ".context.md", "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
+def _report_chunks(chunks_dir, chunks):
+    """Per-chunk key/char counts and the maps each one starts in."""
+    print("chunks:", len(chunks))
+    for n, keys in enumerate(chunks, 1):
+        maps = plain_io.load_json(
+            os.path.join(chunks_dir, "chunk_%02d.meta.json" % n))["maps"]
+        print("chunk_%02d: %d keys, %d chars, maps=%s"
+              % (n, len(keys), sum(len(k) for k in keys), maps[:3]))
+
+
 def cmd(work_dir: Annotated[str, cliutil.Argument(
             help="translation work dir (template.json inside it)")],
         max_chars: Annotated[int, cliutil.Option(
@@ -108,125 +253,26 @@ def cmd(work_dir: Annotated[str, cliutil.Argument(
     chunks_dir = os.path.join(work, "chunks")
     os.makedirs(chunks_dir, exist_ok=True)
 
-    tmpl = plain_io.load_json(os.path.join(work, "template.json"))
-    kinds = plain_io.load_json(os.path.join(work, "kinds.json"))
-    ctx = plain_io.load_json(os.path.join(work, "context.json"))
-    ordered = list(tmpl.keys())          # already in story order
+    tmpl, kinds, ctx, ordered, entries, tone = _load_work_inputs(
+        work, mtool_dict, tone)
 
-    D = {}
-    if mtool_dict and os.path.exists(mtool_dict):
-        D = plain_io.load_json(mtool_dict)
-    elif mtool_dict:
-        log.warning("translation dict not found, glossary stays empty: %s",
-                    mtool_dict)
-
-    if tone:
-        with open(tone, encoding="utf-8-sig") as f:
-            tone = f.read().strip() + "\n"
-    else:
-        tone = load_tone(work)
-
-    glossary = {}
-    # Membership test against the whole template at once (C-level) instead of
-    # O(dict x template) per-entry scans - critical for 30k+ key templates.
-    joined_tmpl = "\x00".join(tmpl)
-    for k, v in D.items():
-        if not v or k == v or not NAMEISH.match(k) or len(k) > 14:
-            continue
-        if len(k) < 3 or len(v) < 2:
-            continue
-        if k in joined_tmpl:
-            glossary[k] = v
+    glossary = _build_glossary(entries, tmpl)
     with open(os.path.join(work, "glossary.json"), "w", encoding="utf-8") as f:
         json.dump(glossary, f, ensure_ascii=False, indent=1)
     print("glossary entries:", len(glossary))
 
-    # split in story order by char budget
-    chunks = []
-    cur, cur_size = [], 0
-    for k in ordered:
-        if cur and cur_size + len(k) > max_chars:
-            chunks.append(cur)
-            cur, cur_size = [], 0
-        cur.append(k)
-        cur_size += len(k)
-    if cur:
-        chunks.append(cur)
-
-    # NOTE: the packing above is already maximal - a non-final chunk cannot
-    # take the next key without exceeding --max-chars - so the "merge small
-    # adjacent chunks" pass that used to follow could never fire (verified by
-    # tests/test_gen_completion_shards.py::test_no_chunk_may_be_extended).  It
-    # was removed rather than left as dead code.
+    chunks = _split_chunks(ordered, max_chars)
 
     # per-chunk carry-over (last lines of previous chunk, in story order)
     previous_tail = []
     for n, keys in enumerate(chunks, 1):
-        carry = []
-        if previous_tail:
-            carry = previous_tail[:CARRY_OVER]
+        carry = previous_tail[:CARRY_OVER] if previous_tail else []
         tail = [k for k in keys if kinds.get(k) in ("block-line", "event-text")]
         previous_tail = tail[-CARRY_OVER:] if tail else previous_tail
+        _write_chunk(chunks_dir, n, keys, kinds, ctx, glossary, carry, tone,
+                     window, truncate)
 
-        # which maps does this chunk cover?
-        # `where` is the human-readable location written by build_translation.py:
-        # "<map name> / EV%03d <event name>" for map events, plain file names
-        # ("Actors.json") for DB keys, "" for keys with no location.  The label
-        # before the first "/" is therefore the map/file the chunk starts in.
-        maps = []
-        for k in keys:
-            loc = ctx.get(k, {}).get("where", "")
-            m = re.match(r"([^/]+)", loc)
-            if m and m.group(1).strip() not in maps:
-                maps.append(m.group(1).strip())
-
-        base = os.path.join(chunks_dir, "chunk_%02d" % n)
-        plain_io.save_lines(base + ".ja.txt", keys)
-        with open(base + ".meta.json", "w", encoding="utf-8") as f:
-            json.dump({"maps": maps}, f, ensure_ascii=False, indent=1)
-
-        lines = [
-            "# Chunk %02d - %d keys - translate ALL keys in ONE pass" % (n, len(keys)),
-            "",
-            "chunk_NN.ja.txt: %d keys (one per line).  Write chunk_NN.zh.txt:"
-            % len(keys),
-            "exactly %d lines, 1:1 in the same order." % len(keys),
-            "",
-            RULES,
-            "",
-        ]
-        if tone:
-            lines += [tone.rstrip(), ""]
-        if carry:
-            lines += ["## Carry-over: tail of the previous chunk (already translated - KEEP these translations consistent)", ""]
-            lines += ["- %s" % t for t in carry]
-            lines += [""]
-        joined_keys = "\x00".join(keys)
-        terms = sorted({v for g, v in glossary.items() if g in joined_keys})[:40]
-        if terms:
-            lines += ["## Known short-term translations (from the game's MTool dict - reuse for consistency, ignore if irrelevant)", ""]
-            lines += ["- %s" % t for t in terms]
-            lines += [""]
-        lines += ["## Scene transcript (dialogue in story order; [K] = key to translate; | = context line)", ""]
-        last_win = []
-        win_cap = 2 * window + 1
-        for k in keys:
-            info = ctx.get(k, {})
-            where = info.get("where", "")
-            win = (info.get("window") or [])[:win_cap]
-            lines.append("[K] %s   <= %s" % (k, where))
-            for w in win:
-                if w != k and w not in last_win:
-                    lines.append("  | %s" % (w[:truncate]))
-            last_win = [w for w in win if w != k]
-        with open(base + ".context.md", "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-
-    print("chunks:", len(chunks))
-    for n, keys in enumerate(chunks, 1):
-        maps = plain_io.load_json(os.path.join(chunks_dir, "chunk_%02d.meta.json" % n))["maps"]
-        print("chunk_%02d: %d keys, %d chars, maps=%s"
-              % (n, len(keys), sum(len(k) for k in keys), maps[:3]))
+    _report_chunks(chunks_dir, chunks)
     return 0
 
 

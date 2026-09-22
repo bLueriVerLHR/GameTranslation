@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for rpgmaker/runtime.py environment-aware worker tuning."""
 import os
 import sys
@@ -306,6 +305,21 @@ class TestPhysicalCores:
         import types as _types
         monkeypatch.setattr(runtime, "ctypes", _types.SimpleNamespace())
         assert runtime._physical_windows() is None
+
+    def test_a_partial_windll_degrades_to_none(self, monkeypatch):
+        """A `windll` that exists but has no `kernel32` must also degrade.
+
+        The probe reads `getattr(ctypes, "windll", None)` so the common
+        non-Windows case returns early instead of raising; this covers the
+        *other* AttributeError - the one line 81 really can raise - which is
+        what the surrounding `except AttributeError` exists for.  Without it
+        the handler is only reachable through OSError.
+        """
+        import types as _types
+        monkeypatch.setattr(runtime, "ctypes", _types.SimpleNamespace(
+            windll=_types.SimpleNamespace()))
+        assert runtime._physical_windows() is None
+
     def test_linux_cpuinfo_counts_hyperthreads_once(self):
         # 4 cores with 2 SMT threads each: 8 processors, 4 distinct pairs.
         text = "\n".join(

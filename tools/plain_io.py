@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """plain_io.py - shared escaping + IO for the two-file chunk format.
 
 chunk_NN.ja.txt / chunk_NN.zh.txt: ONE key (or one translation) PER LINE,

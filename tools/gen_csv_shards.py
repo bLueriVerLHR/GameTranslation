@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """gen_csv_shards.py - Split the ExternMessage.csv body template
 (csv_template.json) into small translation chunks for dedicated subagents.
 
@@ -96,8 +95,8 @@ def cmd(work_dir: Annotated[str, cliutil.Argument(
                                encoding="utf-8"))
     except FileNotFoundError:
         terms = {}
-    gtxt = "\n".join("  %s -> %s" % (k, v) for k, v in glossary.items())
-    ttxt = "\n".join("  %s -> %s" % (k, v) for k, v in terms.items())
+    gtxt = "\n".join(f"  {k} -> {v}" for k, v in glossary.items())
+    ttxt = "\n".join(f"  {k} -> {v}" for k, v in terms.items())
 
     # Tone policy: game-specific, therefore injected from <work>/tone.md (or
     # --tone), never baked into this tool.
@@ -112,7 +111,7 @@ def cmd(work_dir: Annotated[str, cliutil.Argument(
                 "foreshadowing or twists.\n"
                 "- Length: keep the meaning; shorten only if a line would "
                 "clearly overflow the message window.")
-        print("WARN: no tone file at %s - using the neutral tone" % tone_path)
+        print(f"WARN: no tone file at {tone_path} - using the neutral tone")
 
     chunks_dir = os.path.join(work, out_dir)
     os.makedirs(chunks_dir, exist_ok=True)
@@ -140,10 +139,9 @@ def cmd(work_dir: Annotated[str, cliutil.Argument(
         buckets.append(cur)
 
     num = start
-    part = 0
-    for b in buckets:
+    for part, b in enumerate(buckets):
         base = os.path.join(chunks_dir, "chunk_%02d" % num)
-        chunk = {k: "" for k in b}
+        chunk = dict.fromkeys(b, "")
         with open(base + ".json", "w", encoding="utf-8") as f:
             json.dump(chunk, f, ensure_ascii=False, indent=1)
         md = CSV_MD.format(num="%02d" % num, part=part, glossary=gtxt,
@@ -153,7 +151,6 @@ def cmd(work_dir: Annotated[str, cliutil.Argument(
         print("chunk %02d: %d keys, %d chars" % (num, len(b),
                                                  sum(len(k) for k in b)))
         num += 1
-        part += 1
     print("wrote %d chunks (%02d..%02d)" % (len(buckets), start, num - 1))
     return 0
 

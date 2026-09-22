@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""Unit tests for tools/plugins_io.py tolerant js/plugins.js parsing."""
+"""Unit tests for rpgmaker/plugins_io.py tolerant js/plugins.js parsing."""
 import re
 
 import pytest
 
-import plugins_io
+from rpgmaker import plugins_io
 
 EDITOR_STYLE = '''var $plugins =
 [

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Patch TyranoScript's kag.tag_ext.js so [bgmovie] starts despite the
 browser autoplay policy.
 
@@ -16,15 +15,10 @@ The patch is idempotent: an already-patched file is detected by the
 import logging
 import os
 import re
-import sys
 from typing import Annotated
 
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-# Repo root, appended (not inserted) so a same-named sibling module in
-# this directory still wins.
-sys.path.append(os.path.dirname(_HERE))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, platform
 
 log = logging.getLogger("tyrano.autoplay")
 
@@ -65,6 +59,11 @@ def patch_autoplay(work_dir, file_rel=KAG_TAG_EXT_REL):
     if not os.path.isfile(path):
         log.warning("%s not found, autoplay fix skipped", path)
         return None
+    # AGENTS.md CRITICAL: only rewrite below.  Gated after the missing-file
+    # check on purpose - the "file not here" warning is more useful than a
+    # cross-side refusal for an already-absent path.
+    path = str(platform.require_native_paths("patch tyrano autoplay",
+                                             path=path)["path"])
     with open(path, encoding="utf-8") as f:
         text = f.read()
     if _PATCH_MARKER in text:

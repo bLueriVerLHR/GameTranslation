@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """jssyntax.py - in-process JavaScript syntax checking (tree-sitter).
 
 KAG3 scenarios carry JavaScript inside `[iscript]` blocks, and a block that

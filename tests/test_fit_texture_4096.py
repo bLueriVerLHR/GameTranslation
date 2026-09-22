@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/fit_texture_4096.py (atlas re-tiling + IconSet crop).
 
 Path setup comes from tests/conftest.py (repo root + tools/).
@@ -10,6 +9,7 @@ import os
 from PIL import Image
 
 import fit_texture_4096 as ft
+from rpgmaker import constants
 
 
 # ---------------------------------------------------------------------------
@@ -19,14 +19,11 @@ import fit_texture_4096 as ft
 def _frame_pixels(fw, fh, seed):
     """Distinct RGBA pattern per frame so any misplacement is caught."""
     px = Image.new("RGBA", (fw, fh))
-    data = []
-    for y in range(fh):
-        for x in range(fw):
-            data.append(((seed * 37 + x * 3) % 256,
-                         (seed * 53 + y * 5) % 256,
-                         (seed * 97 + x + y) % 256,
-                         255 if (x + y + seed) % 7 else 128))
-    px.putdata(data)
+    px.putdata([((seed * 37 + x * 3) % 256,
+                 (seed * 53 + y * 5) % 256,
+                 (seed * 97 + x + y) % 256,
+                 255 if (x + y + seed) % 7 else 128)
+                for y in range(fh) for x in range(fw)])
     return px
 
 
@@ -176,8 +173,7 @@ class TestAtlas:
         rc = ft.main(["atlas", str(tmp_path)])
         assert rc == 0
 
-    def test_limit_defaults_to_config(self, tmp_path):
-        from rpgmaker import config
+    def test_limit_defaults_to_constants(self, tmp_path):
         # 50 frames x 100 px = 5000 px wide: oversized under the default cap,
         # so this exercises the default instead of silently being a noop.
         png, jsn, _ = _write_strip(tmp_path, "anim", 100, 40, 50)
@@ -185,7 +181,7 @@ class TestAtlas:
         assert rc == 0
         with Image.open(str(png)) as im:
             assert im.size == (4000, 80)  # capped at count: 40 cols x 2 rows
-            assert max(im.size) <= config.PNG_MAX_DIMENSION
+            assert max(im.size) <= constants.PNG_MAX_DIMENSION
         assert len(_rects(_read_json(jsn))) == 50
 
 

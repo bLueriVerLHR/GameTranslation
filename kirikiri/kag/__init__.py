@@ -30,4 +30,4 @@ def __getattr__(name):
     if name in ("convert", "main"):
         from kirikiri.kag import cli
         return getattr(cli, name)
-    raise AttributeError("module %r has no attribute %r" % (__name__, name))
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """`rpgmaker/deliver.py`: delivered name + integrity test on the real archive.
 
 Two defects found while delivering a build kept in a work slot:
@@ -56,7 +55,16 @@ class _FakeCompress:
 def wired(tmp_path, monkeypatch):
     fake = _FakeCompress()
     monkeypatch.setattr(deliver_mod, "compress_mod", fake)
-    monkeypatch.setattr(deliver_mod, "config", _Config(tmp_path))
+    # deliver.py reads the split modules directly, so each call site is
+    # redirected at its owner rather than through the retired config facade.
+    monkeypatch.setattr(deliver_mod.deliverables, "archives_dir",
+                        lambda: str(tmp_path / "archives"))
+    monkeypatch.setattr(deliver_mod.deliverables, "games_dir",
+                        lambda: str(tmp_path / "games"))
+    monkeypatch.setattr(deliver_mod.deliverables, "temp_dir",
+                        lambda: str(tmp_path / "temp"))
+    monkeypatch.setattr(deliver_mod.platform, "is_windows_side",
+                        lambda _path: False)
     monkeypatch.setattr(deliver_mod, "shutil", _NoCopy())
     # The real extraction needs a real 7z; the fake archive is not one.
     monkeypatch.setattr(deliver_mod, "_extract", _fake_extract)
@@ -76,25 +84,13 @@ def fake_roots(fake):
     return fake.roots
 
 
-class _Config:
-    def __init__(self, tmp_path):
-        self._tmp = tmp_path
-
-    def archives_dir(self):
-        return str(self._tmp / "archives")
-
-    def games_dir(self):
-        return str(self._tmp / "games")
-
-    def temp_dir(self):
-        return str(self._tmp / "temp")
-
-    def is_windows_side(self, _path):
-        return False
-
-
 class _NoCopy:
-    """Copy without the 1 GB IO: record the call instead."""
+    """Copy without the 1 GB IO: record the call instead.
+
+    ``deliver.py`` reaches for ``shutil.copy2`` and ``shutil.rmtree`` through
+    the imported module, so standing in for the whole module keeps the real
+    filesystem untouched while the call is still observable.
+    """
 
     def __init__(self):
         self.calls = []

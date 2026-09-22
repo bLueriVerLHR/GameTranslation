@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Localize the TyranoScript engine UI (``tyrano/lang.js``).
 
 ``tyrano/lang.js`` ships with every TyranoScript game and holds the engine's
@@ -27,12 +26,10 @@ import json
 import logging
 import os
 import re
-import sys
 from collections import OrderedDict
-from typing import Annotated, Optional
+from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, platform
 
 log = logging.getLogger("tyrano.ui_lang")
 
@@ -80,7 +77,7 @@ def read_lang(path):
 
 def _block_span(text, block):
     """Return (body_start, body_end) of `block`'s object literal, or None."""
-    m = re.search(r"\b%s\s*:\s*\{" % re.escape(block), text)
+    m = re.search(rf"\b{re.escape(block)}\s*:\s*\{{", text)
     if not m:
         return None
     start = m.end()
@@ -114,7 +111,7 @@ def extract(path, block=DEFAULT_BLOCK):
     text = read_lang(path)
     span = _block_span(text, block)
     if not span:
-        raise ValueError("%s: no '%s' block found" % (path, block))
+        raise ValueError(f"{path}: no '{block}' block found")
     body = text[span[0]:span[1]]
     out = OrderedDict()
     for m in _ENTRY_RE.finditer(body):
@@ -138,14 +135,13 @@ def check_value(old, new, key):
         return "contains a carriage return"
     problems = []
     if sorted(_PLACEHOLDER_RE.findall(old)) != sorted(_PLACEHOLDER_RE.findall(new)):
-        problems.append("placeholder mismatch (%s -> %s)"
-                        % ("".join(_PLACEHOLDER_RE.findall(old)),
+        problems.append("placeholder mismatch ({} -> {})".format("".join(_PLACEHOLDER_RE.findall(old)),
                            "".join(_PLACEHOLDER_RE.findall(new))))
     if old.count("\\n") != new.count("\\n"):
         problems.append("newline count %d -> %d"
                         % (old.count("\\n"), new.count("\\n")))
     if KANA_RE.search(new):
-        problems.append("kana left: %s" % KANA_RE.search(new).group(0))
+        problems.append(f"kana left: {KANA_RE.search(new).group(0)}")
     return "; ".join(problems) if problems else None
 
 
@@ -159,11 +155,11 @@ def apply_map(path, mapping, block=DEFAULT_BLOCK, dry_run=False):
     text = read_lang(path)
     span = _block_span(text, block)
     if not span:
-        raise ValueError("%s: no '%s' block found" % (path, block))
+        raise ValueError(f"{path}: no '{block}' block found")
     head, body, tail = text[:span[0]], text[span[0]:span[1]], text[span[1]:]
     if _COMMENT_RE.search(body):
-        raise ValueError("%s: '%s' block contains a comment; refusing to "
-                         "rewrite it" % (path, block))
+        raise ValueError(f"{path}: '{block}' block contains a comment; refusing to "
+                         "rewrite it")
     applied, refused, edits = [], [], []
     seen = set()
     for m in _ENTRY_RE.finditer(body):
@@ -177,13 +173,13 @@ def apply_map(path, mapping, block=DEFAULT_BLOCK, dry_run=False):
             continue
         problem = check_value(old, new, key)
         if problem:
-            refused.append("%s: %s" % (key, problem))
+            refused.append(f"{key}: {problem}")
             continue
         q = _quote_for(new, m.group("q"))
         # The gate pinned the placeholder and \n shape, so the value goes in
         # verbatim between unescaped quotes.
         edits.append((m.start(), m.end(),
-                      "%s%s%s%s%s%s%s" % (m.group("lead"), m.group("ws"),
+                      "{}{}{}{}{}{}{}".format(m.group("lead"), m.group("ws"),
                                           key, m.group("sep"), q, new, q)))
         applied.append(key)
     missing = [k for k in mapping if k not in seen]
@@ -200,13 +196,13 @@ def apply_map(path, mapping, block=DEFAULT_BLOCK, dry_run=False):
 def _resolve(path):
     lang = find_lang_file(path)
     if not lang:
-        raise FileNotFoundError("no %s under %s" % (LANG_REL, path))
+        raise FileNotFoundError(f"no {LANG_REL} under {path}")
     return lang
 
 
 def cmd_dump(game: Annotated[str, cliutil.Argument(
         help="build folder or a path to tyrano/lang.js")],
-        out: Annotated[Optional[str], cliutil.Option(
+        out: Annotated[str | None, cliutil.Option(
             "-o", "--out", help="write the Japanese strings as JSON")] = None,
         block: Annotated[str, cliutil.Option(
             "--block", help="lang.js block to read")] = DEFAULT_BLOCK,
@@ -215,6 +211,9 @@ def cmd_dump(game: Annotated[str, cliutil.Argument(
         log_file: cliutil.LogFile = None) -> int:
     """List the engine UI strings that need translating."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # AGENTS.md CRITICAL: reads (and with --out, writes) native paths.
+    game = str(platform.require_native_paths("dump tyrano UI strings",
+                                             game=game)["game"])
     lang = _resolve(game)
     strings = extract(lang, block)
     kana = OrderedDict((k, v) for k, v in strings.items() if KANA_RE.search(v))
@@ -227,7 +226,7 @@ def cmd_dump(game: Annotated[str, cliutil.Argument(
         log.info("wrote %s", out)
     else:
         for key, val in kana.items():
-            print("%s\t%s" % (key, val))
+            print(f"{key}\t{val}")
     return 0
 
 
@@ -244,6 +243,10 @@ def cmd_apply(game: Annotated[str, cliutil.Argument(
         log_file: cliutil.LogFile = None) -> int:
     """Apply a {key: translation} JSON to the engine UI strings."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # AGENTS.md CRITICAL: rewrites the game's lang.js in place with plain
+    # Python I/O (`--dry-run` still resolves the path, which only stats).
+    game = str(platform.require_native_paths("apply tyrano UI strings",
+                                             game=game)["game"])
     lang = _resolve(game)
     if not mapping:
         return cliutil.fail("--map is required")

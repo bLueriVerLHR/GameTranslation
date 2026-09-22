@@ -10,7 +10,7 @@ import os
 import sys
 import time
 from multiprocessing import Pool
-from typing import Annotated, Optional
+from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -40,12 +40,15 @@ def decode_one(args):
 
 def cmd(in_dir: Annotated[str, cliutil.Argument(help="directory with *.tlg")],
         out_dir: Annotated[str, cliutil.Argument(help="output directory for PNGs")],
-        jobs: Annotated[Optional[int], cliutil.Option(
+        jobs: Annotated[int | None, cliutil.Option(
             "--jobs", help="worker processes (default: physical CPU cores)")] = None,
         verbose: cliutil.Verbose = False,
         quiet: cliutil.Quiet = False,
         log_file: cliutil.LogFile = None) -> int:
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("decode tlg batch", in_dir=in_dir, out_dir=out_dir)
     jobs = runtime.resolve_workers("tlg", jobs, path=in_dir)
     os.makedirs(out_dir, exist_ok=True)
     files = sorted(glob.glob(os.path.join(in_dir, "**", "*.tlg"),

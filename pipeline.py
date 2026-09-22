@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """RPG Maker MZ/MV -> JoiPlay conversion & compression toolkit (CLI wrapper).
 
 The commands live in `rpgmaker/cli.py` (built with Typer); this file only

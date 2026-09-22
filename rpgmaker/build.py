@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Build the JoiPlay folder: copy only the web files, skip NW.js runtime + junk.
 
 Copies run in parallel: one thread per web dir + one pool for root files, so the
@@ -9,8 +8,9 @@ import logging
 import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
-from . import config, runtime
+from . import constants, runtime
 
 log = logging.getLogger("rpgmaker.build")
 
@@ -22,7 +22,7 @@ def _copy_file(src, dst):
 
 def _copy_many(web_root, dst, dirs, root_files, workers):
     """Copy `dirs` (whole trees) + `root_files` (single files) in parallel."""
-    ignores = shutil.ignore_patterns(*config.NWJS_RUNTIME)
+    ignores = shutil.ignore_patterns(*constants.NWJS_RUNTIME)
     jobs = []
     for d in dirs:
         src_dir = os.path.join(web_root, d)
@@ -30,11 +30,11 @@ def _copy_many(web_root, dst, dirs, root_files, workers):
             log.info("skip %s (not present)", d)
             continue
         dst_dir = os.path.join(dst, d)
-        jobs.append(lambda sd=src_dir, dd=dst_dir:
-                    shutil.copytree(sd, dd, dirs_exist_ok=True, ignore=ignores))
-    for fn in root_files:
-        jobs.append(lambda s=os.path.join(web_root, fn), d=os.path.join(dst, fn):
-                    _copy_file(s, d))
+        jobs.append(partial(shutil.copytree, src_dir, dst_dir,
+                            dirs_exist_ok=True, ignore=ignores))
+    jobs.extend(partial(_copy_file,
+                        os.path.join(web_root, fn), os.path.join(dst, fn))
+                for fn in root_files)
     if not jobs:
         return
     with ThreadPoolExecutor(max_workers=workers) as ex:
@@ -51,9 +51,9 @@ def extra_asset_dirs(web_root):
     nor repack tooling is treated as game data and copied; the skipped ones
     are reported so a dropped tree is never invisible.
     """
-    skip = {d.lower() for d in config.NWJS_RUNTIME} | {
-        d.lower() for d in config.REPACK_JUNK_DIRS}
-    web = {d.lower() for d in config.WEB_DIRS}
+    skip = {d.lower() for d in constants.NWJS_RUNTIME} | {
+        d.lower() for d in constants.REPACK_JUNK_DIRS}
+    web = {d.lower() for d in constants.WEB_DIRS}
     extra = []
     for name in sorted(os.listdir(web_root)):
         if not os.path.isdir(os.path.join(web_root, name)):
@@ -77,7 +77,7 @@ def build_joiplay(web_root, dst, keep_movies=True, workers=None):
     """
     workers = runtime.resolve_workers("copy", workers, path=web_root)
     os.makedirs(dst, exist_ok=True)
-    dirs = list(config.WEB_DIRS)
+    dirs = list(constants.WEB_DIRS)
     if not keep_movies:
         dirs.remove("movies")
     extra = extra_asset_dirs(web_root)
@@ -87,7 +87,7 @@ def build_joiplay(web_root, dst, keep_movies=True, workers=None):
 
     root_files = [
         fn for fn in sorted(os.listdir(web_root))
-        if fn not in config.NWJS_RUNTIME
+        if fn not in constants.NWJS_RUNTIME
         and os.path.isfile(os.path.join(web_root, fn))
     ]
     _copy_many(web_root, dst, dirs, root_files, workers)

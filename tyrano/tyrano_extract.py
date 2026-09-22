@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """TyranoScript / TyranoBuilder scenario (.ks) parsing helpers.
 
 TyranoBuilder compiles each game screen into a .ks file whose display text
@@ -15,15 +14,15 @@ name alone ("#Name" handled by the caller), pure-tag lines with no Japanese
 and lines with unbalanced brackets are never treated as translatable.
 """
 
-import os
 import re
-import sys
 
-sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
-import japanese_utils  # noqa: E402
+from rpgmaker import japanese, textencoding
+from rpgmaker.textencoding import decode_text, detect_encoding  # noqa: F401
+# Kept as re-exports: `tyrano.tyrano_extract.detect_encoding` is used by the
+# Tyrano passes and by tests, and the implementation is shared with KiriKiri
+# through core because both engines read .ks files from other people's builds.
 
-KANA = japanese_utils.KANA
+KANA = japanese.KANA
 JA = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
 TEXT_ATTR = re.compile(r'\btext\s*=\s*"([^"]*)"')
 
@@ -36,36 +35,15 @@ TEXT_ATTR_TAGS = ("glink", "tb_ptext_show", "p_notify", "tb_alert_dialog",
                   "tb_dialog")
 
 
-def detect_encoding(raw):
-    """Detect the byte encoding of a .ks file (TyranoBuilder outputs UTF-8,
-    but keep the shared heuristic for robustness)."""
-    if raw[:2] == b"\xff\xfe":
-        return "utf-16"
-    if raw[:2] == b"\xfe\xff":
-        return "utf-16-be"
-    nulls = raw.count(b"\x00")
-    if nulls > len(raw) // 8:
-        even = raw[0::2].count(b"\x00")
-        odd = raw[1::2].count(b"\x00")
-        return "utf-16-be" if odd > even else "utf-16"
-    for enc in ("utf-8", "shift_jis", "cp932"):
-        try:
-            raw.decode(enc)
-            return enc
-        except UnicodeDecodeError:
-            continue
-    return "cp932"
+def load_ks(path: str) -> tuple[str, str]:
+    """Read a .ks file; returns ``(text, encoding_name)``.
 
-
-def load_ks(path):
-    """Read a .ks file; returns (text, encoding_name)."""
-    with open(path, "rb") as f:
-        raw = f.read()
-    enc = detect_encoding(raw)
-    text = raw.decode(enc)
-    if text.startswith("\ufeff"):
-        text = text[1:]
-    return text, enc
+    Delegates to `rpgmaker.textencoding.load_text_file`.  TyranoBuilder
+    normally writes UTF-8, but a repacked or re-exported game can carry any
+    of the encodings the shared heuristic covers, and one implementation is
+    what keeps KiriKiri and TyranoScript agreeing about the same bytes.
+    """
+    return textencoding.load_text_file(path)
 
 
 def split_tag_attrs(tag):

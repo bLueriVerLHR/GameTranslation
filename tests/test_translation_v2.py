@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for the v2 translation toolkit (`translation/`).
 
 Every fixture is a synthetic MV tree: the point is to pin the *contract*
 (stable ids, story order, raw-text library, the four gates) without shipping
 any game's data.
 """
-import io
 import json
 import os
 import re
@@ -22,7 +20,7 @@ MACRO_TEXT = "\\N[1]\u306e\u51fa\u756a\u3060\u3002"
 
 def _dump(path, payload):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(payload, handle, ensure_ascii=False)
 
 
@@ -75,7 +73,7 @@ def make_game(root, plugins=True, js=True):
     ])
     if plugins:
         os.makedirs(os.path.join(root, "js"), exist_ok=True)
-        with io.open(os.path.join(root, "js", "plugins.js"), "w",
+        with open(os.path.join(root, "js", "plugins.js"), "w",
                      encoding="utf-8", newline="\n") as handle:
             handle.write("var $plugins =\n[\n")
             handle.write(json.dumps({"name": "TestPlugin", "status": True,
@@ -87,7 +85,7 @@ def make_game(root, plugins=True, js=True):
             handle.write("\n];\n")
     if js:
         path = os.path.join(root, "js", "rpg_windows.js")
-        with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
             handle.write("Window_Base.prototype.processEscapeCharacter = "
                          "function(code, text) {\n"
                          "    switch (code) {\n"
@@ -98,7 +96,7 @@ def make_game(root, plugins=True, js=True):
                          "    }\n};\n")
         path = os.path.join(root, "js", "plugins", "YEP_MessageCore.js")
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
             handle.write("/*:\n"
                          " * @help\n"
                          " * \\PX[200]  pixel offset for the text\n"
@@ -150,7 +148,7 @@ def test_scan_js_and_inventory(game):
     assert merged["PX"]["count"] == 3
     assert merged["PX"]["documented"] is True
     path = codes.write_markdown(str(os.path.join(game, "codes.md")), merged)
-    text = io.open(path, encoding="utf-8").read()
+    text = open(path, encoding="utf-8").read()
     assert "`\\PX`" in text and "`\\C`" in text
 
 
@@ -304,7 +302,7 @@ def test_extract_covers_switch_and_variable_names(tmp_path):
     """Variable/switch names are displayed by variable-window plugins."""
     root = make_game(str(tmp_path / "game"))
     path = os.path.join(root, "data", "System.json")
-    data = json.load(io.open(path, encoding="utf-8"))
+    data = json.load(open(path, encoding="utf-8"))
     data["switches"] = [None, "\u30a8\u30ed\u30a4\u30d9\u30f3\u30c8\uff11"]
     data["variables"] = [None, "\u30de\u30f3\u30ba\u30ea\u306e\u56de\u6570"]
     _dump(path, data)
@@ -334,7 +332,7 @@ def test_extract_tolerates_plugin_shaped_entries(tmp_path):
     """Real data can hold non-command entries (plugins write their own)."""
     root = make_game(str(tmp_path / "game"))
     path = os.path.join(root, "data", "Map001.json")
-    data = json.load(io.open(path, encoding="utf-8"))
+    data = json.load(open(path, encoding="utf-8"))
     data["events"][1]["pages"][0]["list"] = [
         {"plugin": "wrote-this"},
         [401],
@@ -386,7 +384,7 @@ def test_extract_skips_functional_and_editor_text(work, game):
     assert "MapInfos" not in ids                         # editor-only names
     assert "CommonEvents.json#[0].name" not in ids
     assert "#note" not in ids                            # plugin commands
-    stats = json.load(io.open(os.path.join(work, "stats.json"), encoding="utf-8"))
+    stats = json.load(open(os.path.join(work, "stats.json"), encoding="utf-8"))
     assert stats["skipped"]
     assert entries["js/plugins.js#[0].parameters.Label"]["ja"] == "\u30e9\u30d9\u30eb"
     assert "js/plugins.js#[0].parameters.Path" not in entries
@@ -434,7 +432,7 @@ def test_speaker_follows_the_message_window(tmp_path):
 
 def test_names_candidates_include_macros(work, game):
     mvkeys.extract(game, work)
-    names = json.load(io.open(os.path.join(work, "names_candidates.json"),
+    names = json.load(open(os.path.join(work, "names_candidates.json"),
                               encoding="utf-8"))
     assert "\u30e6\u30ad" in names
     assert "macro" in names["\u30e6\u30ad"]["sources"]
@@ -479,7 +477,7 @@ def test_library_roundtrip_last_wins(tmp_path):
 
 def test_library_rejects_text_before_header(tmp_path):
     path = str(tmp_path / "lib.txt")
-    with io.open(path, "w", encoding="utf-8") as handle:
+    with open(path, "w", encoding="utf-8") as handle:
         handle.write("\u6ca1\u6709\u5934\u884c\n")
     with pytest.raises(ValueError):
         rawlib.read_library(path)
@@ -510,14 +508,14 @@ def test_append_accepts_a_source_that_ends_with_a_newline(work, game):
     mvkeys.extract(game, work)
     keys_path = os.path.join(work, "keys.jsonl")
     rows = [json.loads(line) for line
-            in io.open(keys_path, encoding="utf-8") if line.strip()]
+            in open(keys_path, encoding="utf-8") if line.strip()]
     rows[0]["ja"] = rows[0]["ja"] + "\n"
-    with io.open(keys_path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(keys_path, "w", encoding="utf-8", newline="\n") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     batch = os.path.join(work, "tail.batch.txt")
-    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n%s\n" % (rows[0]["id"], rows[0]["ja"]))
+    with open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@{}@@@\n{}\n".format(rows[0]["id"], rows[0]["ja"]))
     report = rawlib.append_batch(work, batch)
     assert report["problems"] == []
     assert report["added"] == 1
@@ -571,11 +569,11 @@ def test_to_json_escapes_and_reports_conflicts(work, game):
     _fill_library(work, lambda entry, text: "\u8bd1\u6587" + text)
     report = rawlib.to_json(work)
     assert report["translated"] == report["keys"]
-    data = json.load(io.open(os.path.join(work, "translated.json"),
+    data = json.load(open(os.path.join(work, "translated.json"),
                              encoding="utf-8"))
     assert data[MAP_TEXT] == "\u8bd1\u6587" + MAP_TEXT
     assert "\n" in data[MAP_TEXT]            # real newline survived as JSON
-    ids = json.load(io.open(os.path.join(work, "translated_ids.json"),
+    ids = json.load(open(os.path.join(work, "translated_ids.json"),
                             encoding="utf-8"))
     assert len(ids) == report["keys"]
     # same source, different translation -> reported, first one kept
@@ -657,7 +655,7 @@ def test_prefill_harvests_only_exact_matches(tmp_path):
         "\u3042\u3063": "\u554a\u554a",
         "\u53f0\u8a5e": "\u53f0\u8bcd",
     }, ensure_ascii=False, indent=1).split("\n")[1:-1]
-    with io.open(dictionary, "w", encoding="utf-8", newline="\n") as handle:
+    with open(dictionary, "w", encoding="utf-8", newline="\n") as handle:
         # MTool dictionaries carry leading ``//`` comments - not valid JSON
         handle.write("{\n// a repacker's comment line\n" + "\n".join(body) + "\n}\n")
 
@@ -708,7 +706,7 @@ def test_prefill_rejects_candidates_that_break_a_gate(tmp_path):
 def _write_dict(directory, payload):
     """A runtime dictionary file (UTF-8, flat ``{source: translation}``)."""
     path = os.path.join(str(directory), "dict.json")
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(payload, handle, ensure_ascii=False)
     return path
 
@@ -746,7 +744,7 @@ def test_slice_todo_skips_translated_keys(tmp_path):
     out = os.path.join(work, "slice.jsonl")
     assert cli.main(["slice", work, "--count", "2", "--lean", "--todo",
                      "--out", out]) == 0
-    sliced = [json.loads(line) for line in io.open(out, encoding="utf-8")]
+    sliced = [json.loads(line) for line in open(out, encoding="utf-8")]
     assert len(sliced) == 2
     assert not [entry for entry in sliced if entry["id"] in done]
     assert all(set(entry) == {"id", "ja", "speaker", "where"}
@@ -774,8 +772,8 @@ def test_append_batch_rejects_a_broken_json_value(tmp_path):
                  if e["id"].endswith(".choices"))
 
     batch = os.path.join(work, "_batch.txt")
-    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n%s\n" % (entry["id"], choices[:-1]))
+    with open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@{}@@@\n{}\n".format(entry["id"], choices[:-1]))
     report = rawlib.append_batch(work, batch)
     assert report["added"] == 0
     assert any("JSON structure" in problem for _, problem in report["problems"])
@@ -784,8 +782,8 @@ def test_append_batch_rejects_a_broken_json_value(tmp_path):
 
     # the same value with only the label rewritten is accepted
     fixed = choices.replace("\u3044\u3044\u3048", "\u4e0d\u8981")
-    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n%s\n" % (entry["id"], fixed))
+    with open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@{}@@@\n{}\n".format(entry["id"], fixed))
     assert rawlib.append_batch(work, batch)["added"] == 1
 
 
@@ -850,8 +848,8 @@ def test_append_batch_fix_leading(work, game):
     entry = [e for e in mvkeys.load_keys(work)
              if e["ja"].startswith("\\px[200]")][0]
     batch = os.path.join(work, "_wip_batch.txt")
-    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n\u8bd1\u6587\\c[1]\u3002\n" % entry["id"])
+    with open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@{}@@@\n\u8bd1\u6587\\c[1]\u3002\n".format(entry["id"]))
     report = rawlib.append_batch(work, batch, fix_leading=True)
     assert report == {"added": 1, "fixed": 1, "problems": []}
     values = rawlib.read_library(os.path.join(work, rawlib.LIBRARY_NAME))
@@ -864,7 +862,7 @@ def test_gate_pending_survives_a_broken_line(work, game):
     mvkeys.extract(game, work)
     _fill_library(work, _neutral)
     path = os.path.join(work, "pending.jsonl")
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write('{"id": "a", "status": "resolved"}\n')
         handle.write('{"id": "b", "why": "bad \\px[200] escape"}\n')
     records, errors = rawlib.read_jsonl_report(path)
@@ -872,7 +870,7 @@ def test_gate_pending_survives_a_broken_line(work, game):
     gate = {g["name"]: g for g in rawlib.run_gates(work)["gates"]}["pending"]
     assert gate["ok"] is False and gate["unparsable"] == 1
     assert "unparsable" in rawlib.gate_markdown(rawlib.run_gates(work))
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write('{"id": "a", "status": "resolved"}\n')
     assert {g["name"]: g for g in rawlib.run_gates(work)["gates"]}[
         "pending"]["ok"] is True
@@ -940,7 +938,7 @@ def test_status_and_pending_gate_agree(work, game):
 def test_pending_status_summary_reports_parse_errors(work, game):
     mvkeys.extract(game, work)
     workspace.scaffold(work)
-    with io.open(os.path.join(work, "pending.jsonl"), "w", encoding="utf-8",
+    with open(os.path.join(work, "pending.jsonl"), "w", encoding="utf-8",
                  newline="\n") as handle:
         handle.write("{not json}\n")
     summary = workspace.status_summary(work)
@@ -975,6 +973,12 @@ def test_gate_control_codes_fails(work, game):
     gate = {g["name"]: g for g in report["gates"]}["control_codes"]
     assert report["ok"] is False and gate["mismatched"] >= 1
     assert gate["detail"][0]["source"] == ["\\c[1]"]
+    # The gate's OWN verdict, not only the aggregate: the library here also
+    # leaves kana behind, so `report["ok"] is False` is satisfied by the kana
+    # gate even when this gate is broken.  Mutation testing found exactly that
+    # (`"ok": not mismatch` -> `True` survived test_gate_control_codes_fails
+    # while test_gate_coverage_fails killed the same edit on its own gate).
+    assert gate["ok"] is False
 
 
 def test_parameter_helpers():
@@ -1082,8 +1086,8 @@ def test_append_rejects_truncated_multiline_batch(work, game):
     mvkeys.extract(game, work)
     entry = next(e for e in mvkeys.load_keys(work) if "\n" in e["ja"])
     batch = os.path.join(work, "batch.txt")
-    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n%s\n" % (entry["id"], entry["ja"].split("\n")[0]))
+    with open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@{}@@@\n{}\n".format(entry["id"], entry["ja"].split("\n")[0]))
     report = rawlib.append_batch(work, batch)
     assert report["added"] == 0
     assert any("line breaks" in problem for _id, problem in report["problems"])
@@ -1095,8 +1099,8 @@ def test_append_accepts_matching_line_breaks(work, game):
     kana = re.compile(r"[\u3040-\u30ff]")
     value = "\n".join(kana.sub("\u4e2d", line) for line in entry["ja"].split("\n"))
     batch = os.path.join(work, "batch.txt")
-    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n%s\n" % (entry["id"], value))
+    with open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@{}@@@\n{}\n".format(entry["id"], value))
     report = rawlib.append_batch(work, batch)
     assert report["problems"] == [] and report["added"] == 1
 
@@ -1122,7 +1126,7 @@ def test_scaffold_is_idempotent_and_writes_mission(work, game):
     assert "MISSION.md(rewritten)" in created
     library = os.path.join(work, rawlib.LIBRARY_NAME)
     rawlib.append_block(library, "keep-me", "\u4e0d\u8981\u88ab\u8986\u76d6")
-    mission = io.open(os.path.join(work, "MISSION.md"), encoding="utf-8").read()
+    mission = open(os.path.join(work, "MISSION.md"), encoding="utf-8").read()
     assert str(stats["keys"]) in mission and "@@@@" not in mission
     assert "translations.raw.txt" in mission and "MISSION" not in created[0]
     again = workspace.scaffold(work, stats)
@@ -1174,7 +1178,7 @@ def test_cli_slice_writes_a_workable_slice(work, game, tmp_path, capsys):
     assert cli.main(["slice", work, "--start", "0", "--count", "5",
                      "--out", out]) == 0
     lines = [json.loads(line) for line in
-             io.open(out, encoding="utf-8").read().splitlines()]
+             open(out, encoding="utf-8").read().splitlines()]
     assert len(lines) == 5 and "ja" in lines[0]
     assert cli.main(["slice", work, "--start", "9999"]) != 0
     capsys.readouterr()
@@ -1185,19 +1189,18 @@ def test_append_batch_validates_before_writing(work, game):
     mvkeys.extract(game, work)
     entries = mvkeys.load_keys(work)
     batch = os.path.join(work, "_wip_batch.txt")
-    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n\u8bd1\u6587\n" % entries[0]["id"])
+    with open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@{}@@@\n\u8bd1\u6587\n".format(entries[0]["id"]))
     report = rawlib.append_batch(work, batch)
     assert report["problems"] == [] and report["added"] == 1
     library = os.path.join(work, rawlib.LIBRARY_NAME)
     assert rawlib.read_library(library)[entries[0]["id"]] == "\u8bd1\u6587"
     # a batch with an unknown id, an empty value and a broken code sequence
     codes_entry = [entry for entry in entries if "\\c[1]" in entry["ja"]][0]
-    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
+    with open(batch, "w", encoding="utf-8", newline="\n") as handle:
         handle.write("@@@ghost@@@\n\u8bd1\u6587\n")
-        handle.write("@@@%s@@@\n\n" % entries[1]["id"])
-        handle.write("@@@%s@@@\n%s\n"
-                     % (codes_entry["id"],
+        handle.write("@@@{}@@@\n\n".format(entries[1]["id"]))
+        handle.write("@@@{}@@@\n{}\n".format(codes_entry["id"],
                         codes_entry["ja"].replace("\\c[1]", "")))
     before = rawlib.read_library(library)
     report = rawlib.append_batch(work, batch)
@@ -1210,8 +1213,8 @@ def test_append_batch_rejects_kana_residue(work, game):
     mvkeys.extract(game, work)
     entry = [e for e in mvkeys.load_keys(work) if e["kind"] == "db"][0]
     batch = os.path.join(work, "_wip_batch.txt")
-    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n%s\n" % (entry["id"], entry["ja"]))
+    with open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@{}@@@\n{}\n".format(entry["id"], entry["ja"]))
     report = rawlib.append_batch(work, batch)
     assert report["added"] == 0
     assert "kana residue" in report["problems"][0][1]
@@ -1223,12 +1226,12 @@ def test_append_batch_rejects_kana_residue(work, game):
 def test_cli_append_reports_problems(work, game, tmp_path, capsys):
     assert cli.main(["prepare", game, work]) == 0
     batch = str(tmp_path / "batch.txt")
-    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
+    with open(batch, "w", encoding="utf-8", newline="\n") as handle:
         handle.write("@@@ghost@@@\n\u8bd1\u6587\n")
     assert cli.main(["append", work, "--batch", batch]) != 0
     entries = mvkeys.load_keys(work)
-    with io.open(batch, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n\u8bd1\u6587\n" % entries[0]["id"])
+    with open(batch, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("@@@{}@@@\n\u8bd1\u6587\n".format(entries[0]["id"]))
     assert cli.main(["append", work, "--batch", batch,
                      "--note", "\u7b2c\u4e00\u6279"]) == 0
     assert rawlib.read_jsonl(os.path.join(work, "progress.jsonl"))[0]["added"] == 1
@@ -1242,16 +1245,16 @@ def test_cli_slice_compact_drops_heavy_fields(work, game, tmp_path, capsys):
     assert cli.main(["slice", work, "--count", "3", "--compact",
                      "--out", out]) == 0
     rows = [json.loads(line) for line in
-            io.open(out, encoding="utf-8").read().splitlines()]
+            open(out, encoding="utf-8").read().splitlines()]
     assert set(rows[0]) == {"id", "ja", "speaker", "prev", "next"}
     lean_out = str(tmp_path / "lean.jsonl")
     assert cli.main(["slice", work, "--count", "3", "--lean",
                      "--out", lean_out]) == 0
     lean = [json.loads(line) for line in
-            io.open(lean_out, encoding="utf-8").read().splitlines()]
+            open(lean_out, encoding="utf-8").read().splitlines()]
     assert set(lean[0]) == {"id", "ja", "speaker", "where"}
-    assert len(io.open(lean_out, encoding="utf-8").read()) < \
-        len(io.open(out, encoding="utf-8").read())
+    assert len(open(lean_out, encoding="utf-8").read()) < \
+        len(open(out, encoding="utf-8").read())
     capsys.readouterr()
 
 

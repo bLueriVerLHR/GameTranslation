@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for rpgmaker/compress.py + rpgmaker/archive.py (7z + zstd).
 
 The archive work is done in-process by py7zr (a declared dependency), so
@@ -17,15 +16,19 @@ import os
 import pytest
 import py7zr
 
-from rpgmaker import archive, compress, config
+from rpgmaker import archive, compress, platform, tool_registry
 
 
 def _make_folder(tmp_path, name="game"):
     folder = str(tmp_path / name)
     os.makedirs(os.path.join(folder, "data"), exist_ok=True)
-    with open(os.path.join(folder, "index.html"), "w") as f:
+    # encoding="utf-8" is required, not cosmetic: without it the Japanese
+    # title below is encoded with the host locale codec, which raises
+    # UnicodeEncodeError under Windows' default cp1252.
+    with open(os.path.join(folder, "index.html"), "w", encoding="utf-8") as f:
         f.write("<!DOCTYPE html>\n")
-    with open(os.path.join(folder, "data", "System.json"), "w") as f:
+    with open(os.path.join(folder, "data", "System.json"), "w",
+              encoding="utf-8") as f:
         f.write('{"gameTitle": "テスト"}\n')
     return folder
 
@@ -88,9 +91,14 @@ class TestCompressArchive:
 
     def test_no_sevenz_binary_is_needed(self, tmp_path, monkeypatch):
         """The whole point of the py7zr backend: packaging no longer depends
-        on an installed 7-Zip (only the Windows-side bridge does)."""
-        monkeypatch.setattr(config, "find_7z", lambda: None)
-        monkeypatch.setattr(config, "win_7z", lambda: None)
+        on an installed 7-Zip (only the Windows-side bridge does).
+
+        There is no native-``7z`` resolver left to disable - py7zr never
+        spawns a process - so assert that directly instead of monkeypatching
+        a resolver that no longer exists.
+        """
+        assert not hasattr(tool_registry, "find_7z")
+        monkeypatch.setattr(tool_registry, "win_7z", lambda: None)
         folder = _make_folder(tmp_path)
         path = compress.compress(folder, str(tmp_path / "game.7z"))
         assert compress.test_archive(path) is True
@@ -106,7 +114,7 @@ class TestCompressArchive:
         # py7zr has no -mmt equivalent; the parameter stays for compatibility
         folder = _make_folder(tmp_path)
         for threads in (None, True, False, 0, 4):
-            path = compress.compress(folder, str(tmp_path / ("g%s.7z" % threads)),
+            path = compress.compress(folder, str(tmp_path / (f"g{threads}.7z")),
                                      threads=threads)
             assert compress.test_archive(path) is True
 
@@ -163,13 +171,21 @@ class TestArchiveModule:
     def test_extract_refuses_a_windows_side_destination(self, tmp_path,
                                                         monkeypatch):
         """AGENTS.md CRITICAL rule: a WSL-native process must not write a
-        /mnt/* tree, so extract() refuses that destination outright."""
+        /mnt/* tree, so extract() refuses that destination outright.
+
+        The destination is a tmp_path tree and `is_windows_side` is what
+        declares it foreign: using a literal `/mnt/c/...` here would mean that
+        a REGRESSION of this guard (the mutation table removes it) writes to a
+        real drive path on a Windows host instead of failing in the sandbox.
+        """
         folder = _make_folder(tmp_path)
         path = compress.compress(folder, str(tmp_path / "game.7z"))
-        monkeypatch.setattr(config, "is_windows_side", lambda p: True)
+        foreign = str(tmp_path / "mnt-c" / "games" / "game")
+        monkeypatch.setattr(platform, "is_windows_side", lambda p: True)
         with pytest.raises(RuntimeError) as ei:
-            archive.extract(path, "/mnt/c/games/game")
+            archive.extract(path, foreign)
         assert "cross-system" in str(ei.value).lower()
+        assert not os.path.exists(foreign)
 
     def test_filters_use_zstd_at_the_requested_level(self):
         py7zr_filters = archive.filters_for(9)

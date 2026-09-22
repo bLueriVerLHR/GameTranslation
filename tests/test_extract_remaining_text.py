@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/extract_remaining_text.py - extraction of residual
 Japanese (kana-bearing) display strings from an already-translated build, the
 completion-pass entry point.

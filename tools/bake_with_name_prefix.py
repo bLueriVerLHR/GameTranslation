@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 bake_with_name_prefix.py - Re-bake an MTool dict with name-prefix-aware exact
 matching, on top of bake_translation.py.
@@ -68,11 +67,14 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game directory")]
         quiet: cliutil.Quiet = False,
         log_file: cliutil.LogFile = None) -> int:
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("bake translation with name prefix", game_dir=game_dir, out_dir=out_dir, trs=trs)
 
     game_dir = os.path.abspath(game_dir)
     out_dir = os.path.abspath(out_dir)
     if not os.path.isdir(game_dir):
-        return cliutil.fail("game_dir not found: %s" % game_dir)
+        return cliutil.fail(f"game_dir not found: {game_dir}")
     if os.path.abspath(out_dir) == game_dir:
         return cliutil.fail("out_dir must differ from game_dir")
 

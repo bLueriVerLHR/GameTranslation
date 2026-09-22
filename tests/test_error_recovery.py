@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Error-recovery tests (review report §3.4 / remaining-issues D):
 
 Three failure families that the toolkit must survive without a bare crash:
@@ -31,15 +30,15 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
 
 from conftest import make_game  # noqa: E402
 
-from rpgmaker import audio, compress, config, decrypt, verify  # noqa: E402
-from rpgmaker import deliver  # noqa: E402
+from rpgmaker import audio, compress, decrypt, verify, constants, platform, tool_registry# noqa: E402
+from rpgmaker import archive, deliver  # noqa: E402
 from tyrano import audio as tyrano_audio  # noqa: E402
 
 
 def _make_folder(tmp_path, name="game"):
     folder = str(tmp_path / name)
     os.makedirs(os.path.join(folder, "data"), exist_ok=True)
-    with open(os.path.join(folder, "index.html"), "w") as f:
+    with open(os.path.join(folder, "index.html"), "w", encoding="utf-8") as f:
         f.write("<!DOCTYPE html>\n")
     return folder
 
@@ -64,12 +63,12 @@ class TestToolMissingMessage:
         """Probing is in-process (PyAV) now: a missing ffprobe/ffmpeg must not
         stop it."""
         _root, web = game_dir
-        monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
+        monkeypatch.setattr(tool_registry, "find_ffmpeg", lambda: None)
         assert len(audio.probe_all(web, workers=1, sample=1)) == 1
 
     def test_audio_reencode_all_hint(self, game_dir, monkeypatch):
         _root, web = game_dir
-        monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
+        monkeypatch.setattr(tool_registry, "find_ffmpeg", lambda: None)
         with pytest.raises(FileNotFoundError) as ei:
             audio.reencode_all(web, {}, workers=1)
         assert "ffmpeg" in str(ei.value)
@@ -77,9 +76,13 @@ class TestToolMissingMessage:
 
     def test_compress_needs_no_sevenz_binary(self, tmp_path, monkeypatch):
         """Packaging moved to py7zr (in-process), so a missing 7-Zip is no
-        longer an error - only the Windows-side bridge needs the binary."""
+        longer an error - only the Windows-side bridge needs the binary.
+
+        There is no native-``7z`` resolver left to disable: the WSL side never
+        spawns 7-Zip at all, and the bridge uses ``win_7z``.
+        """
+        assert not hasattr(tool_registry, "find_7z")
         folder = _make_folder(tmp_path)
-        monkeypatch.setattr(config, "find_7z", lambda: None)
         path = compress.compress(folder, str(tmp_path / "g.7z"))
         assert compress.test_archive(path) is True
 
@@ -94,7 +97,7 @@ class TestToolMissingMessage:
     def test_verify_decode_needs_no_ffmpeg(self, game_dir, monkeypatch):
         """Decode verification is in-process (PyAV): no binary required."""
         _root, web = game_dir
-        monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
+        monkeypatch.setattr(tool_registry, "find_ffmpeg", lambda: None)
         assert isinstance(verify.verify_decode(web, workers=1), list)
 
     def test_tyrano_convert_all_hint(self, tmp_path, monkeypatch):
@@ -102,7 +105,7 @@ class TestToolMissingMessage:
         os.makedirs(os.path.join(root, "data", "sound"), exist_ok=True)
         with open(os.path.join(root, "data", "sound", "a.mp3"), "wb") as f:
             f.write(b"\xff\xfb" + b"M" * 100)
-        monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
+        monkeypatch.setattr(tool_registry, "find_ffmpeg", lambda: None)
         with pytest.raises(FileNotFoundError) as ei:
             tyrano_audio.convert_all(root, workers=1)
         assert "ffmpeg" in str(ei.value)
@@ -111,7 +114,7 @@ class TestToolMissingMessage:
     def test_deliver_windows_bridge_missing_7z_hint(self, monkeypatch):
         """The Windows-side bridge is the only path that still needs a 7-Zip
         binary; its refusal must name the tool and the fix."""
-        monkeypatch.setattr(config, "win_7z", lambda: None)
+        monkeypatch.setattr(tool_registry, "win_7z", lambda: None)
         with pytest.raises(RuntimeError) as ei:
             deliver._extract_windows_side("a.7z", "dest", "name")
         msg = str(ei.value)
@@ -121,7 +124,7 @@ class TestToolMissingMessage:
     def test_deliver_wsl_extract_reports_a_missing_archive(self, monkeypatch):
         """WSL-side extraction runs in-process: a missing archive is a clean
         error, not a tool-resolution failure."""
-        monkeypatch.setattr(config, "is_windows_side", lambda p: False)
+        monkeypatch.setattr(platform, "is_windows_side", lambda p: False)
         with pytest.raises(OSError):
             deliver._extract_wsl_side("no_such.7z", "dest", "name")
 
@@ -140,7 +143,7 @@ class TestCorruptedInput:
         for i in range(len(body)):
             body[i] ^= 0x01
         src = tmp_path / "t.png_"
-        src.write_bytes(config.RPGMV_HEADER + bytes(body))
+        src.write_bytes(constants.RPGMV_HEADER + bytes(body))
         dst = tmp_path / "t.png"
         assert decrypt._decrypt_to(str(src), b"\x01" * 16, str(dst)) is True
         assert dst.read_bytes() == plain
@@ -176,6 +179,20 @@ class TestCorruptedInput:
             f.write(b"\x00" * 8)
         # not plain JSON -> flags check skipped, no crash
         assert verify.verify_system_flags(web) == []
+
+    def test_a_corrupt_archive_content_is_reported_false(self, tmp_path):
+        """A *member-level* failure must also be False, not only an open failure.
+
+        Measured: py7zr's `testzip()` raises on every corruption shape we could
+        produce (32 single-byte flips across a real archive returned a member 0
+        times), so the `bad` branch of `archive._verdict` is unreachable through
+        the filesystem and would otherwise be untested - a guard nobody can
+        exercise is a guard that silently stops guarding.  The mutation table
+        removes `if bad:`; this test is what notices.
+        """
+        assert archive._verdict("x.7z", bad="game/b.txt") is False
+        assert archive._verdict("x.7z", error=None, bad=None) is True
+        assert archive._verdict("x.7z", error=OSError("boom")) is False
 
     def test_probe_one_binary_garbage_error_dict(self, tmp_path, monkeypatch):
         # ffprobe returning garbage must surface as an error dict, not raise
@@ -233,7 +250,7 @@ class TestPermissionDenied:
         # a read-denied asset raises PermissionError (a specific, meaningful
         # error) rather than an unhandled bare crash
         src = tmp_path / "p.png_"
-        src.write_bytes(config.RPGMV_HEADER + b"\x00" * 32)
+        src.write_bytes(constants.RPGMV_HEADER + b"\x00" * 32)
         real_open = open
 
         def denied(path, *a, **kw):
@@ -265,9 +282,9 @@ class TestPermissionDenied:
     def test_compress_spawns_no_external_tool(self, tmp_path, monkeypatch):
         """The packaged backend is in-process: packaging must work with no
         7-Zip binary available anywhere (only the Windows bridge needs it)."""
+        assert not hasattr(tool_registry, "find_7z")
         folder = _make_folder(tmp_path)
-        monkeypatch.setattr(config, "find_7z", lambda: None)
-        monkeypatch.setattr(config, "win_7z", lambda: None)
+        monkeypatch.setattr(tool_registry, "win_7z", lambda: None)
 
         def boom(*_a, **_kw):
             raise AssertionError("compress() must not spawn a process")
@@ -317,7 +334,8 @@ class TestPermissionDenied:
 
 class TestUnreadableSevenzBinary:
     """The 7-Zip binary is no longer on the packaging path (py7zr is
-    in-process), so an unreadable/foreign 7z.exe cannot break compress().
+    in-process) and there is no native ``7z`` resolver left at all, so an
+    unreadable/foreign 7z.exe cannot break compress() even in principle.
 
     The equivalent risk moved to the Windows-side bridge, where a broken
     powershell/7z.exe still surfaces as a real error instead of a silent
@@ -326,20 +344,20 @@ class TestUnreadableSevenzBinary:
 
     def test_broken_sevenz_binary_does_not_affect_compress(self, tmp_path,
                                                           monkeypatch):
+        assert not hasattr(tool_registry, "find_7z")
         folder = _make_folder(tmp_path)
         script = tmp_path / "noexec_7z.bin"
         script.write_bytes(b"not an executable")
         if os.name == "posix":
             script.chmod(0o644)  # readable, NOT executable
-        monkeypatch.setenv("SEVENZ", str(script))
         path = compress.compress(folder, str(tmp_path / "g.7z"))
         assert compress.test_archive(path) is True
 
     def test_windows_bridge_still_fails_loudly(self, tmp_path, monkeypatch):
         """The bridge keeps its old contract: a spawn error propagates."""
         _patch_powershell(monkeypatch)
-        monkeypatch.setattr(config, "is_windows_side", lambda p: True)
-        monkeypatch.setattr(config, "win_7z", lambda: "C:/Tools/7z.exe")
+        monkeypatch.setattr(platform, "is_windows_side", lambda p: True)
+        monkeypatch.setattr(tool_registry, "win_7z", lambda: "C:/Tools/7z.exe")
 
         def denied(cmd, **kw):
             raise PermissionError("7z not executable")

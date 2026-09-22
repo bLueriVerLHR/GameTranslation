@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for tools/qc_build_kana.py (post-bake kana-residue acceptance QC).
 
 Fixtures are synthetic MZ trees - the point is to pin which residues must fail
 the build and which are by design, without shipping any game's data.
 """
-import io
 import json
 import os
 
@@ -24,7 +22,7 @@ DOT_ONLY = "\u624b\u30fb\u817f"                      # translated text + ・
 
 def _dump(path, payload):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(payload, handle, ensure_ascii=False)
 
 
@@ -39,10 +37,9 @@ def make_build(root, system=None, animation_name="Anim", note_body="",
     ])
     if plugins is not None:
         os.makedirs(os.path.join(root, "js"), exist_ok=True)
-        with io.open(os.path.join(root, "js", "plugins.js"), "w",
+        with open(os.path.join(root, "js", "plugins.js"), "w",
                      encoding="utf-8", newline="\n") as handle:
-            handle.write("var $plugins = %s;\n"
-                         % json.dumps(plugins, ensure_ascii=False))
+            handle.write(f"var $plugins = {json.dumps(plugins, ensure_ascii=False)};\n")
     return root
 
 
@@ -154,7 +151,7 @@ def test_internal_name_and_note_are_by_design(tmp_path):
 def test_allow_list_exempts_substring_and_regex(tmp_path):
     work = tmp_path / "work"
     work.mkdir()
-    with io.open(work / "allow_kana.json", "w", encoding="utf-8",
+    with open(work / "allow_kana.json", "w", encoding="utf-8",
                  newline="\n") as handle:
         json.dump({"items": [{"match": KANA_TEXT},
                              {"match": "re:^\u5b87\u4f50\u7f8e"}]}, handle)
@@ -177,7 +174,7 @@ def test_missing_allow_list_is_not_fatal(tmp_path):
 def test_broken_allow_list_warns_and_is_ignored(tmp_path):
     work = tmp_path / "work"
     work.mkdir()
-    with io.open(work / "allow_kana.json", "w", encoding="utf-8") as handle:
+    with open(work / "allow_kana.json", "w", encoding="utf-8") as handle:
         handle.write("{not json")
     build = make_build(str(tmp_path))
     make_map(build, [[401, 0, KANA_LINE]])
@@ -400,7 +397,7 @@ def test_json_output_is_machine_readable(tmp_path, capsys):
 
 def test_unreadable_data_file_is_reported(tmp_path, capsys):
     build = make_build(str(tmp_path))
-    with io.open(os.path.join(build, "data", "Broken.json"), "w",
+    with open(os.path.join(build, "data", "Broken.json"), "w",
                  encoding="utf-8") as handle:
         handle.write("{")
     findings = qc.scan(build)

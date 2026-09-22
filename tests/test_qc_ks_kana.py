@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for the kana-residual QC (tools/qc_ks_kana.py).
 
 The QC is what stands between a translator and a corrupted script, so both
@@ -37,7 +36,7 @@ def check(tmp_path, text):
         from kirikiri.ks_extract import (KANA, display_text, load_ks,  # noqa
                                          translatable)
         body, _enc = load_ks(path)
-        for idx, line in iter_display_lines(body):
+        for _idx, line in iter_display_lines(body):
             stripped = line.strip()
             if not translatable(stripped):
                 continue

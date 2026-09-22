@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """fix_literal_nl.py - repair real newlines back to literal \\n text in values
 whose keys are single-line with literal backslash-n (agent wrote physical
 lines for what is actually inline \\n control text).

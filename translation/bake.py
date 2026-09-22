@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """bake.py - write the translated library back into the game (MV / MZ data).
 
 This is the parent's half of the v2 workflow: the translator never touches
@@ -17,8 +16,8 @@ the ``parameters`` key in the object form and index ``2 + N`` of the array in
 the array form; both are handled, because a build ships whichever its last
 writer produced.
 
-Fonts: a Chinese translation needs Chinese glyphs.  Per the local strategy
-table (``docs/table/font_rollback.md``), an MV game is switched by pointing
+Fonts: a Chinese translation needs Chinese glyphs.  Per the local font policy
+(``docs/reference/local-layout.md``), an MV game is switched by pointing
 ``fonts/gamefont.css`` at a Simplified-Chinese font that also covers kana -
 the game's own ``standardFontFace`` keeps saying ``GameFont``, so no JS change
 is needed.  The original font file is never deleted.
@@ -27,7 +26,6 @@ Every file this module modifies is backed up into ``<work>/backup/<relpath>``
 first, so a bake is always reversible without touching the sources.
 """
 import glob
-import io
 import json
 import os
 import re
@@ -37,13 +35,38 @@ __all__ = ["BakeError", "UNIFIED_FONT", "parse_path", "set_by_path",
            "load_plugin_params", "save_plugin_params", "apply_font",
            "apply_font_mz", "unify_plugin_fonts", "bake", "parse_note_id",
            "set_note_payload", "parse_comment_id", "set_comment_payload"]
-
-#: Unified Simplified-Chinese font (local private asset, never committed).
+#: Unified Simplified-Chinese font asset name.  The asset itself is local
+#: private data, resolved at run time through the shared mapping (never a path
+#: literal in this module - see docs/reference/local-layout.md).
 UNIFIED_FONT = "GlowSansSC-Compressed-Regular.otf"
-FONT_SOURCE = os.path.join("docs", "table", "fonts", UNIFIED_FONT)
 FONT_CSS = os.path.join("fonts", "gamefont.css")
 
-# --- MZ unified-font strategy (docs/table/font_rollback.md) ---------------
+
+def _font_dir(repo_root=None):
+    """Directory of registered font assets (local private data).
+
+    Import is deferred so this module keeps working when it is imported by a
+    script that puts `tools/` on `sys.path` without a `rpgmaker` package; the
+    resolver is the single place that knows the physical layout.
+    """
+    from rpgmaker import settings
+    return settings.private_path("fonts", repo_root=repo_root)
+
+
+def _font_decision(policy, font_path, repo_root):
+    """Ask the font policy which font this build should use.
+
+    A policy failure that must stop the build is re-raised as ``BakeError`` so
+    the CLI reports it like any other refusal instead of a traceback.
+    """
+    from rpgmaker import fontpolicy
+
+    try:
+        return fontpolicy.decide_font(policy, fonts_dir=_font_dir(repo_root),
+                                      font_path=font_path)
+    except fontpolicy.FontPolicyError as error:
+        raise BakeError(str(error)) from error
+# --- MZ unified-font strategy (local font policy, see local-layout.md) ------
 # MZ loads `fonts/<advanced.mainFontFilename>` as the `rmmz-mainfont` family,
 # so an MV-style css rewrite does nothing here.  The standard strategy instead
 # declares the faces in `css/game.css` - Han/Latin from the SC font, kana from
@@ -51,7 +74,6 @@ FONT_CSS = os.path.join("fonts", "gamefont.css")
 # engine's own face never wins.  The original font files stay on disk, and
 # `numberFontFilename` is left alone (digit-only, still correct).
 UNIFIED_FONT_JP = "GlowSansJ-Compressed-Regular.otf"
-FONT_SOURCE_JP = os.path.join("docs", "table", "fonts", UNIFIED_FONT_JP)
 MZ_CSS = os.path.join("css", "game.css")
 MZ_SYSTEM = os.path.join("data", "System.json")
 MZ_MARKER = "/* unified-font-policy: MZ unicode-range split (translation bake) */"
@@ -166,7 +188,7 @@ def parse_note_id(sub_path):
     """``[12].note#itemCategory[0]`` -> ``('[12].note', 'itemCategory', 0)``."""
     match = _NOTE_ID_RE.match(sub_path)
     if not match:
-        raise BakeError("cannot parse note path %r" % (sub_path))
+        raise BakeError(f"cannot parse note path {sub_path!r}")
     return match.group("base"), match.group("tag"), int(match.group("index"))
 
 
@@ -178,7 +200,7 @@ def parse_comment_id(sub_path):
     """
     match = _COMMENT_ID_RE.match(sub_path)
     if not match:
-        raise BakeError("cannot parse comment payload path %r" % (sub_path,))
+        raise BakeError(f"cannot parse comment payload path {sub_path!r}")
     return (match.group("base"), int(match.group("head")),
             match.group("tag"), int(match.group("index")))
 
@@ -308,7 +330,7 @@ def _font_switch_text(game_dir):
     path = os.path.join(game_dir, "js", "plugins.js")
     if not os.path.isfile(path):
         return False
-    with io.open(path, encoding="utf-8", errors="replace") as handle:
+    with open(path, encoding="utf-8", errors="replace") as handle:
         return bool(MZ_FONT_SWITCH_PLUGIN.search(handle.read()))
 
 
@@ -349,7 +371,7 @@ def load_plugin_params(game_dir):
     path = os.path.join(game_dir, "js", "plugins.js")
     if not os.path.isfile(path):
         return None, "", ""
-    with io.open(path, encoding="utf-8", errors="replace") as handle:
+    with open(path, encoding="utf-8", errors="replace") as handle:
         source = handle.read()
     match = _PLUGINS_RE.search(source)
     if not match:
@@ -357,7 +379,7 @@ def load_plugin_params(game_dir):
     try:
         plugins = json.loads(match.group(1))
     except ValueError as error:
-        raise BakeError("js/plugins.js is not parseable: %s" % error)
+        raise BakeError(f"js/plugins.js is not parseable: {error}") from error
     return (plugins, source[:match.start(1)],
             source[match.end(1):])
 
@@ -366,7 +388,7 @@ def save_plugin_params(game_dir, plugins, prefix, suffix):
     """Write ``js/plugins.js`` back (compact JSON, UTF-8, LF, no BOM)."""
     body = json.dumps(plugins, ensure_ascii=False, separators=(",", ":"))
     path = os.path.join(game_dir, "js", "plugins.js")
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(prefix + body + suffix)
     return path
 
@@ -398,8 +420,7 @@ def unify_plugin_fonts(game_dir, family="GameFont", backup_dir=None):
                     continue
                 if family in value and len(value.split(",")) == 1:
                     continue
-                details.append("%s / %s: %r -> %r"
-                               % (plugin.get("name"), key, value, family))
+                details.append("{} / {}: {!r} -> {!r}".format(plugin.get("name"), key, value, family))
                 params[key] = family
                 changed += 1
         if changed:
@@ -409,16 +430,16 @@ def unify_plugin_fonts(game_dir, family="GameFont", backup_dir=None):
     js_font = re.compile(r"font-family\s*:\s*([^;}]+);")
     for path in sorted(glob.glob(os.path.join(game_dir, "js", "plugins",
                                              "*.js"))):
-        with io.open(path, encoding="utf-8", errors="replace") as handle:
+        with open(path, encoding="utf-8", errors="replace") as handle:
             source = handle.read()
-        replaced, count = js_font.subn("font-family: %s;" % family, source)
+        replaced, count = js_font.subn(f"font-family: {family};", source)
         if not count or replaced == source:
             # Already unified: replacing a value with itself would report a
             # change that did not happen, which makes "is it unified?"
             # unanswerable from the report.
             continue
         _backup_for(game_dir, path, source, backup_dir)
-        with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(replaced)
         rel = os.path.relpath(path, game_dir).replace(os.sep, "/")
         js_files.append(rel)
@@ -439,12 +460,12 @@ def _backup_for(game_dir, path, old_text, backup_dir=None):
         target = os.path.join(backup_dir, rel)
         os.makedirs(os.path.dirname(target), exist_ok=True)
         if not os.path.isfile(target):
-            with io.open(target, "w", encoding="utf-8", newline="\n") as h:
+            with open(target, "w", encoding="utf-8", newline="\n") as h:
                 h.write(old_text)
         return rel
     sidecar = path + ".prefont"
     if not os.path.isfile(sidecar):
-        with io.open(sidecar, "w", encoding="utf-8", newline="\n") as handle:
+        with open(sidecar, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(old_text)
     return rel
 
@@ -465,23 +486,22 @@ def apply_font(game_dir, font_path=None, repo_root=None):
     warnings = []
     css_path = os.path.join(game_dir, FONT_CSS)
     if not os.path.isfile(css_path):
-        return [], ["no %s (not an MV build?)" % FONT_CSS]
-    font_path = font_path or os.path.join(repo_root or os.getcwd(),
-                                          FONT_SOURCE)
+        return [], [f"no {FONT_CSS} (not an MV build?)"]
+    font_path = font_path or os.path.join(_font_dir(repo_root), UNIFIED_FONT)
     if not os.path.isfile(font_path):
-        return [], ["unified font asset missing: %s" % font_path]
-    with io.open(css_path, encoding="utf-8", errors="replace") as handle:
+        return [], [f"unified font asset missing: {font_path}"]
+    with open(css_path, encoding="utf-8", errors="replace") as handle:
         css = handle.read()
     if UNIFIED_FONT in css:
         return [], []
     replaced, count = re.subn(r'src:\s*url\((?:"|\')?[^"\')]+(?:"|\')?\)',
-                              'src: url("%s")' % UNIFIED_FONT, css)
+                              f'src: url("{UNIFIED_FONT}")', css)
     if not count:
-        return [], ["%s has no @font-face src to switch" % FONT_CSS]
+        return [], [f"{FONT_CSS} has no @font-face src to switch"]
     destination = os.path.join(game_dir, "fonts", UNIFIED_FONT)
     os.makedirs(os.path.dirname(destination), exist_ok=True)
     shutil.copyfile(font_path, destination)
-    with io.open(css_path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(css_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(replaced)
     return [FONT_CSS, os.path.join("fonts", UNIFIED_FONT)], warnings
 
@@ -491,23 +511,22 @@ def apply_font_mz(game_dir, font_path=None, repo_root=None, jp_path=None):
 
     Returns ``(changed_files, warnings)``.  A font-switch plugin is honoured by
     switching only ``data/System.json`` (its runtime ``FontFace`` registration
-    would override any CSS split) - that is the documented rule in
-    ``docs/table/font_rollback.md``.
+    would override any CSS split) - that is the documented rule in the local
+    font policy (``docs/reference/local-layout.md``).
     """
-    root = repo_root or os.getcwd()
     system_path = os.path.join(game_dir, MZ_SYSTEM)
     if not os.path.isfile(system_path):
-        return [], ["no %s (not an MZ build?)" % MZ_SYSTEM.replace(os.sep, "/")]
-    font_path = font_path or os.path.join(root, FONT_SOURCE)
+        return [], ["no {} (not an MZ build?)".format(MZ_SYSTEM.replace(os.sep, "/"))]
+    font_path = font_path or os.path.join(_font_dir(repo_root), UNIFIED_FONT)
     if not os.path.isfile(font_path):
-        return [], ["unified font asset missing: %s" % font_path]
-    jp_path = jp_path or os.path.join(root, FONT_SOURCE_JP)
+        return [], [f"unified font asset missing: {font_path}"]
+    jp_path = jp_path or os.path.join(_font_dir(repo_root), UNIFIED_FONT_JP)
     jp_asset = os.path.isfile(jp_path)
 
     plugins_path = os.path.join(game_dir, "js", "plugins.js")
     font_plugin = os.path.isfile(plugins_path) and font_switch_plugin(game_dir)
 
-    with io.open(system_path, encoding="utf-8-sig") as handle:
+    with open(system_path, encoding="utf-8-sig") as handle:
         system = json.load(handle)
     advanced = system.setdefault("advanced", {})
     warnings = []
@@ -533,7 +552,8 @@ def apply_font_mz(game_dir, font_path=None, repo_root=None, jp_path=None):
         warnings.append(
             "a font-switch plugin is enabled: switching only "
             "data/System.json (its runtime FontFace would override a CSS "
-            "split) - see docs/table/font_rollback.md")
+            "split) - see the local font policy in "
+            "docs/reference/local-layout.md")
         target = UNIFIED_FONT
     else:
         target = ""
@@ -541,31 +561,29 @@ def apply_font_mz(game_dir, font_path=None, repo_root=None, jp_path=None):
         if not os.path.isfile(css_path):
             warnings.append("no css/game.css: could not declare the split faces")
         else:
-            with io.open(css_path, encoding="utf-8", errors="replace") as h:
+            with open(css_path, encoding="utf-8", errors="replace") as h:
                 css = h.read()
             if MZ_MARKER not in css:
                 blocks = [MZ_MARKER]
                 for family in MZ_FAMILIES:
-                    blocks.append('@font-face {\n    font-family: %s;\n'
-                                  '    src: url("../fonts/%s");\n}'
-                                  % (family, UNIFIED_FONT))
+                    blocks.append(f'@font-face {{\n    font-family: {family};\n'
+                                  f'    src: url("../fonts/{UNIFIED_FONT}");\n}}')
                     if jp_asset:
-                        blocks.append('@font-face {\n    font-family: %s;\n'
-                                      '    src: url("../fonts/%s");\n'
-                                      '    unicode-range: %s;\n}'
-                                      % (family, UNIFIED_FONT_JP, MZ_KANA_RANGE))
-                with io.open(css_path, "w", encoding="utf-8",
+                        blocks.append(f'@font-face {{\n    font-family: {family};\n'
+                                      f'    src: url("../fonts/{UNIFIED_FONT_JP}");\n'
+                                      f'    unicode-range: {MZ_KANA_RANGE};\n}}')
+                with open(css_path, "w", encoding="utf-8",
                              newline="\n") as h:
                     h.write(css.rstrip("\n") + "\n\n" + "\n".join(blocks) + "\n")
                 changed.append(MZ_CSS.replace(os.sep, "/"))
             if not jp_asset:
-                warnings.append("JP fallback font missing: %s (kana face "
-                                "not declared)" % jp_path)
+                warnings.append(f"JP fallback font missing: {jp_path} (kana face "
+                                "not declared)")
 
     old_name = advanced.get("mainFontFilename")
     if old_name != target:
         advanced["mainFontFilename"] = target
-        with io.open(system_path, "w", encoding="utf-8", newline="\n") as h:
+        with open(system_path, "w", encoding="utf-8", newline="\n") as h:
             h.write(json.dumps(system, ensure_ascii=False, separators=(",", ":")))
         changed.append(MZ_SYSTEM.replace(os.sep, "/"))
     return changed, warnings
@@ -582,48 +600,40 @@ def _backup(work_dir, game_dir, rel):
 
 
 def _write_json(path, payload):
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False,
                                 separators=(",", ":")))
 
 
-def bake(game_dir, work_dir, apply_unified_font=True, repo_root=None,
-         font_path=None, dry_run=False, font_only=False, write_kv=True):
-    """Write every translated key back into the game; return a report.
+def _apply_values(game_dir, values, work_dir, dry_run):
+    """Write each translated key into its game file; return what changed.
 
-    With ``dry_run`` nothing is written and nothing is backed up: the report
-    says what *would* change, which is how a build is inspected before touching
-    it.
+    Returns ``(written, applied, skipped, plugin_edit)`` where `plugin_edit` is
+    ``(plugins, prefix, suffix)`` when `js/plugins.js` was touched (its
+    parameters are edited in memory and saved once at the end, not per key),
+    else None.
     """
-    values = {}
-    if not font_only:
-        ids_path = os.path.join(work_dir, "translated_ids.json")
-        if not os.path.isfile(ids_path):
-            raise BakeError("translated_ids.json missing in %s (run to-json)"
-                            % work_dir)
-        with io.open(ids_path, encoding="utf-8") as handle:
-            values = json.load(handle)
-
     by_file = {}
     for key_id, text in values.items():
         rel, _, path = key_id.partition("#")
         by_file.setdefault(rel, {})[path] = text
 
     written, applied, skipped = [], 0, []
-    plugins = prefix = suffix = None
+    plugin_edit = None
     for rel, entries in sorted(by_file.items()):
         if rel == "js/plugins.js":
             plugins, prefix, suffix = load_plugin_params(game_dir)
+            plugin_edit = (plugins, prefix, suffix)
             for path, text in entries.items():
                 tokens = parse_path(path)
                 index = tokens[0][1]
                 key = tokens[-1][0]
                 if plugins is None or index is None or index >= len(plugins):
-                    skipped.append((("%s#%s" % (rel, path)), "plugin missing"))
+                    skipped.append((f"{rel}#{path}", "plugin missing"))
                     continue
                 params = plugins[index].get("parameters") or {}
                 if key not in params:
-                    skipped.append((("%s#%s" % (rel, path)), "param missing"))
+                    skipped.append((f"{rel}#{path}", "param missing"))
                     continue
                 params[key] = text
                 applied += 1
@@ -632,7 +642,7 @@ def bake(game_dir, work_dir, apply_unified_font=True, repo_root=None,
         if not os.path.isfile(path):
             skipped.append((rel, "file missing"))
             continue
-        with io.open(path, encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
         changed = False
         for sub_path, text in entries.items():
@@ -644,45 +654,95 @@ def bake(game_dir, work_dir, apply_unified_font=True, repo_root=None,
                 else:
                     ok = set_by_path(payload, parse_path(sub_path), text)
             except BakeError as error:
-                skipped.append(("%s#%s" % (rel, sub_path), str(error)))
+                skipped.append((f"{rel}#{sub_path}", str(error)))
                 continue
             if ok:
                 applied += 1
                 changed = True
             else:
-                skipped.append(("%s#%s" % (rel, sub_path), "path not found"))
+                skipped.append((f"{rel}#{sub_path}", "path not found"))
         if changed:
             if not dry_run:
                 _backup(work_dir, game_dir, rel)
                 _write_json(path, payload)
             written.append(rel)
+    return written, applied, skipped, plugin_edit
 
-    font_files, warnings, font_details = ([], [], [])
-    if apply_unified_font and not dry_run:
-        font_files, warnings = apply_font(game_dir, font_path=font_path,
-                                          repo_root=repo_root)
-        for rel in font_files:
-            if rel != os.path.join("fonts", UNIFIED_FONT):
-                _backup(work_dir, game_dir, rel)
-        changed, js_files, font_details = unify_plugin_fonts(
-            game_dir, backup_dir=os.path.join(work_dir, "backup"))
-        if changed:
-            _backup(work_dir, game_dir, "js/plugins.js")
-        font_files += js_files
-        for rel in js_files:
+
+def _apply_font(game_dir, work_dir, apply_unified_font, dry_run, font_policy,
+                font_path, repo_root):
+    """Apply the unified-font policy; return ``(files, warnings, report, details)``.
+
+    Only the ``required`` policy can write anything: ``auto`` is report-only by
+    design, so a caller that says nothing cannot have font files rewritten
+    under it (see docs/reference/local-layout.md).
+    """
+    if not apply_unified_font:
+        return [], [], {}, []
+    if dry_run:
+        return [], ["dry run: unified font not installed"], {}, []
+    decision = _font_decision(font_policy, font_path, repo_root)
+    font_details = [decision.detail]
+    warnings = list(decision.warnings)
+    if not decision.apply:
+        return [], warnings, {"policy": decision.policy,
+                              "source": decision.source,
+                              "applied": False}, font_details
+    font_files, apply_warnings = apply_font(
+        game_dir, font_path=decision.path, repo_root=repo_root)
+    warnings += apply_warnings
+    for rel in font_files:
+        if rel != os.path.join("fonts", UNIFIED_FONT):
             _backup(work_dir, game_dir, rel)
-        report_font = {"params": changed, "files": js_files}
-    elif apply_unified_font:
-        warnings = ["dry run: unified font not installed"]
-        report_font = {}
-    else:
-        report_font = {}
-    if plugins is not None and not dry_run:
+    changed, js_files, details = unify_plugin_fonts(
+        game_dir, backup_dir=os.path.join(work_dir, "backup"))
+    if changed:
         _backup(work_dir, game_dir, "js/plugins.js")
-        save_plugin_params(game_dir, plugins, prefix, suffix)
-        written.append("js/plugins.js")
-    elif plugins is not None and not font_only:
-        written.append("js/plugins.js (dry run)")
+    font_files += js_files
+    for rel in js_files:
+        _backup(work_dir, game_dir, rel)
+    font_details += details
+    report = {"params": changed, "files": js_files,
+              "policy": decision.policy, "source": decision.source}
+    return font_files, warnings, report, font_details
+
+
+def bake(game_dir, work_dir, apply_unified_font=True, repo_root=None,
+         font_path=None, dry_run=False, font_only=False, write_kv=True,
+         font_policy="auto"):
+    """Write every translated key back into the game; return a report.
+
+    With ``dry_run`` nothing is written and nothing is backed up: the report
+    says what *would* change, which is how a build is inspected before touching
+    it.
+
+    ``font_policy`` decides whether the project font is applied at all; the
+    library default is the report-only ``auto`` so a caller that says nothing
+    cannot have files rewritten under it.  A delivery run passes ``required``
+    (the CLI default), which fails loudly rather than shipping a build whose
+    Chinese text renders as boxes.
+    """
+    values = {}
+    if not font_only:
+        ids_path = os.path.join(work_dir, "translated_ids.json")
+        if not os.path.isfile(ids_path):
+            raise BakeError(f"translated_ids.json missing in {work_dir} (run to-json)")
+        with open(ids_path, encoding="utf-8") as handle:
+            values = json.load(handle)
+
+    written, applied, skipped, plugin_edit = _apply_values(
+        game_dir, values, work_dir, dry_run)
+    font_files, warnings, report_font, font_details = _apply_font(
+        game_dir, work_dir, apply_unified_font, dry_run, font_policy, font_path,
+        repo_root)
+    if plugin_edit is not None:
+        plugins, prefix, suffix = plugin_edit
+        if not dry_run:
+            _backup(work_dir, game_dir, "js/plugins.js")
+            save_plugin_params(game_dir, plugins, prefix, suffix)
+            written.append("js/plugins.js")
+        elif not font_only:
+            written.append("js/plugins.js (dry run)")
 
     kv_path = None
     if write_kv and not dry_run and not font_only:

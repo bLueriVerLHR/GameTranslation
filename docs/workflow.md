@@ -4,7 +4,8 @@
 用本工具库的 `pipeline.py` 命令行。
 
 游戏特定特征（引擎+特征案例、体量、坑）**不写进本文件**，一律记录在
-本地 `docs/table/<Game>/notes.md`（gitignored，不入库，仅 owner 维护）。
+该游戏的**本地工作区笔记**（gitignored，不入库，仅 owner 维护；工作区位置
+与解析顺序见 `docs/reference/local-layout.md`）。
 
 ---
 
@@ -17,21 +18,25 @@
   视频转码（VP9+Opus）也是 PyAV 在进程内完成——**不再需要 ffprobe，视频也
   不再需要 ffmpeg CLI**。
 - **不再需要 Node.js**：asar 解包用 `asar` 包，JS 语法检查用 tree-sitter。
-- 7-Zip 仅在 Windows 侧桥接时需要；同侧打包/解包用 `py7zr`（见
-  `rpgmaker/archive.py`）。
-- **ripgrep（`rg`）是可选的**：工具库代码里**不调用** `rg`（内容搜索已改成
-  纯 Python 实现，`rpgmaker/clean.py`）；它只在人工/agent 手动检索时方便
-  （如预扫插件）。装了会出现在 `doctor` 报告里，没装也不影响任何步骤。
+- 7-Zip 仅在 Windows 侧桥接时需要（`win_7z` / `SEVENZ_WIN`）；同侧打包/解包
+  用 `py7zr`（见 `rpgmaker/archive.py`），**注册表里没有同侧 `7z` 条目**。
+- **ripgrep（`rg`）不在注册表里**：工具库代码里**不调用** `rg`（内容搜索已
+  改成纯 Python 实现，`rpgmaker/clean.py`）；它只在人工/agent 手动检索时
+  方便（如预扫插件）。因此 `TOOLS` 里不注册它（无调用者的解析器条目是死
+  代码，见 `docs/experience-misc.md` §10.4），装不装都不影响任何步骤。
 - PowerShell 5.1（无 `?.`、无 `&&`；用 `;` / `if ($?)`）。
 - **工具解析（2026-08 重设，无需手工配置）**：所有外部程序由
-  `rpgmaker/config.py` 的 `TOOLS` 表 + `resolve_tool()` 统一解析，顺序为
-  **环境变量 → 本地配置覆盖（可选）→ 自动探测常见安装位置 → PATH**。
+  `rpgmaker/tool_registry.py` 的 `TOOLS` 表 + `resolve_tool()` 统一解析，
+  顺序为 **环境变量 → 本地配置覆盖（可选）→ 自动探测常见安装位置 →
+  PATH**。每条条目带 `ToolStatus` 分级（required / optional / dev-only /
+  test-only / windows-bridge），`doctor` 据此把缺失分成 `[MISS]` 与
+  `[WARN]`。
   探测覆盖 WinGet Packages / Scoop / Chocolatey / `Program Files`
   （`7-Zip*`、`Git`、`nodejs`）、各发行版 nvm 目录、POSIX 的
-  `/usr/bin`、`/opt`、`~/.local/bin` 与项目内 `docs/table/3rd/`。
+  `/usr/bin`、`/opt`、`~/.local/bin` 与项目内本地工具目录。
   新增一个程序 = 在 `TOOLS` 里加一条，不需要改其他文件。
-- **本机环境配置是「可选覆盖层」**：本地私有文件
-  `docs/table/env_config.json`（gitignored，不入库）**只用于覆盖**
+- **本机环境配置是「可选覆盖层」**：本地私有配置文件（gitignored，不入库，
+  位置见 `docs/reference/local-layout.md`）**只用于覆盖**
   探测结果——写交付目录（成品游戏 / 压缩包 / 系统临时文件夹 / Windows
   侧临时目录）、工具路径、venv。文件不存在也能跑（探测 + 内置默认值
   接管），`pipeline.py doctor` / `doctor --json` 会打印每个程序实际
@@ -457,8 +462,8 @@ powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<g
 
 **最后**压缩，且目录干净后：
 
-- 删除广告/推广文件（推广/注册链接类文案 — 具体文件名见本地
-  `docs/table/ad_keywords.md`）。
+- 删除广告/推广文件（推广/注册链接类文案 — 具体文件名见本地广告关键词表，
+  位置见 `docs/reference/local-layout.md`）。
 - 删除不必要的外部工具脚本：MTool 注入残留 —
   `与工具一同启动.bat`、`从游戏中移除工具文件.bat`、`winmm.dll`、
   `version.dll`、`injectPath`，以及游戏本身不引用的根 `<title>.json`
@@ -480,8 +485,8 @@ powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<g
 ## 8. 坑回顾
 
 - 密码保护 RAR：`7z x` 交互式提示会挂起命令行。用 `-p<pass>` 传密码。
-  不带密码文件名可见（`7z l` 可用），但解压失败。常见密码见本地
-  `docs/table/passwords.md`（gitignored）。
+  不带密码文件名可见（`7z l` 可用），但解压失败。常见密码见本地密码表
+  （gitignored，位置见 `docs/reference/local-layout.md`）。
 - **Repacker 广告壳插件：** 每个构建都扫 —
   `rg -l "axios|pako|_0x[0-9a-f]{4,}" js/plugins/*.js`。命中通常是假
   "插件"纯广告代码（内联 axios + pako + 混淆载荷；见
@@ -599,11 +604,10 @@ powershell.exe -NoProfile -Command "Remove-Item -Recurse -Force -LiteralPath '<g
 
 中文/拉丁 → 打包的中文字体（`--cjk-font` 指定）；**日文 → 打包的日文
 fallback 字体**（`--jp-font` 指定；未配置时回退到游戏原始字体）。字体
-解析顺序（环境无关，2026-08 更新）：`CJK_FONT_PATH` / `JP_FONT_PATH`
-环境变量 → 本地 `docs/table/local_font_path.txt` 首/二行（支持相对
-`docs/table/` 的路径）→ **自动发现 `docs/table/fonts/`**（`GlowSansSC*`
-作中文、`GlowSansJ*` 作日文回退）→ 无字体时策略整体跳过。字体偏好
-只存在本地 `docs/table/`（gitignored），仓库代码不含字体名。实现
+解析顺序（环境无关）：环境变量 → 本地字体策略与已登记字体（见
+`docs/reference/local-layout.md` §4–5）→ **按命名约定自动识别中/日字体**
+→ 无字体时策略整体跳过。字体偏好
+只存在本地（gitignored），仓库代码不含字体名。实现
 （`translate_rpgmaker.py apply_font_policy`，幂等可重跑）：
 
 - **MZ**（有 `js/rmmz_managers.js`）：`System.json`

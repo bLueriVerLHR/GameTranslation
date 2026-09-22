@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Compress a JoiPlay folder into a `.7z` archive (7z + ZStandard).
 
 Thin wrapper over `rpgmaker/archive.py`, which owns the archive format and

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for the parallelised KAG asset pass (kirikiri/kag/assets.py).
 
 The image work (TLG/BMP/region -> PNG) moved into worker processes so it no
@@ -24,7 +23,6 @@ from kirikiri.kag import assets  # noqa: E402
 FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "fixtures", "tlg")
 REAL_TLG = "a_t002a.tlg"
-REAL_BMP = "a_t002a.bmp"
 
 
 def _digest(path):
@@ -49,11 +47,16 @@ def _make_source(tmp_path):
     """A miniature unpacked KAG3 tree covering every job kind.
 
     - two real TLG fixture images (the expensive, CPU-bound path),
-    - one real BMP fixture (PIL),
+    - one BMP written here with PIL (the BMP path),
     - one indexed province image (`_p.png`, the region rewrite),
     - one broken TLG (the per-image failure fallback),
     - one plain asset (the thread-pooled copy path),
     - one nested subdirectory (recursive walk).
+
+    The BMP used to be read from the GARbro fixture directory; it is written
+    here instead so this pass does not depend on a 3 MB reference image it
+    never compares against (only the *decoding* path matters, and any valid
+    BMP exercises it).
     """
     if not os.path.isfile(os.path.join(FIXTURE_DIR, REAL_TLG)):
         pytest.skip("no TLG fixtures present (tests/fixtures/tlg/)")
@@ -65,14 +68,13 @@ def _make_source(tmp_path):
         open(os.path.join(FIXTURE_DIR, REAL_TLG), "rb").read())
     (root / "fgimage" / "hero2.tlg").write_bytes(
         open(os.path.join(FIXTURE_DIR, REAL_TLG), "rb").read())
-    (root / "bgimage" / "telop.bmp").write_bytes(
-        open(os.path.join(FIXTURE_DIR, REAL_BMP), "rb").read())
     (root / "fgimage" / "broken.tlg").write_bytes(b"TLG")     # undecodable
     (root / "bgm" / "theme.ogg").write_bytes(b"OggS-fake")    # plain copy
 
     pil = pytest.importorskip("PIL")
     from PIL import Image
     assert pil  # silence the linter about the unused import binding
+    Image.new("RGB", (8, 6), (10, 20, 30)).save(str(root / "bgimage" / "telop.bmp"))
     Image.new("P", (4, 3), 2).save(str(root / "fgimage" / "map_p.png"))
     return root
 
@@ -112,9 +114,23 @@ class TestParallelEqualsSerial:
 
     def test_default_worker_count_comes_from_runtime(self, tmp_path, monkeypatch):
         """No hardcoded default: the pool size is the machine's physical cores
-        (capped by the job count)."""
+        (capped by the job count).
+
+        The CPU/RAM/disk inputs are pinned: `auto_workers` is RAM-bounded (a
+        `tlg` worker is estimated at 128 MB), so asserting against the live
+        `physical_cpu_count()` made this test depend on how much free memory
+        the machine happened to have - it passed on an idle box and failed
+        under `-n auto` or alongside another suite.  Measured before the fix:
+        `assert 7 == 8`.
+        """
         seen = {}
         real = assets.runtime.resolve_workers
+
+        monkeypatch.setattr(assets.runtime, "physical_cpu_count", lambda: 8)
+        monkeypatch.setattr(assets.runtime, "memory_available_bytes",
+                            lambda: 64 * 1024 ** 3)
+        monkeypatch.setattr(assets.runtime, "disk_is_rotational",
+                            lambda p: False)
 
         def spy(kind, explicit=None, path=None):
             n = real(kind, explicit, path=path)
@@ -124,7 +140,7 @@ class TestParallelEqualsSerial:
         monkeypatch.setattr(assets.runtime, "resolve_workers", spy)
         root = _make_source(tmp_path)
         _run(root, tmp_path / "out", None)
-        assert seen["tlg"] == assets.runtime.physical_cpu_count()
+        assert seen["tlg"] == 8
         assert seen["copy"] == assets.runtime.auto_workers("copy")
 
 
@@ -151,13 +167,18 @@ class TestImageJobAccounting:
         stats = Counter()
         bad = tmp_path / "broken.tlg"
         bad.write_bytes(b"TLG")
+        dst = tmp_path / "data" / "image" / "b.png"
+        dst.parent.mkdir(parents=True)
         with caplog.at_level("WARNING", logger="kirikiri.kag.assets"):
             assets._apply_image_result(
-                stats, str(bad), *assets._image_job(str(bad), str(tmp_path / "b.png"),
-                                                    "tlg"))
+                stats, str(bad), str(dst),
+                *assets._image_job(str(bad), str(dst), "tlg"))
         assert stats["tlg_fail"] == 1
         assert any("tlg convert failed" in r.message for r in caplog.records), \
             "the WARN text is part of the owner's workflow (grep-able log)"
+        # The message names the source relative to the data dir, not the CWD:
+        # a bare relpath here raised ValueError on the Windows CI runner.
+        assert any("broken.tlg" in r.message for r in caplog.records)
 
     def test_kind_labels_cover_every_image_kind(self):
         assert set(assets._FAIL_LABEL) == set(assets.IMAGE_KINDS)

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Transcode an archive's .wmv/.mpg videos to WebM (VP9 + Opus).
 
 Why VP9 and not AV1: the target is a browser/JoiPlay build, and VP9 decode is
@@ -29,7 +28,7 @@ import shutil
 import sys
 import tempfile
 import time
-from typing import Annotated, Optional
+from typing import Annotated
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -93,27 +92,26 @@ def transcode_one(entry, xp3, out_dir, crf, cpu_used):
         except Exception as exc:                       # noqa: BLE001
             _drop_bad_output(dest)
             return (name, 0, time.time() - start,
-                    "FAILED: %s: %s" % (type(exc).__name__, exc))
+                    f"FAILED: {type(exc).__name__}: {exc}")
         elapsed = time.time() - start
 
         after = media.probe_video(dest)
         if "error" in after:
             _drop_bad_output(dest)
             return (name, 0, elapsed,
-                    "FAILED: output not decodable: %s" % after["error"])
+                    "FAILED: output not decodable: {}".format(after["error"]))
         ok, reason = media.decode_ok(dest)
         if not ok:
             _drop_bad_output(dest)
-            return (name, 0, elapsed, "FAILED: incomplete output: %s" % reason)
+            return (name, 0, elapsed, f"FAILED: incomplete output: {reason}")
         src_dur = float(before.get("duration") or 0)
         dur = float(after.get("duration") or 0)
         if src_dur and dur < src_dur - 1.0:
             return (name, os.path.getsize(dest), elapsed,
-                    "WARN: shorter than source (%.1fs vs %.1fs)"
-                    % (dur, src_dur))
+                    f"WARN: shorter than source ({dur:.1f}s vs {src_dur:.1f}s)")
         return (name, os.path.getsize(dest), elapsed, "ok")
     except OSError as exc:
-        return (name, 0, 0.0, "FAILED: %s" % exc)
+        return (name, 0, 0.0, f"FAILED: {exc}")
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -139,7 +137,7 @@ def cmd(xp3: Annotated[str, cliutil.Argument(help="xp3 archive holding the movie
             "--crf", help="VP9 constant-quality level (lower = better/bigger)")] = 32,
         cpu_used: Annotated[int, cliutil.Option(
             "--cpu-used", help="VP9 speed 0-8 (lower = slower/smaller)")] = 4,
-        jobs: Annotated[Optional[int], cliutil.Option(
+        jobs: Annotated[int | None, cliutil.Option(
             "--jobs", help="videos encoded in parallel (default: half the "
                     "physical cores, because each VP9 encoder is itself "
                     "multi-threaded)")] = None,
@@ -147,6 +145,9 @@ def cmd(xp3: Annotated[str, cliutil.Argument(help="xp3 archive holding the movie
         quiet: cliutil.Quiet = False,
         log_file: cliutil.LogFile = None) -> int:
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("transcode video", xp3=xp3, out=out)
     jobs = runtime.resolve_workers("video", jobs, path=out)
 
     entries = dedupe_by_output(
@@ -175,7 +176,7 @@ def cmd(xp3: Annotated[str, cliutil.Argument(help="xp3 archive holding the movie
                 for f in os.listdir(out) if f.endswith(".webm"))
     print("\ntranscoded %d file(s) in %.1fs" % (len(entries),
                                                 time.time() - started))
-    print("output: %.1f MB in %s" % (total / 1048576, out))
+    print(f"output: {total / 1048576:.1f} MB in {out}")
     for key, count in stats.most_common():
         print("  %-8s %d" % (key, count))
     return 1 if stats.get("FAILED") else 0

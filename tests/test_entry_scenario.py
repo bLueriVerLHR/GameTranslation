@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Root cause of two real black-screen ports: the entry scenario was dropped.
 
 `kirikiri/kag/cli.py` used to scan only the tree root plus `scenario/`, so
@@ -53,7 +52,7 @@ class TestEntryGate:
         (build / "data" / "scenario").mkdir(parents=True)
         (build / "index.html").write_text(
             '<html><body><input type="hidden" id="first_scenario_file" '
-            'value="%s"></body></html>' % entry_value, encoding="utf-8")
+            f'value="{entry_value}"></body></html>', encoding="utf-8")
         for name in scenarios:
             (build / "data" / "scenario" / name).write_text(";x\n",
                                                             encoding="utf-8")

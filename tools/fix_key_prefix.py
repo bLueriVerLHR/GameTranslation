@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """fix_key_prefix.py - repair agent output where values start with the key
 text ("original line + translated line", e.g. V = K + "\\n" + translation).
 Strips the leading key from every affected value in a chunks dir.

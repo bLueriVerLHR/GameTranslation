@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for gen_translation_shards.py chunk sizing / transcript.
 
 Covers: transcript output stays one physical line per entry even for
@@ -87,7 +86,7 @@ def test_estimator_matches_written_size():
     for i in range(30):
         ctx["k%d" % i] = {"where": "Map00%d" % (i % 3),
                           "window": ["ctx%d" % (i + j) for j in range(2)]}
-    for i in range(20):
+    for _i in range(20):
         ml = "row1\nrow2\nrow3"
         ctx[ml] = {"where": "Map010", "window": ["w"]}
     keys = ["k%d" % i for i in range(30)] + ["row1\nrow2\nrow3"] * 20
@@ -199,10 +198,8 @@ class TestRandomSampleBuckets:
     def test_random_build_buckets_constraints(self):
         random.seed(20260851)
         for _ in range(25):
-            map_keys = []
-            for m in range(random.randrange(1, 8)):
-                map_keys.append(("Map%03d" % m,
-                                 self._rand_keys(random.randrange(0, 25))))
+            map_keys = [("Map%03d" % m, self._rand_keys(random.randrange(0, 25)))
+                        for m in range(random.randrange(1, 8))]
             max_chars = random.randrange(2, 40)
             buckets = gts.build_buckets(map_keys, max_chars)
             flat = [k for b in buckets for _l, ks in b for k in ks]
@@ -234,7 +231,7 @@ class TestRandomSampleBuckets:
                 keys.append("長" * (max_chars + 5))  # overlong -> own bucket
             if random.random() < 0.4 and keys:
                 keys.append("ctrl\\N[1] and\nnewline")  # escape round-trip
-            num = gts._write_split(chunks_dir, 0, {k: "" for k in keys},
+            num = gts._write_split(chunks_dir, 0, dict.fromkeys(keys, ""),
                                    "random", 0, max_chars, "", None, None,
                                    {}, _Args())
             buckets = gts._split_by_len(keys, max_chars)

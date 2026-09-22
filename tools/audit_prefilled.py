@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """audit_prefilled.py - Audit an MTool-exact-hit prefilled file BEFORE merging:
 flag values that still contain kana lines (multi-line block keys where one
 line missed the dict), so leftover lines are hand-translated early instead of
@@ -19,7 +18,7 @@ from typing import Annotated
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
 sys.path.insert(0, _HERE)                   # sibling tools
-import japanese_utils  # noqa: E402
+from rpgmaker import japanese as japanese_utils  # noqa: E402
 from rpgmaker import cliutil  # noqa: E402
 
 KANA = japanese_utils.KANA
@@ -40,7 +39,7 @@ def cmd(prefilled: Annotated[str, cliutil.Argument(
         if len(vl) != len(kl):
             residual.append((k, v, "line-count mismatch"))
             continue
-        for i, (kk, vv) in enumerate(zip(kl, vl)):
+        for i, (kk, vv) in enumerate(zip(kl, vl, strict=True)):
             if KANA.search(vv) and not KANA.search(kk):
                 residual.append((k, v, "line %d: %s" % (i, vv[:40])))
                 break

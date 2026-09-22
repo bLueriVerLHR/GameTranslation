@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """archive.py - the single 7z surface: create / test / list / extract.
 
 Two backends, chosen by *where the files are*, never by preference:
@@ -30,7 +29,7 @@ choice is invisible to callers and to the owner's tooling.
 import logging
 import os
 
-from . import config
+from . import platform
 
 log = logging.getLogger("rpgmaker.archive")
 
@@ -59,6 +58,15 @@ def filters_for(level=DEFAULT_LEVEL):
     return [{"id": py7zr.FILTER_ZSTD, "level": int(level)}]
 
 
+def output_ref(path):
+    """Apply historical relative-output suffix semantics before resolution."""
+    owned = platform.ref(path)
+    requested = str(owned)
+    if not requested.endswith(SUFFIX) and not os.path.isabs(requested):
+        return platform.PathRef(requested + SUFFIX, owned.side)
+    return owned
+
+
 def create(folder, archive, level=DEFAULT_LEVEL, threads=None, wrapper=True,
            root=None):
     """Create `archive` (7z + zstd) from `folder`; returns the archive path.
@@ -77,13 +85,13 @@ def create(folder, archive, level=DEFAULT_LEVEL, threads=None, wrapper=True,
     equivalent for writing (it measured faster than 7z.exe -mmt anyway), so
     it only controls multiprocessing on the extraction side.
     """
+    archive = output_ref(archive)
+    requested = str(archive)
+    owned = platform.require_native_paths("create archive", folder=folder, archive=archive)
+    folder, archive = owned["folder"], owned["archive"]
     py7zr = _py7zr()
     if not os.path.isdir(folder):
-        raise FileNotFoundError("folder not found: %s" % folder)
-    # Historical `-o` semantics: a relative path gets the .7z suffix, an
-    # absolute one is used verbatim (callers pass an explicit filename).
-    if not archive.endswith(SUFFIX) and not os.path.isabs(archive):
-        archive += SUFFIX
+        raise FileNotFoundError(f"folder not found: {folder}")
     if os.path.isfile(archive):
         os.remove(archive)
         log.info("removed stale archive %s", archive)
@@ -92,9 +100,9 @@ def create(folder, archive, level=DEFAULT_LEVEL, threads=None, wrapper=True,
             if wrapper else "")
     log.info("running: py7zr zstd level=%s %s <- %s (wrapper=%s)",
              level, archive, folder, wrapper)
-    with py7zr.SevenZipFile(archive, "w", filters=filters_for(level)) as a:
+    with py7zr.SevenZipFile(os.fspath(archive), "w", filters=filters_for(level)) as a:
         if wrapper:
-            a.writeall(folder, root)
+            a.writeall(os.fspath(folder), root)
         else:
             # writeall(folder, "") would store the folder itself under its
             # absolute path (py7zr falls back to the real path for an empty
@@ -103,23 +111,24 @@ def create(folder, archive, level=DEFAULT_LEVEL, threads=None, wrapper=True,
                 a.writeall(os.path.join(folder, name), name)
     size = os.path.getsize(archive)
     log.info("archive created: %s (%.1f MB)", archive, size / 1e6)
-    return archive
+    return requested
 
 
-def verify(archive):
-    """Verify archive integrity (CRC pass over every member). True = OK."""
-    py7zr = _py7zr()
-    if not os.path.isfile(archive):
-        log.error("archive test: FAILED (%s) - no such file", archive)
-        return False
-    try:
-        with py7zr.SevenZipFile(archive, "r") as a:
-            bad = a.testzip()
-    except Exception as exc:  # noqa: BLE001 - any read failure = corrupt
+def _verdict(archive, error=None, bad=None):
+    """True when the archive is intact; log the reason otherwise.
+
+    Split out of :func:`verify` so the bad-member branch is *testable*.
+    py7zr's `testzip()` is documented to return the name of the first bad
+    member, but measured behaviour is that it raises on every corruption
+    shape we could produce (32 single-byte flips across a real archive: 0
+    returned a member), so that branch is reachable only through this helper
+    - and an untestable branch is how a guard quietly stops guarding.
+    """
+    if error is not None:
         # A corrupt archive must never be reported on an INFO line: callers
         # check this return value and exit non-zero.
         log.error("archive test: FAILED (%s) - %s: %s",
-                  archive, type(exc).__name__, exc)
+                  archive, type(error).__name__, error)
         return False
     if bad:
         log.error("archive test: FAILED (%s) - bad member: %s", archive, bad)
@@ -128,30 +137,43 @@ def verify(archive):
     return True
 
 
+def verify(archive):
+    """Verify archive integrity (CRC pass over every member). True = OK."""
+    archive = platform.require_native_paths("verify archive", archive=archive)["archive"]
+    py7zr = _py7zr()
+    if not os.path.isfile(archive):
+        log.error("archive test: FAILED (%s) - no such file", archive)
+        return False
+    try:
+        with py7zr.SevenZipFile(os.fspath(archive), "r") as a:
+            bad = a.testzip()
+    except Exception as exc:  # noqa: BLE001 - any read failure = corrupt
+        return _verdict(archive, error=exc)
+    return _verdict(archive, bad=bad)
+
+
 def names(archive):
     """Every member path in the archive (posix-style, as stored)."""
+    archive = platform.require_native_paths("list archive", archive=archive)["archive"]
     py7zr = _py7zr()
-    with py7zr.SevenZipFile(archive, "r") as a:
+    with py7zr.SevenZipFile(os.fspath(archive), "r") as a:
         return a.getnames()
 
 
 def extract(archive, dest, targets=None, threads=None):
     """Extract `targets` (default: everything) into `dest`.
 
-    Refuses a Windows-side destination from WSL: that write must go through
-    the Windows-side bridge in `deliver` (AGENTS.md CRITICAL rule), not
-    through this process.  Returns `dest`.
+    Both input and destination must belong to this processor's storage side.
+    Windows-side work from WSL must use deliver's Windows-side bridge instead.
+    Returns the destination as supplied by the caller.
     """
-    if config.is_windows_side(dest):
-        raise RuntimeError(
-            "refusing to extract into a Windows-side path (%s) from WSL: a "
-            "WSL-native process must not write a /mnt/* tree (AGENTS.md "
-            "cross-system rule) - use deliver's Windows-side bridge, which "
-            "hands the archive to 7z.exe via powershell.exe" % dest)
+    requested = dest
+    owned = platform.require_native_paths("extract archive", archive=archive, dest=dest)
+    archive, dest = owned["archive"], owned["dest"]
     py7zr = _py7zr()
     os.makedirs(dest, exist_ok=True)
     log.info("extracting %s -> %s%s", archive, dest,
              "" if not targets else " (%d target(s))" % len(targets))
-    with py7zr.SevenZipFile(archive, "r", mp=bool(threads)) as a:
-        a.extract(path=dest, targets=targets)
-    return dest
+    with py7zr.SevenZipFile(os.fspath(archive), "r", mp=bool(threads)) as a:
+        a.extract(path=os.fspath(dest), targets=targets)
+    return requested

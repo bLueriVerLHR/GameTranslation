@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 extract_text.py - Companion to translate_rpgmaker.py
 
@@ -66,28 +65,50 @@ def collect_segments(s, out):
             out.append(part)
 
 
+def _seg_choice(params, out):
+    """Code 102: every choice caption."""
+    if not (params and isinstance(params[0], list)):
+        return
+    for x in params[0]:
+        if isinstance(x, str):
+            collect_segments(x, out)
+
+
+def _seg_event_text(code, params, out):
+    """Codes in EVENT_TEXT_IDX: the display-text operands."""
+    for idx in EVENT_TEXT_IDX[code]:
+        if idx < len(params) and isinstance(params[idx], str) and params[idx]:
+            collect_segments(params[idx], out)
+
+
+def _seg_script_operand(params, out):
+    """Code 122: operands 3/4 (this pass has no JS-code exclusion)."""
+    for idx in (3, 4):
+        if idx < len(params) and isinstance(params[idx], str) and params[idx]:
+            collect_segments(params[idx], out)
+
+
+def _seg_comment(params, out):
+    """Code 408: a comment line shown by choice-help plugins."""
+    if params and isinstance(params[0], str) and params[0] \
+            and not DIRECTIVE_RE.match(params[0]):
+        collect_segments(params[0], out)
+
+
 def process_commands(cmds, out):
     for cmd in cmds:
         code = cmd.get("code")
         params = cmd.get("parameters")
         if not isinstance(params, list):
             continue
-        if code == 102 and params and isinstance(params[0], list):
-            for x in params[0]:
-                if isinstance(x, str):
-                    collect_segments(x, out)
+        if code == 102:
+            _seg_choice(params, out)
         elif code in EVENT_TEXT_IDX:
-            for idx in EVENT_TEXT_IDX[code]:
-                if idx < len(params) and isinstance(params[idx], str) and params[idx]:
-                    collect_segments(params[idx], out)
+            _seg_event_text(code, params, out)
         elif code == 122:
-            for idx in (3, 4):
-                if idx < len(params) and isinstance(params[idx], str) and params[idx]:
-                    collect_segments(params[idx], out)
+            _seg_script_operand(params, out)
         elif code == 408:
-            if params and isinstance(params[0], str) and params[0] and \
-                    not DIRECTIVE_RE.match(params[0]):
-                collect_segments(params[0], out)
+            _seg_comment(params, out)
 
 
 def process_db(obj, out):
@@ -159,10 +180,13 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
         log_file: cliutil.LogFile = None) -> int:
     """Extract RPG Maker MZ/MV display text into a translation template."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("extract text", game_dir=game_dir, output=output)
 
     game_dir = os.path.abspath(game_dir)
     if not os.path.isdir(game_dir):
-        return cliutil.fail("game_dir not found: %s" % game_dir)
+        return cliutil.fail(f"game_dir not found: {game_dir}")
 
     seen = []
     data_dir = os.path.join(game_dir, "data")
@@ -195,7 +219,7 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
                 collect_segments(chunk, seen)
 
     unique = list(dict.fromkeys(seen))
-    template = {k: "" for k in unique}
+    template = dict.fromkeys(unique, "")
     with open(output, "w", encoding="utf-8") as f:
         json.dump(template, f, ensure_ascii=False, indent=2)
 

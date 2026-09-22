@@ -19,7 +19,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 # Repo root, appended (not inserted) so a same-named sibling module in
 # this directory still wins.
 sys.path.append(os.path.dirname(_HERE))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, platform  # noqa: E402
 
 log = logging.getLogger("unity.rmunite.extract_game")
 
@@ -46,15 +46,14 @@ def walk_collect(obj, path, out, classname):
         for k, v in obj.items():
             if k in SKIP_FIELDS:
                 continue
-            walk_collect(v, "%s.%s" % (path, k), out, classname)
+            walk_collect(v, f"{path}.{k}", out, classname)
     elif isinstance(obj, list):
         for i, v in enumerate(obj):
             walk_collect(v, "%s[%d]" % (path, i), out, classname)
-    elif isinstance(obj, str):
-        if is_japanese(obj):
-            s = obj.replace("\r\n", "\n").replace("\r", "\n")
-            if s.strip():
-                out.append({"class": classname, "field": path, "text": s})
+    elif isinstance(obj, str) and is_japanese(obj):
+        s = obj.replace("\r\n", "\n").replace("\r", "\n")
+        if s.strip():
+            out.append({"class": classname, "field": path, "text": s})
 
 
 def find_bundle_root(game_dir):
@@ -74,12 +73,113 @@ def find_bundle_root(game_dir):
 
 def collect_bundles(root):
     """Every .bundle path under `root` (sorted for reproducible output)."""
-    found = []
-    for dirpath, _dirs, files in os.walk(root):
-        for name in files:
-            if name.endswith(".bundle"):
-                found.append(os.path.join(dirpath, name))
-    return sorted(found)
+    return sorted(os.path.join(dirpath, name)
+                  for dirpath, _dirs, files in os.walk(root)
+                  for name in files if name.endswith(".bundle"))
+
+
+def _script_map(env, rel):
+    """`{path_id: "Namespace.ClassName"}` from the bundle's MonoScripts."""
+    smap = {}
+    for obj in env.objects:
+        if obj.type.name != "MonoScript":
+            continue
+        try:
+            tt = obj.read_typetree()
+        except Exception as exc:  # noqa: BLE001
+            log.debug("%s: MonoScript path_id=%s unreadable: %s",
+                      rel, obj.path_id, exc)
+            continue
+        cname = tt.get("m_ClassName")
+        if cname:
+            ns = tt.get("m_Namespace")
+            smap[obj.path_id] = f"{ns}.{cname}" if ns else cname
+    return smap
+
+
+def _collect_bundle(env, rel, smap, stats, unique, rawf):
+    """Walk one bundle's MonoBehaviours into `unique` + the raw jsonl."""
+    for obj in env.objects:
+        if obj.type.name != "MonoBehaviour":
+            continue
+        try:
+            tt = obj.read_typetree()
+        except Exception as exc:  # noqa: BLE001
+            log.debug("%s: MonoBehaviour path_id=%s unreadable: %s",
+                      rel, obj.path_id, exc)
+            continue
+        script = tt.get("m_Script") or {}
+        classname = smap.get(script.get("m_PathID"), "?")
+        stats[classname] += 1
+        recs = []
+        walk_collect(tt, "", recs, classname)
+        for r in recs:
+            text = r["text"]
+            if text not in unique:
+                unique[text] = {"count": 0, "sources": []}
+            u = unique[text]
+            u["count"] += 1
+            src = "{}@{}".format(r["class"], r["field"])
+            if src not in u["sources"]:
+                u["sources"].append(src)
+            rawf.write(json.dumps({"bundle": rel,
+                                   "path_id": obj.path_id,
+                                   "class": r["class"],
+                                   "field": r["field"],
+                                   "text": r["text"]},
+                                  ensure_ascii=False) + "\n")
+
+
+def _scan_bundles(bundle_files, root, unique, stats, raw_path, unitypy):
+    """Extract every bundle; returns the list of unreadable ones.
+
+    `unitypy` is passed in (not imported here) so the CLI can validate the
+    input path and fail fast *before* the heavy optional dependency loads.
+    """
+    skipped = []
+    with open(raw_path, "w", encoding="utf-8") as rawf:
+        for idx, bf in enumerate(bundle_files):
+            rel = os.path.relpath(bf, root)
+            if idx % 500 == 0:
+                log.info("[%d/%d] %s (unique=%d)", idx, len(bundle_files), rel,
+                         len(unique))
+            try:
+                env = unitypy.load(bf)
+            except Exception as exc:  # noqa: BLE001
+                # External parser boundary: UnityPy.load on a malformed or
+                # unsupported bundle can raise any of its internal errors
+                # (zlib, struct, IndexError, ValueError...). Keep extracting
+                # the rest, but record it: a silently skipped bundle is
+                # untranslated text with no trace.
+                skipped.append(rel)
+                log.warning("%s: bundle unreadable, NOT extracted: %s: %s",
+                            rel, type(exc).__name__, exc)
+                continue
+            _collect_bundle(env, rel, _script_map(env, rel), stats, unique,
+                            rawf)
+    return skipped
+
+
+def _write_outputs(out_dir, unique, sel, meta):
+    """Write the meta/template/texts JSON, then the class breakdown."""
+    with open(os.path.join(out_dir, "keys_target_meta.json"), "w",
+              encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=1)
+    with open(os.path.join(out_dir, "translated_template.json"), "w",
+              encoding="utf-8") as f:
+        json.dump(dict.fromkeys(sel, ""), f, ensure_ascii=False, indent=1)
+    with open(os.path.join(out_dir, "texts_ja.json"), "w",
+              encoding="utf-8") as f:
+        json.dump(unique, f, ensure_ascii=False, indent=1)
+    print("saved keys_target_meta.json / translated_template.json / "
+          "texts_ja.json")
+    tc = collections.Counter()
+    for u in sel.values():
+        for s in u["sources"]:
+            tc[s.split("@")[0]] += 1
+    print("=== target class breakdown ===")
+    for c, n in tc.most_common():
+        print("  %5d  %s" % (n, c))
 
 
 def cmd(game_dir: Annotated[str, cliutil.Argument(
@@ -90,6 +190,13 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(
         quiet: cliutil.Quiet = False,
         log_file: cliutil.LogFile = None) -> int:
     cliutil.setup_logging(verbose, quiet, log_file)
+
+    # AGENTS.md CRITICAL: UnityPy reads under game_dir and this process writes
+    # the output tree, so both must be on this processor's side.  Gated before
+    # find_bundle_root (which walks the tree) and before the heavy import.
+    own = platform.require_native_paths("extract unity game",
+                                        game_dir=game_dir, out_dir=out_dir)
+    game_dir, out_dir = str(own["game_dir"]), str(own["out_dir"])
 
     # Validate the input before importing the heavy optional dependency, so a
     # wrong path fails fast with a clear message on any machine.
@@ -107,66 +214,8 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(
     bundle_files = collect_bundles(root)
     log.info("%d bundle(s) under %s", len(bundle_files), root)
 
-    skipped = []
-    with open(raw_path, "w", encoding="utf-8") as rawf:
-        for idx, bf in enumerate(bundle_files):
-            rel = os.path.relpath(bf, root)
-            if idx % 500 == 0:
-                log.info("[%d/%d] %s (unique=%d)", idx, len(bundle_files), rel,
-                         len(unique))
-            try:
-                env = UnityPy.load(bf)
-            except Exception as exc:  # noqa: BLE001
-                # External parser boundary: UnityPy.load on a malformed or
-                # unsupported bundle can raise any of its internal errors
-                # (zlib, struct, IndexError, ValueError...). Keep extracting
-                # the rest, but record it: a silently skipped bundle is
-                # untranslated text with no trace.
-                skipped.append(rel)
-                log.warning("%s: bundle unreadable, NOT extracted: %s: %s",
-                            rel, type(exc).__name__, exc)
-                continue
-            smap = {}
-            for obj in env.objects:
-                if obj.type.name == "MonoScript":
-                    try:
-                        tt = obj.read_typetree()
-                        cname = tt.get("m_ClassName")
-                        ns = tt.get("m_Namespace")
-                        if cname:
-                            smap[obj.path_id] = "%s.%s" % (ns, cname) if ns else cname
-                    except Exception as exc:  # noqa: BLE001
-                        log.debug("%s: MonoScript path_id=%s unreadable: %s",
-                                  rel, obj.path_id, exc)
-            for obj in env.objects:
-                if obj.type.name != "MonoBehaviour":
-                    continue
-                try:
-                    tt = obj.read_typetree()
-                except Exception as exc:  # noqa: BLE001
-                    log.debug("%s: MonoBehaviour path_id=%s unreadable: %s",
-                              rel, obj.path_id, exc)
-                    continue
-                script = tt.get("m_Script") or {}
-                classname = smap.get(script.get("m_PathID"), "?")
-                stats[classname] += 1
-                recs = []
-                walk_collect(tt, "", recs, classname)
-                for r in recs:
-                    text = r["text"]
-                    if text not in unique:
-                        unique[text] = {"count": 0, "sources": []}
-                    u = unique[text]
-                    u["count"] += 1
-                    src = "%s@%s" % (r["class"], r["field"])
-                    if src not in u["sources"]:
-                        u["sources"].append(src)
-                    rawf.write(json.dumps({"bundle": rel,
-                                           "path_id": obj.path_id,
-                                           "class": r["class"],
-                                           "field": r["field"],
-                                           "text": r["text"]},
-                                          ensure_ascii=False) + "\n")
+    skipped = _scan_bundles(bundle_files, root, unique, stats, raw_path,
+                            UnityPy)
 
     if skipped:
         log.warning("%d of %d bundle(s) skipped - their text is NOT in the "
@@ -178,37 +227,15 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(
     print("unique texts (all): %d" % len(unique))
 
     # filter to target classes
-    sel = {}
-    for t, u in unique.items():
-        if any(s.startswith(tuple(TARGET)) for s in u["sources"]):
-            sel[t] = u
+    sel = {t: u for t, u in unique.items()
+           if any(s.startswith(tuple(TARGET)) for s in u["sources"])}
     print("unique target texts: %d" % len(sel))
     total_chars = sum(len(t) for t in sel)
     print("target chars: %d" % total_chars)
 
     meta = {t: {"count": u["count"], "sources": u["sources"]}
             for t, u in sel.items()}
-    with open(os.path.join(out_dir, "keys_target_meta.json"), "w",
-              encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=1)
-    tmpl = {t: "" for t in sel}
-    with open(os.path.join(out_dir, "translated_template.json"), "w",
-              encoding="utf-8") as f:
-        json.dump(tmpl, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "texts_ja.json"), "w",
-              encoding="utf-8") as f:
-        json.dump(unique, f, ensure_ascii=False, indent=1)
-    print("saved keys_target_meta.json / translated_template.json / "
-          "texts_ja.json")
-
-    # class breakdown of targets
-    tc = collections.Counter()
-    for t, u in sel.items():
-        for s in u["sources"]:
-            tc[s.split("@")[0]] += 1
-    print("=== target class breakdown ===")
-    for c, n in tc.most_common():
-        print("  %5d  %s" % (n, c))
+    _write_outputs(out_dir, unique, sel, meta)
     return 1 if skipped else 0
 
 

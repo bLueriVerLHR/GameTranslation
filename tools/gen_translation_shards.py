@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 gen_translation_shards.py - Split a build_translation.py work package into
 translation chunks for dedicated subagents.
@@ -189,10 +188,9 @@ def transcript(keys, ctx, truncate=45, window=2):
         info = ctx.get(k, {})
         where = info.get("where", "")
         win = (info.get("window") or [])[:win_cap]
-        out.append("[K] %s   <= %s" % (flat(k), where))
-        for w in win:
-            if w != k and w not in last_win:
-                out.append("  | %s" % flat(w)[:truncate])
+        out.append(f"[K] {flat(k)}   <= {where}")
+        out.extend(f"  | {flat(w)[:truncate]}" for w in win
+                   if w != k and w not in last_win)
         last_win = [w for w in win if w != k]
     return out
 
@@ -232,10 +230,7 @@ def _collect_keys(tpl, kinds, structure):
     map_keys = []      # (map_label, key)
     seen = set()
     for m in structure["maps"]:
-        if isinstance(m["id"], int):
-            label = "Map%03d" % m["id"]
-        else:
-            label = str(m["id"])
+        label = "Map%03d" % m["id"] if isinstance(m["id"], int) else str(m["id"])
         keys = []
         for ev in m.get("items", []):
             # MZ layout: event -> items; Wolf RPG layout: flat key items
@@ -279,7 +274,7 @@ def _emit_chunks(chunks_dir, args, global_keys, map_keys, tone, glossary,
         # Global/DB/UI texts are short one-liners; cap them by KEY COUNT
         # (transcript lines make long context files) so no chunk's context.md
         # grows past the agent budget.
-        num = _write_split(chunks_dir, num, {k: "" for k in global_keys},
+        num = _write_split(chunks_dir, num, dict.fromkeys(global_keys, ""),
                            "remaining global texts",
                            args.global_per_chunk, 0, tone,
                            glossary, macros, ctx, args)
@@ -380,7 +375,7 @@ def cmd(work_dir: Annotated[str, cliutil.Argument(
             map_keys, global_keys, ctx, tone, glossary, macros, args)
         print("auto sizing: max_chars=%d -> %d chunks, max context ~%.1fKB%s"
               % (args.max_chars, n_chunks, mx / 1024,
-                 " (WARN: %s)" % warn if warn else ""))
+                 f" (WARN: {warn})" if warn else ""))
     if not args.max_chars and not args.per_chunk:
         args.per_chunk = 450  # fallback: no story maps -> legacy key-count cap
 
@@ -412,22 +407,18 @@ def _write_split(chunks_dir, num, chunk, title, cap,
     (key count) or <= max_chars (total char length)."""
     keys = list(chunk.keys())
     if max_chars:
-        part = 0
-        for bucket in _split_by_len(keys, max_chars):
-            sub = {k: "" for k in bucket}
+        for part, bucket in enumerate(_split_by_len(keys, max_chars)):
+            sub = dict.fromkeys(bucket, "")
             num = _write(chunks_dir, num, sub, "%s [part %d]" % (title, part),
                          tone, glossary, macros, ctx, args)
-            part += 1
         return num
     if len(keys) <= cap:
         return _write(chunks_dir, num, chunk, title, tone,
                       glossary, macros, ctx, args)
-    part = 0
-    for i in range(0, len(keys), cap):
-        sub = {k: "" for k in keys[i:i + cap]}
+    for part, i in enumerate(range(0, len(keys), cap)):
+        sub = dict.fromkeys(keys[i:i + cap], "")
         num = _write(chunks_dir, num, sub, "%s [part %d]" % (title, part),
                      tone, glossary, macros, ctx, args)
-        part += 1
     return num
 
 
@@ -436,7 +427,7 @@ def _glossary_block(glossary):
         return ("## Glossary (mandatory)\n"
                 "  (empty - 尚无词表: 人名/术语按直觉翻译, 保持全文前后一致)\n")
     lines = ["## Glossary (mandatory) - translate these EXACTLY"]
-    lines += ["  %s -> %s" % (k, v) for k, v in glossary.items()]
+    lines += [f"  {k} -> {v}" for k, v in glossary.items()]
     return "\n".join(lines) + "\n"
 
 
@@ -449,7 +440,7 @@ def _macro_block(macros, glossary):
     lines = ["## Name macros (control codes = substitution references, NEVER translate them)"]
     for code, name in sorted(macros.items()):
         tr = glossary.get(name, "")
-        lines.append("  %s = %s%s" % (code, name, "  (词表: %s)" % tr if tr else ""))
+        lines.append("  {} = {}{}".format(code, name, f"  (词表: {tr})" if tr else ""))
     return "\n".join(lines) + "\n"
 
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 r"""qc_translation_chunks.py - LEGACY (JSON-chunk QC, superseded by the
 two-file chunk layout + tools/merge_plain_chunks.py).  Kept for old work
 packages.
@@ -21,7 +20,7 @@ from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ctrl_codes  # noqa: E402
-import japanese_utils  # noqa: E402
+from rpgmaker import japanese as japanese_utils  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpgmaker import cliutil  # noqa: E402
@@ -69,7 +68,11 @@ def order_divergence(src, out):
     """
     shared_src = [k for k in src if k in out]
     shared_out = [k for k in out if k in src]
-    return [(a, b) for a, b in zip(shared_src, shared_out) if a != b]
+    # Both lists are the same intersection (one ordered by each side), so a
+    # length difference is impossible; `strict` proves that instead of
+    # letting zip quietly pair a short tail away.
+    return [(a, b) for a, b in zip(shared_src, shared_out, strict=True)
+            if a != b]
 
 
 def validate(src, out):
@@ -100,11 +103,11 @@ def validate(src, out):
                 uncertain.append(k)
     order_diff = order_divergence(src, out)
     if miss:
-        issues.append("missing keys: %s" % miss[:6])
+        issues.append(f"missing keys: {miss[:6]}")
     if extra:
-        issues.append("extra keys: %s" % extra[:6])
+        issues.append(f"extra keys: {extra[:6]}")
     if empty:
-        issues.append("empty values: %s" % empty[:6])
+        issues.append(f"empty values: {empty[:6]}")
     if newline_diff:
         issues.append("newline-count mismatch: %d keys" % len(newline_diff))
     if kana_left:
@@ -189,12 +192,12 @@ def cmd(work_dir: Annotated[str, cliutil.Argument(
         name = path[:-len(".json")]
         src_path = os.path.join(chunks_dir, name.replace(".translated", "") + ".json")
         if not os.path.exists(src_path):
-            report.append("%s: SOURCE MISSING" % path)
+            report.append(f"{path}: SOURCE MISSING")
             continue
         src = json.load(open(src_path, encoding="utf-8"))
         p = os.path.join(chunks_dir, path)
         fixed = 0
-        for attempt in range(3):
+        for _attempt in range(3):
             text, fixed = repair_file(p)
             if fixed:
                 open(p, "w", encoding="utf-8").write(text)
@@ -203,7 +206,7 @@ def cmd(work_dir: Annotated[str, cliutil.Argument(
                 break
             except json.JSONDecodeError as e:
                 if fixed == 0:
-                    report.append("%s: REPAIR UNABLE (%s)" % (path, str(e)[:60]))
+                    report.append(f"{path}: REPAIR UNABLE ({str(e)[:60]})")
                     out = None
                     break
         if out is None:
@@ -219,9 +222,7 @@ def cmd(work_dir: Annotated[str, cliutil.Argument(
         else:
             report.append("%s: OK (%d keys)%s" % (path, len(out),
                                                   " [escapes repaired %d]" % fixed if fixed else ""))
-        for k, v in out.items():
-            if k in src:
-                merged[k] = v
+        merged.update({k: v for k, v in out.items() if k in src})
 
     with open(os.path.join(work, merge), "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=1)

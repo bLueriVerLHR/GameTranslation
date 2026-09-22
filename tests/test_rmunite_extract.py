@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for unity/rmunite/extract_game.py - RPG Maker Unite text extraction.
 
 The module must be importable WITHOUT UnityPy installed (the import is

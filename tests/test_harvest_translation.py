@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/harvest_translation.py - harvesting a runtime
 MTool/AI translation dict into an extracted template (build_translation.py)
 so the values can be baked statically.
@@ -161,7 +160,7 @@ class TestMainExactMatch:
 
     def test_harvest_order_follows_the_template(self, tmp_path, monkeypatch):
         template = {"さようなら": {}, "こんにちは": {}, "おはよう": {}}
-        kinds = {k: "block-line" for k in template}
+        kinds = dict.fromkeys(template, "block-line")
         d = make_dict(tmp_path, {"おはよう": "早安", "こんにちは": "你好",
                                  "さようなら": "再见"})
         work = make_work(tmp_path, template, kinds)
@@ -315,7 +314,7 @@ class TestMissingAndEmptyInputs:
     def test_empty_dict_makes_every_key_missing(self, tmp_path, monkeypatch):
         template = {"こんにちは": {}, "さようなら": {}}
         work = make_work(tmp_path, template,
-                         {k: "block-line" for k in template})
+                         dict.fromkeys(template, "block-line"))
         d = make_dict(tmp_path, {})
         run_harvest(monkeypatch, work, d)
         assert read_json(work / "translated.json") == {}
@@ -355,7 +354,7 @@ class TestMissingAndEmptyInputs:
     def test_summary_is_logged(self, tmp_path, monkeypatch, caplog):
         template = {"こんにちは": {}, "未知": {}}
         work = make_work(tmp_path, template,
-                         {k: "block-line" for k in template})
+                         dict.fromkeys(template, "block-line"))
         d = make_dict(tmp_path, {"こんにちは": "你好"})
         with caplog.at_level(logging.INFO):
             run_harvest(monkeypatch, work, d)

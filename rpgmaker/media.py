@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """media.py - the single media surface, built on PyAV.
 
 PyAV (`av`) is the packaged binding to the FFmpeg *libraries*: probing,
@@ -106,13 +105,13 @@ def probe(path):
     try:
         size = os.path.getsize(path)
     except OSError as exc:
-        return {"error": "cannot stat %s: %s" % (path, exc)}
+        return {"error": f"cannot stat {path}: {exc}"}
     try:
         with av.open(path, **OPEN_OPTS) as container:
             stream = next((s for s in container.streams
                            if s.type == "audio"), None)
             if stream is None:
-                return {"error": "no audio stream in %s" % path}
+                return {"error": f"no audio stream in {path}"}
             cc = stream.codec_context
             tags = {}
             tags.update(container.metadata or {})
@@ -131,7 +130,7 @@ def probe(path):
     except Exception as exc:  # noqa: BLE001 - PyAV raises its own hierarchy
         # Two independent measurements (ffmpeg today, PyAV before) cannot
         # disagree silently: a probe failure must stay visible as an error.
-        return {"error": "%s: %s" % (type(exc).__name__, exc)}
+        return {"error": f"{type(exc).__name__}: {exc}"}
     log.debug("probe %s: %s", path, info)
     return info
 
@@ -146,19 +145,19 @@ def probe_video(path):
     try:
         size = os.path.getsize(path)
     except OSError as exc:
-        return {"error": "cannot stat %s: %s" % (path, exc)}
+        return {"error": f"cannot stat {path}: {exc}"}
     try:
         with av.open(path, **OPEN_OPTS) as container:
             stream = next((s for s in container.streams
                            if s.type == "video"), None)
             if stream is None:
-                return {"error": "no video stream in %s" % path}
+                return {"error": f"no video stream in {path}"}
             cc = stream.codec_context
             return {"codec": cc.name, "width": cc.width, "height": cc.height,
                     "duration": _duration_seconds(container, stream, path),
                     "size": size}
     except Exception as exc:  # noqa: BLE001
-        return {"error": "%s: %s" % (type(exc).__name__, exc)}
+        return {"error": f"{type(exc).__name__}: {exc}"}
 
 
 def decode_ok(path):
@@ -180,7 +179,7 @@ def decode_ok(path):
                 n += 1
         return True, "%d frames" % n
     except Exception as exc:  # noqa: BLE001
-        return False, "%s: %s" % (type(exc).__name__, exc)
+        return False, f"{type(exc).__name__}: {exc}"
 
 
 #: Video preset for the WebM/VP9 mobile build (the ffmpeg CLI recipe).
@@ -217,7 +216,7 @@ def transcode_to_webm(src_path, dst_path, crf=32, cpu_used=4,
             av.open(str(dst_path), "w", format="webm") as dst:
         vsrc = next((s for s in src.streams if s.type == "video"), None)
         if vsrc is None:
-            raise ValueError("no video stream in %s" % src_path)
+            raise ValueError(f"no video stream in {src_path}")
         asrc = next((s for s in src.streams if s.type == "audio"), None)
 
         vout = dst.add_stream("libvpx-vp9", rate=vsrc.average_rate or 30)

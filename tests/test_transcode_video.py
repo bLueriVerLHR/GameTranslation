@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for tools/transcode_video.py - xp3 movies to WebM, in-process.
 
 The tool used to shell out to ffmpeg; it now encodes with PyAV (libvpx-vp9 +
@@ -11,6 +10,9 @@ The failure modes that matter for a build: a video that cannot be encoded must
 be reported as FAILED (exit code 1) instead of silently missing, a second run
 must reuse the finished outputs, and a corrupt entry must not take down the
 rest.
+
+Marked `media`: the fixture is a real WMV encoded by PyAV and the assertions
+cover a real VP9+Opus round trip, so the PyAV build must carry libvpx-vp9.
 """
 import os
 import sys
@@ -28,6 +30,9 @@ from kirikiri import xp3pack, xp3tool  # noqa: E402
 from rpgmaker import media  # noqa: E402
 
 
+pytestmark = pytest.mark.media
+
+
 def make_archive(tmp_path, entries, name="movies.xp3"):
     """Pack `entries` ({relative name: bytes}) into an xp3; returns its path."""
     src = tmp_path / "src"
@@ -42,7 +47,7 @@ def make_archive(tmp_path, entries, name="movies.xp3"):
 
 
 def wmv_bytes(tmp_path, tag="in", **kwargs):
-    path = make_wmv(tmp_path / ("%s.wmv" % tag), **kwargs)
+    path = make_wmv(tmp_path / (f"{tag}.wmv"), **kwargs)
     with open(path, "rb") as f:
         return f.read()
 

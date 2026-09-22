@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tyrano/ui_lang.py - localizing the TyranoScript engine UI.
 
 `tyrano/lang.js` sits outside data/scenario, so a fully translated scenario

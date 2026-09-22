@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """dxarchive.py - DXArchive v8 (.wolf) container unpacker for Wolf RPG games.
 
 Implements the DXLib DXArchive version 8 container format so that encrypted
@@ -32,7 +31,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 # Repo root, appended (not inserted) so a same-named sibling module in
 # this directory still wins.
 sys.path.append(os.path.dirname(_HERE))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, platform  # noqa: E402
 
 logger = logging.getLogger("dxarchive")
 
@@ -151,12 +150,94 @@ class DxaHeader:
         return self.flags >> 16
 
 
+def _lz_escape_length(src, sp, srcsize, code):
+    """`(length, bytes_consumed)` for one escape sequence's length field.
+
+    Validates the extra length byte before reading it: the block is
+    attacker-controlled, so a declared length that runs off the end must
+    raise, not leak `IndexError` (which the caller cannot tell apart from a
+    decoder bug).
+    """
+    conbo = code >> 3
+    used = 0
+    if code & 0x4:
+        if srcsize < 1:
+            raise ValueError("LZ block truncated inside an escape sequence")
+        conbo |= src[sp] << 5
+        used = 1
+    return conbo + MIN_COMPRESS, used
+
+
+def _lz_escape_index(src, sp, srcsize, indexsize):
+    """`(back_reference_index, bytes_consumed)` for the escape's low bits."""
+    if indexsize == 0:
+        need = 1
+    elif indexsize == 1:
+        need = 2
+    else:
+        need = 3
+    if srcsize < need:
+        raise ValueError("LZ block truncated inside an escape sequence")
+    if indexsize == 0:
+        return src[sp], 1
+    if indexsize == 1:
+        return struct.unpack_from("<H", src, sp)[0], 2
+    return struct.unpack_from("<H", src, sp)[0] | (src[sp + 2] << 16), 3
+
+
+def _lz_copy_backref(dest, index, conbo):
+    """Copy `conbo` bytes from `index` back, doubling the run as it goes.
+
+    The reference implementation copies in chunks and doubles, which is what
+    makes overlapping (run-length) references work; a `conbo` smaller than
+    `index` is a single copy.
+    """
+    if index < conbo:
+        num = index
+        while conbo > num:
+            start = len(dest) - num
+            if start < 0:
+                raise ValueError(
+                    "LZ block back-reference %d exceeds the %d bytes "
+                    "decoded so far" % (num, len(dest)))
+            dest.extend(dest[start : start + num])
+            conbo -= num
+            num += num
+        if conbo:
+            start = len(dest) - num
+            if start < 0:
+                raise ValueError(
+                    "LZ block back-reference %d exceeds the %d bytes "
+                    "decoded so far" % (num, len(dest)))
+            dest.extend(dest[start : start + conbo])
+        return
+    start = len(dest) - index
+    if start < 0:
+        raise ValueError(
+            "LZ block back-reference %d exceeds the %d bytes decoded "
+            "so far" % (index, len(dest)))
+    dest.extend(dest[start : start + conbo])
+
+
 def lz_decode(src: bytes, dest_size: int) -> bytes:
-    """Decompress one LZ block (DXLib Decode)."""
+    """Decompress one LZ block (DXLib Decode).
+
+    The block is attacker-controlled input, so a declared length that runs off
+    the end of the buffer is reported as a corrupt block instead of leaking
+    ``IndexError``.  ``dest_size`` is advisory here (the LZ stream is
+    authoritative, see the reference implementation) and is only used to keep
+    the byte-string reads inside the buffer: the back-reference loop can copy
+    from ``len(dest) - index`` and a bogus ``index`` would otherwise read
+    before the start.
+    """
     if len(src) < 9:
         raise ValueError("LZ block too small")
     destsize, srcsize_full, keycode = struct.unpack_from("<IIB", src, 0)
     srcsize = srcsize_full - 9
+    if srcsize < 0 or 9 + srcsize > len(src):
+        raise ValueError(
+            "LZ block declares %d payload bytes but only %d are present"
+            % (max(srcsize, 0), max(len(src) - 9, 0)))
     dest = bytearray()
     sp = 9
     while srcsize > 0:
@@ -166,6 +247,8 @@ def lz_decode(src: bytes, dest_size: int) -> bytes:
             sp += 1
             srcsize -= 1
             continue
+        if srcsize < 2:
+            raise ValueError("LZ block truncated inside an escape sequence")
         if src[sp + 1] == keycode:
             dest.append(keycode)
             sp += 2
@@ -176,39 +259,14 @@ def lz_decode(src: bytes, dest_size: int) -> bytes:
             code -= 1
         sp += 2
         srcsize -= 2
-        conbo = code >> 3
-        if code & 0x4:
-            conbo |= src[sp] << 5
-            sp += 1
-            srcsize -= 1
-        conbo += MIN_COMPRESS
+        conbo, used = _lz_escape_length(src, sp, srcsize, code)
+        sp += used
+        srcsize -= used
         indexsize = code & 0x3
-        if indexsize == 0:
-            index = src[sp]
-            sp += 1
-            srcsize -= 1
-        elif indexsize == 1:
-            index = struct.unpack_from("<H", src, sp)[0]
-            sp += 2
-            srcsize -= 2
-        else:
-            index = struct.unpack_from("<H", src, sp)[0] | (src[sp + 2] << 16)
-            sp += 3
-            srcsize -= 3
-        index += 1
-        if index < conbo:
-            num = index
-            while conbo > num:
-                start = len(dest) - num
-                dest.extend(dest[start : start + num])
-                conbo -= num
-                num += num
-            if conbo:
-                start = len(dest) - num
-                dest.extend(dest[start : start + conbo])
-        else:
-            start = len(dest) - index
-            dest.extend(dest[start : start + conbo])
+        index, used = _lz_escape_index(src, sp, srcsize, indexsize)
+        sp += used
+        srcsize -= used
+        _lz_copy_backref(dest, index + 1, conbo)
     if len(dest) != destsize:
         # The reference implementation does not verify destsize; the LZ
         # stream itself is authoritative.  Only warn here.
@@ -229,8 +287,19 @@ class _BitReader:
         self.bit_idx = 0
 
     def read(self, n: int) -> int:
+        """MSB-first read of `n` bits.
+
+        The stream is attacker-controlled: running past the end is a corrupt
+        block, reported as `ValueError` rather than an `IndexError` leaking
+        out of a decompressor (the header alone can request far more bits
+        than a short input holds).
+        """
         result = 0
         for i in range(n):
+            if self.byte_idx >= len(self.data):
+                raise ValueError(
+                    "Huffman block: header needs more bits than the %d-byte "
+                    "input holds" % len(self.data))
             bit = (self.data[self.byte_idx] >> (7 - self.bit_idx)) & 1
             result |= bit << (n - 1 - i)
             self.bit_idx += 1
@@ -244,16 +313,15 @@ class _BitReader:
         return self.byte_idx + (1 if self.bit_idx else 0)
 
 
-def huffman_decode(src: bytes) -> bytes:
-    """Decompress one Huffman block (DXLib Huffman_Decode)."""
-    br = _BitReader(src)
-    bitnum_a = br.read(6) + 1
-    original_size = br.read(bitnum_a)
-    bitnum_b = br.read(6) + 1
-    _press_size = br.read(bitnum_b)
+def _huffman_weights(br):
+    """Read the 256-entry weight table; returns `(weight, head_size)`.
+
+    Per-entry layout is 3 bits of bit-width, 1 sign bit, then `b * 2` value
+    bits, each entry a delta from the previous weight.
+    """
     weight = [0] * 256
     b = br.read(3) + 1
-    minus = br.read(1)
+    br.read(1)  # the first entry's sign bit is unused
     save = br.read(b * 2)
     weight[0] = save
     for i in range(1, 256):
@@ -261,12 +329,13 @@ def huffman_decode(src: bytes) -> bytes:
         minus = br.read(1)
         save = br.read(b * 2)
         weight[i] = weight[i - 1] - save if minus else weight[i - 1] + save
-    head_size = br.bytes_consumed
+    return weight, br.bytes_consumed
 
-    # Build the Huffman tree (same merge rule as the encoder).
-    nodes = []
-    for i in range(256):
-        nodes.append({"weight": weight[i], "child": (-1, -1), "parent": -1})
+
+def _huffman_tree(weight):
+    """Build the Huffman tree (same merge rule as the encoder)."""
+    nodes = [{"weight": weight[i], "child": (-1, -1), "parent": -1}
+             for i in range(256)]
     node_num = 256
     data_num = 256
     while data_num > 1:
@@ -293,12 +362,13 @@ def huffman_decode(src: bytes) -> bytes:
         nodes[min2]["index"] = 1
         node_num += 1
         data_num -= 1
+    return nodes
 
-    # Compute the code bit array for every node (leaves + internal).
+
+def _huffman_codes(nodes):
+    """Store each node's `bitnum`/`bitarray` (leaves and internal nodes)."""
     for i in range(256 + 254):
         node = nodes[i]
-        node["bitnum"] = 0
-        node["bitarray"] = 0
         idx = i
         temp = 0
         temp_count = 0
@@ -312,7 +382,9 @@ def huffman_decode(src: bytes) -> bytes:
             node["bitarray"] |= ((temp >> bit) & 1) << bit
         node["bitarray"] &= 0xFFFF
 
-    # Fast lookup table for codes up to 9 bits.
+
+def _huffman_lookup_table(nodes):
+    """Fast lookup table for codes up to 9 bits (index -1 = no match)."""
     node_index_table = [-1] * 512
     for i in range(512):
         for j in range(256 + 254):
@@ -322,12 +394,44 @@ def huffman_decode(src: bytes) -> bytes:
             if (i & mask) == (nodes[j]["bitarray"] & mask):
                 node_index_table[i] = j
                 break
+    return node_index_table
+
+
+def huffman_decode(src: bytes) -> bytes:
+    """Decompress one Huffman block (DXLib Huffman_Decode)."""
+    br = _BitReader(src)
+    bitnum_a = br.read(6) + 1
+    original_size = br.read(bitnum_a)
+    bitnum_b = br.read(6) + 1
+    _press_size = br.read(bitnum_b)
+    weight, head_size = _huffman_weights(br)
+
+    nodes = _huffman_tree(weight)
+    _huffman_codes(nodes)
+    node_index_table = _huffman_lookup_table(nodes)
 
     # Decode payload.
     payload_start = head_size
     press_idx = 0
     bit_counter = 0
-    bit_data = src[payload_start]  # reference code preloads the first byte
+    # The stream is attacker-controlled: a truncated block or a corrupt weight
+    # table makes the code below read past the payload or hit an unmatched
+    # code.  Both must be reported as a corrupt stream, not leak IndexError
+    # (a truncated read) or append a negative byte (ValueError), because the
+    # caller of unpack_archive has no way to tell either apart from a bug in
+    # this decoder.
+    if payload_start >= len(src):
+        raise ValueError("Huffman block: payload starts past the end of the "
+                         "input (%d >= %d)" % (payload_start, len(src)))
+
+    def _at(index):
+        if index >= len(src) or index < 0:
+            raise ValueError(
+                "Huffman block: truncated payload (read 0x%x, input is %d "
+                "bytes)" % (index, len(src)))
+        return src[index]
+
+    bit_data = _at(payload_start)  # reference code preloads the first byte
     dest = bytearray()
     dest_size = original_size
     while len(dest) < dest_size:
@@ -336,7 +440,7 @@ def huffman_decode(src: bytes) -> bytes:
             while node_idx > 255:
                 if bit_counter == 8:
                     press_idx += 1
-                    bit_data = src[payload_start + press_idx]
+                    bit_data = _at(payload_start + press_idx)
                     bit_counter = 0
                 idx = bit_data & 1
                 bit_data >>= 1
@@ -346,26 +450,40 @@ def huffman_decode(src: bytes) -> bytes:
             continue
         if bit_counter == 8:
             press_idx += 1
-            bit_data = src[payload_start + press_idx]
+            bit_data = _at(payload_start + press_idx)
             bit_counter = 0
-        cur = bit_data | (src[payload_start + press_idx + 1] << (8 - bit_counter))
+        cur = bit_data | (_at(payload_start + press_idx + 1) << (8 - bit_counter))
         cur &= 0x1FF
         node_idx = node_index_table[cur]
+        if node_idx < 0:  # pragma: no cover - see below, measured unreachable
+            # Kept even though it cannot fire: for a complete 256-leaf tree the
+            # 9-bit lookup table has no hole, and `node_index_table` is built
+            # from `nodes`, so `-1` needs a weight table whose tree is
+            # incomplete.  Measured `holes=0` (counting `-1` entries) for
+            # uniform weights `[1] * 256`, random weights in 1..500, random
+            # weights in 1..5000 and Fibonacci weights, over the same table
+            # builder this module uses.  It stays because the invariant is
+            # enforced nowhere else and the reference implementation indexes
+            # `nodes[node_idx]` here, which for the -1 sentinel silently reads
+            # the *last* node - a wrong decode is worse than an exception.
+            raise ValueError(
+                f"Huffman block: no code matches the next 9 bits (0x{cur:03x}) - "
+                "the weight table or the payload is corrupt")
         bit_counter += nodes[node_idx]["bitnum"]
         if bit_counter >= 16:
             press_idx += 2
             bit_counter -= 16
-            bit_data = src[payload_start + press_idx] >> bit_counter
+            bit_data = _at(payload_start + press_idx) >> bit_counter
         elif bit_counter >= 8:
             press_idx += 1
             bit_counter -= 8
-            bit_data = src[payload_start + press_idx] >> bit_counter
+            bit_data = _at(payload_start + press_idx) >> bit_counter
         else:
             bit_data = cur >> nodes[node_idx]["bitnum"]
         while node_idx > 255:
             if bit_counter == 8:
                 press_idx += 1
-                bit_data = src[payload_start + press_idx]
+                bit_data = _at(payload_start + press_idx)
                 bit_counter = 0
             idx = bit_data & 1
             bit_data >>= 1
@@ -495,6 +613,12 @@ def unpack_archive(
     skip_protection_cleanup: bool = False,
 ) -> int:
     """Unpack one .wolf archive into out_dir.  Returns the file count."""
+    # AGENTS.md CRITICAL: both the archive and the target are written/read by
+    # this WSL-native process, so they must be on its side.  Checked before
+    # makedirs so a refusal leaves no half-created output directory.
+    own = platform.require_native_paths("unpack wolf archive",
+                                        archive=archive_path, out_dir=out_dir)
+    archive_path, out_dir = str(own["archive"]), str(own["out_dir"])
     os.makedirs(out_dir, exist_ok=True)
     with open(archive_path, "rb") as f:
         raw = f.read()

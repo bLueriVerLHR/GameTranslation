@@ -19,7 +19,8 @@
 
 ## 主题速查
 
-- **解密 / 解包**：解压密码（本地 `docs/table/passwords.md`）、MV 加密资源
+- **解密 / 解包**：解压密码（本地密码表，位置见
+  `docs/reference/local-layout.md`）、MV 加密资源
   `.rpgmvp/.rpgmvo/.rpgmvm`（16 字节 RPGMV 头 + 前 16 字节 XOR）、
   "Failed to load" 多为 HTTP serve 误报 → **相信原文件**。
 - **音频 / 清理 / 打包**：`clean` 对运行时动态加载的字体/图块很危险（先

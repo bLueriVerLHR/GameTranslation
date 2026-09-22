@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "command": "python -m pytest tests -q -n 0 --cov --cov-branch --cov-report=json:coverage.json",
+  "areas": {
+    "kirikiri": 73.2,
+    "rpgmaker": 89.0,
+    "tools": 62.5,
+    "translation": 91.1,
+    "tyrano": 83.8,
+    "unity": 90.5,
+    "wolfrpg": 81.3
+  },
+  "modules": {
+    "rpgmaker/archive.py": 96.2,
+    "rpgmaker/assets.py": 64.0,
+    "rpgmaker/cliutil.py": 94.1,
+    "rpgmaker/deliver.py": 91.7,
+    "rpgmaker/deliverables.py": 83.6,
+    "rpgmaker/fontpolicy.py": 96.1,
+    "rpgmaker/inventory.py": 92.7,
+    "rpgmaker/japanese.py": 100.0,
+    "rpgmaker/jssyntax.py": 93.2,
+    "rpgmaker/logsetup.py": 94.7,
+    "rpgmaker/media.py": 84.7,
+    "rpgmaker/platform.py": 79.4,
+    "rpgmaker/plugins_io.py": 84.2,
+    "rpgmaker/proctools.py": 100.0,
+    "rpgmaker/runtime.py": 88.0,
+    "rpgmaker/settings.py": 93.8,
+    "rpgmaker/tool_registry.py": 92.5,
+    "rpgmaker/workspace.py": 68.0,
+    "kirikiri/tlg.py": 47.9,
+    "kirikiri/xp3pack.py": 96.9,
+    "kirikiri/xp3tool.py": 97.5,
+    "translation/rawlib.py": 95.3,
+    "tyrano/asar.py": 96.7,
+    "wolfrpg/dxarchive.py": 81.3,
+    "translation/bake.py": 88.8,
+    "translation/codes.py": 98.0,
+    "translation/mvkeys.py": 92.5
+  },
+  "total": 74.4,
+  "waivers": {
+    "kirikiri/tlg.py": "measured 47.7% after the phase-6 lint rewrite collapsed the same executed statements onto fewer lines (910->902 statements, 316->310 branches). Verified line-by-line against the phase-5 baseline tree: no identical source line went covered->missing, and this host never covered the slow numba kernels in either tree. The 0.2 drop is line arithmetic - re-record the floor once the slow layer is measured again."
+  }
+}

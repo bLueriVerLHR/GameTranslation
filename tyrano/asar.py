@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Electron asar archive tool - extract TyranoScript/TyranoBuilder games
 shipped as Electron apps.
 
@@ -23,8 +22,7 @@ import sys
 from pathlib import Path
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, platform
 
 log = logging.getLogger("tyrano.asar")
 
@@ -75,15 +73,21 @@ def _open(asar_path, mode="r"):
 def list_files(asar_path):
     """Return the list of file paths inside an asar archive."""
     if not os.path.isfile(asar_path):
-        raise FileNotFoundError("asar archive not found: %s" % asar_path)
+        raise FileNotFoundError(f"asar archive not found: {asar_path}")
     with _open(asar_path) as archive:
         return [str(p).replace("\\", "/") for p in archive.list()]
 
 
 def extract(asar_path, out_dir):
     """Extract an asar archive into out_dir (created on demand)."""
+    # AGENTS.md CRITICAL: native Python extraction.  `tyrano.build` already
+    # gates its own call, but the CLI and library entry point must refuse
+    # independently (this is the documented public entry point).
+    own = platform.require_native_paths("extract asar", archive=asar_path,
+                                        out_dir=out_dir)
+    asar_path, out_dir = str(own["archive"]), str(own["out_dir"])
     if not os.path.isfile(asar_path):
-        raise FileNotFoundError("asar archive not found: %s" % asar_path)
+        raise FileNotFoundError(f"asar archive not found: {asar_path}")
     os.makedirs(out_dir, exist_ok=True)
     with _open(asar_path) as archive:
         archive.extract(Path(out_dir))

@@ -17,8 +17,9 @@ from concurrent.futures import (ProcessPoolExecutor, ThreadPoolExecutor,
                                 as_completed)
 
 from kirikiri import tlg
-from kirikiri.ks_extract import detect_encoding
-from rpgmaker import runtime
+from kirikiri.ks_extract import decode_text, detect_encoding
+from rpgmaker import platform, runtime
+import contextlib
 
 log = logging.getLogger(__name__)
 
@@ -181,11 +182,13 @@ def _layer_map(unpacked):
     if not os.path.isfile(p):
         return lm
     raw = open(p, "rb").read()
+    # errors="replace": a byte the detected codec rejects must not lose the
+    # whole layer table (see kirikiri.ks_extract.decode_text).
     try:
-        txt = raw.decode(detect_encoding(raw), errors="replace")
-    except (UnicodeDecodeError, LookupError):
-        # errors="replace" already suppresses decode errors; this guards the
-        # theoretical unknown-codec / truncated-input cases only.
+        txt = decode_text(raw, detect_encoding(raw))
+    except LookupError:
+        # Unreachable from detect_encoding (it only returns known names), kept
+        # so an unknown codec name cannot escape as an exception here.
         return lm
     for m in re.finditer(r'sf\.(lay_[a-z0-9_]+)\s*=\s*(\d+)', txt):
         lm[m.group(1)] = m.group(2)
@@ -238,7 +241,7 @@ def _convert_region_image(src, dst, stats):
     region number straight from the R channel. Non-indexed sources keep their
     R channel (best effort; such images are broken maps anyway).
     """
-    _apply_image_result(stats, src, *_image_job(src, dst, "region"))
+    _apply_image_result(stats, src, dst, *_image_job(src, dst, "region"))
 
 
 def _convert_videos(unpacked, out_data, video_dir, stats):
@@ -260,9 +263,8 @@ def _convert_videos(unpacked, out_data, video_dir, stats):
     found = []
     for dp, dirnames, fns in os.walk(unpacked):
         dirnames[:] = [d for d in dirnames if d not in ("_video_webm",)]
-        for fn in fns:
-            if fn.lower().endswith(exts):
-                found.append(os.path.join(dp, fn))
+        found.extend(os.path.join(dp, fn) for fn in fns
+                     if fn.lower().endswith(exts))
     if not found:
         return {}
 
@@ -376,6 +378,89 @@ NON_ASSET_DIRS = {
 }
 
 
+def _asset_kind(fn):
+    """Which conversion a source file needs: ``tlg``/``bmp``/``region``/``copy``."""
+    ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
+    if ext == "tlg":
+        return "tlg"
+    if ext == "bmp":
+        return "bmp"
+    if _is_region_image(fn):
+        return "region"
+    return "copy"
+
+
+def _asset_dest_name(fn):
+    """The output file name (``.tlg``/``.bmp`` become ``.png``)."""
+    ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
+    if ext in ("tlg", "bmp"):
+        return fn.rsplit(".", 1)[0] + ".png"
+    return fn
+
+
+def _walk_asset_dir(src_dir, out_data, dst_sub):
+    """Collect the jobs for one source asset directory (recursive).
+
+    Returns ``(jobs, dropped_video)``; `dst_sub` is the Tyrano folder the whole
+    subtree is mapped to, and the sub-path under it is preserved.
+    """
+    jobs = []
+    dropped_video = []
+
+    def _walk(cur, sub, dst_sub=dst_sub):
+        # dst_sub is bound as a default: the closure outlives the loop
+        # iteration that created it, so reading it from the enclosing
+        # scope would see the NEXT sub-directory's value (B023).
+        for fn in sorted(os.listdir(cur)):
+            sp = os.path.join(cur, fn)
+            rel = os.path.join(sub, fn) if sub else fn
+            if os.path.isdir(sp):
+                _walk(sp, rel)
+                continue
+            if dst_sub == "system" and fn.lower() in ASSET_NAME_SKIP:
+                continue            # the converter writes its own
+            ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
+            if "." + ext in UNPLAYABLE_VIDEO_EXTS:
+                dropped_video.append(fn)
+                continue
+            dst_base = os.path.join(out_data, dst_sub, rel)
+            outname = _asset_dest_name(fn)
+            if outname != fn:
+                dst_path = os.path.join(os.path.dirname(dst_base), outname)
+            else:
+                dst_path = dst_base
+            jobs.append((_asset_kind(fn), sp, dst_path))
+
+    _walk(src_dir, "")
+    return jobs, dropped_video
+
+
+def _walk_root_assets(unpacked, out_data):
+    """Collect root-level asset jobs (some repacks keep assets beside scripts).
+
+    Returns ``(jobs, dropped_video, skipped_names)``.
+    """
+    jobs = []
+    dropped_video = []
+    skipped = []
+    for fn in sorted(os.listdir(unpacked)):
+        sp = os.path.join(unpacked, fn)
+        if not os.path.isfile(sp):
+            continue
+        ext = os.path.splitext(fn)[1].lower()
+        if ext in UNPLAYABLE_VIDEO_EXTS:
+            dropped_video.append(fn)
+            continue
+        dst_sub = next((sub for sub, exts in ROOT_ASSET_EXTS.items()
+                        if ext in exts), None)
+        if dst_sub is None:
+            skipped.append(fn)
+            continue
+        jobs.append((_asset_kind(fn), sp,
+                     os.path.join(out_data, dst_sub, _asset_dest_name(fn))))
+    return jobs, dropped_video, skipped
+
+
 def _collect_asset_jobs(unpacked, out_data, asset_dirs=None):
     """Walk the source's asset dirs into a flat ``[(kind, src, dst)]`` list.
 
@@ -421,66 +506,14 @@ def _collect_asset_jobs(unpacked, out_data, asset_dirs=None):
         if dst_sub is None:
             dst_sub = src_sub
             unknown.append(src_sub)
-
-        def _walk(cur, sub):
-            for fn in sorted(os.listdir(cur)):
-                sp = os.path.join(cur, fn)
-                rel = os.path.join(sub, fn) if sub else fn
-                if os.path.isdir(sp):
-                    _walk(sp, rel)
-                    continue
-                if dst_sub == "system" and fn.lower() in ASSET_NAME_SKIP:
-                    continue            # the converter writes its own
-                ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
-                if "." + ext in UNPLAYABLE_VIDEO_EXTS:
-                    dropped_video.append(fn)
-                    continue
-                outname = fn
-                if ext in ("tlg", "bmp"):
-                    outname = fn.rsplit(".", 1)[0] + ".png"
-                dst_base = os.path.join(out_data, dst_sub, rel)
-                if outname != fn:
-                    dst_path = os.path.join(os.path.dirname(dst_base), outname)
-                else:
-                    dst_path = dst_base
-                if ext == "tlg":
-                    kind = "tlg"
-                elif ext == "bmp":
-                    kind = "bmp"
-                elif _is_region_image(fn):
-                    kind = "region"
-                else:
-                    kind = "copy"
-                jobs.append((kind, sp, dst_path))
-
-        _walk(src_dir, "")
+        sub_jobs, sub_dropped = _walk_asset_dir(src_dir, out_data, dst_sub)
+        jobs += sub_jobs
+        dropped_video += sub_dropped
 
     # Root-level assets: some repacks keep every asset next to the scripts.
-    root_skipped = []
-    for fn in sorted(os.listdir(unpacked)):
-        sp = os.path.join(unpacked, fn)
-        if not os.path.isfile(sp):
-            continue
-        ext = os.path.splitext(fn)[1].lower()
-        if ext in UNPLAYABLE_VIDEO_EXTS:
-            dropped_video.append(fn)
-            continue
-        dst_sub = next((sub for sub, exts in ROOT_ASSET_EXTS.items()
-                        if ext in exts), None)
-        if dst_sub is None:
-            root_skipped.append(fn)
-            continue
-        outname = (fn.rsplit(".", 1)[0] + ".png"
-                   if ext in (".tlg", ".bmp") else fn)
-        if ext == ".tlg":
-            kind = "tlg"
-        elif ext == ".bmp":
-            kind = "bmp"
-        elif _is_region_image(fn):
-            kind = "region"
-        else:
-            kind = "copy"
-        jobs.append((kind, sp, os.path.join(out_data, dst_sub, outname)))
+    root_jobs, root_dropped, root_skipped = _walk_root_assets(unpacked, out_data)
+    jobs += root_jobs
+    dropped_video += root_dropped
 
     if unknown:
         log.warning("asset folder(s) not in the known layout, kept under their "
@@ -523,7 +556,7 @@ def _convert_assets(unpacked, out_data, stats, workers=None, asset_dirs=None):
     workers = runtime.resolve_workers("tlg", workers, path=unpacked)
     if workers <= 1 or len(image_jobs) <= 1:
         for kind, src, dst in image_jobs:
-            _apply_image_result(stats, src, *_image_job(src, dst, kind))
+            _apply_image_result(stats, src, dst, *_image_job(src, dst, kind))
     else:
         pool_size = min(workers, len(image_jobs))
         log.debug("asset images: %d job(s) on %d worker process(es)",
@@ -533,7 +566,7 @@ def _convert_assets(unpacked, out_data, stats, workers=None, asset_dirs=None):
                        for kind, src, dst in image_jobs}
             for fut in as_completed(futures):
                 _kind, src = futures[fut]
-                _apply_image_result(stats, src, *fut.result())
+                _apply_image_result(stats, src, dst, *fut.result())
 
     if copy_jobs:
         copy_workers = min(runtime.resolve_workers("copy", None, path=unpacked),
@@ -557,10 +590,8 @@ def _decoder_mtime():
     newest = 0.0
     for path in (getattr(tlg, "__file__", None),):
         if path:
-            try:
+            with contextlib.suppress(OSError):
                 newest = max(newest, os.path.getmtime(path))
-            except OSError:
-                pass
     return newest
 
 
@@ -586,9 +617,7 @@ def _up_to_date(src, dst):
         return False
     if t_dst < t_src:
         return False
-    if dst.lower().endswith(".png") and t_dst < _decoder_mtime():
-        return False
-    return True
+    return not (dst.lower().endswith(".png") and t_dst < _decoder_mtime())
 
 
 #: Image conversions are CPU-bound pure Python/PIL work (they hold the GIL),
@@ -636,20 +665,34 @@ def _image_job(src, dst, kind):
         return kind, "fail", str(e)
 
 
-def _apply_image_result(stats, src, kind, status, err):
-    """Fold one `_image_job` result into `stats` and the log (parent side)."""
+def _apply_image_result(stats, src, dst, kind, status, err):
+    """Fold one `_image_job` result into `stats` and the log (parent side).
+
+    `dst` is only used for the WARN line: giving it a root keeps the message
+    stable regardless of the process CWD (see `rpgmaker.platform.display_path`).
+    """
     if status == "cached":
-        stats["%s_cached" % kind] += 1
+        stats[f"{kind}_cached"] += 1
     elif status == "ok":
         stats[kind] += 1
     else:
-        log.warning("%s %s: %s", _FAIL_LABEL[kind], os.path.relpath(src), err)
-        stats["%s_fail" % kind] += 1
+        log.warning("%s %s: %s", _FAIL_LABEL[kind],
+                    platform.display_path(src, _asset_root(dst)), err)
+        stats[f"{kind}_fail"] += 1
+
+
+def _asset_root(dst):
+    """The data-dir root an asset destination sits in, for log messages.
+
+    Output assets live at ``<data>/<kind>`` (``data/image``, ``data/video``,
+    ...), so the grandparent is the data directory.
+    """
+    return os.path.dirname(os.path.dirname(str(dst)))
 
 
 def _convert_tlg(src, dst, stats):
-    _apply_image_result(stats, src, *_image_job(src, dst, "tlg"))
+    _apply_image_result(stats, src, dst, *_image_job(src, dst, "tlg"))
 
 
 def _convert_bmp(src, dst, stats):
-    _apply_image_result(stats, src, *_image_job(src, dst, "bmp"))
+    _apply_image_result(stats, src, dst, *_image_job(src, dst, "bmp"))

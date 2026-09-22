@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for tools/plugin_json_leaves.py (extract / rebuild / apply).
 
 The subject is the contract: functional *keys* and identifier values inside a
 plugin JSON blob stay byte-identical, only display leaves change, and a
 rebuilt blob is always re-parseable.
 """
-import io
 import json
 import os
 
@@ -21,7 +19,7 @@ ZH = "\u6d4b\u8bd5"
 def _write(path, payload):
     """Write a data file (JSON dict or raw text) with LF newlines."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         if isinstance(payload, str):
             handle.write(payload)
         else:
@@ -40,7 +38,7 @@ def make_game(root, blob=None, flat_name=KANA, code_field=None,
         params["Script"] = code_field
     params.update(extra_params or {})
     plugins = [{"name": "P", "status": True, "description": "", "parameters": params}]
-    body = "var $plugins =\n%s;\n" % json.dumps(plugins, ensure_ascii=False)
+    body = f"var $plugins =\n{json.dumps(plugins, ensure_ascii=False)};\n"
     _write(os.path.join(root, "js", "plugins.js"), body)
     return root
 
@@ -96,7 +94,7 @@ def test_extract_skips_kanji_only_values_outside_display_keys(tmp_path):
 
 def test_extract_uses_backticks_in_code_fields(tmp_path):
     """A code field *inside a blob*: only backtick display text is a leaf."""
-    blob = {"Script": "return `%s`\u3068 this.x" % KANA}
+    blob = {"Script": f"return `{KANA}`\u3068 this.x"}
     game = make_game(str(tmp_path), blob=blob, flat_name="\u653b\u6483")
     work = str(tmp_path / "work")
     pjl.cmd_extract(game, work)
@@ -107,7 +105,7 @@ def test_extract_uses_backticks_in_code_fields(tmp_path):
 def test_extract_keeps_top_level_code_params_flat(tmp_path):
     """A code param that is not JSON has no leaf structure: it stays flat."""
     game = make_game(str(tmp_path), blob={}, flat_name="\u653b\u6483",
-                     code_field="return `%s`" % KANA)
+                     code_field=f"return `{KANA}`")
     work = str(tmp_path / "work")
     pjl.cmd_extract(game, work)
     assert plain_io.load_json(os.path.join(work, "plugin_leaves.json")) == {}
@@ -201,7 +199,7 @@ def test_apply_writes_pairs_and_backs_up(tmp_path):
     plain_io.save_json(os.path.join(work, "translated.json"), {KANA: ZH})
     pjl.cmd_rebuild(game, work)
     assert pjl.cmd_apply(game, work) == 0
-    text = io.open(os.path.join(game, "js", "plugins.js"),
+    text = open(os.path.join(game, "js", "plugins.js"),
                    encoding="utf-8").read()
     assert ZH in text and KANA_MORE in text
     assert os.path.exists(os.path.join(game, "js", "plugins.js.bak"))
@@ -215,11 +213,11 @@ def test_apply_refuses_when_a_pair_matches_nothing(tmp_path, capsys):
     work.mkdir()
     plain_io.save_json(str(work / "plugin_blobs_translated.json"),
                        {"original that is absent": "whatever"})
-    before = io.open(os.path.join(game, "js", "plugins.js"),
+    before = open(os.path.join(game, "js", "plugins.js"),
                      encoding="utf-8").read()
     assert pjl.cmd_apply(game, str(work)) == 1
     assert "REFUSING" in capsys.readouterr().out
-    after = io.open(os.path.join(game, "js", "plugins.js"),
+    after = open(os.path.join(game, "js", "plugins.js"),
                     encoding="utf-8").read()
     assert before == after
 
@@ -230,11 +228,11 @@ def test_apply_dry_run_writes_nothing(tmp_path, capsys):
     pjl.cmd_extract(game, work)
     plain_io.save_json(os.path.join(work, "translated.json"), {KANA: ZH})
     pjl.cmd_rebuild(game, work)
-    before = io.open(os.path.join(game, "js", "plugins.js"),
+    before = open(os.path.join(game, "js", "plugins.js"),
                      encoding="utf-8").read()
     assert pjl.cmd_apply(game, work, dry_run=True) == 0
     assert "dry run" in capsys.readouterr().out
-    assert io.open(os.path.join(game, "js", "plugins.js"),
+    assert open(os.path.join(game, "js", "plugins.js"),
                    encoding="utf-8").read() == before
 
 
@@ -245,11 +243,11 @@ def test_apply_is_idempotent(tmp_path):
     plain_io.save_json(os.path.join(work, "translated.json"), {KANA: ZH})
     pjl.cmd_rebuild(game, work)
     assert pjl.cmd_apply(game, work) == 0
-    after_first = io.open(os.path.join(game, "js", "plugins.js"),
+    after_first = open(os.path.join(game, "js", "plugins.js"),
                           encoding="utf-8").read()
     # re-running finds no matching original again -> refuses, changes nothing
     assert pjl.cmd_apply(game, work) == 1
-    assert io.open(os.path.join(game, "js", "plugins.js"),
+    assert open(os.path.join(game, "js", "plugins.js"),
                    encoding="utf-8").read() == after_first
 
 

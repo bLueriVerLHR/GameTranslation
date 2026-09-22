@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Shared RPG Maker data-structure walkers.
 
 MZ/MV data files are per-map JSON objects that carry their event pages in

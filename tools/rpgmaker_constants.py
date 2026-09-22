@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Shared RPG Maker database field-name tables.
 
 The MZ/MV (JSON) system file stores its localized UI text under these keys;

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Deliver a finished build to the Windows storage side.
 
 Recursive copies of many small files across the WSL<->Windows boundary
@@ -24,7 +23,7 @@ from pathlib import Path
 
 from . import archive as archive_mod
 from . import compress as compress_mod
-from . import config
+from . import deliverables, platform, tool_registry
 
 log = logging.getLogger("rpgmaker.deliver")
 
@@ -45,23 +44,31 @@ def deliver(folder, archive=None, games=None, archives=None, level=15,
     """Compress `folder`, copy the archive into `archives`, then extract it
     into `games` (deleting any stale same-name folder there first).
 
-    Defaults: `archives`/`games` come from env_config.json deliverables
+    Defaults: `archives`/`games` come from the machine config deliverables
     (games_dir/archives_dir), `archive` is written to temp_dir first.
     `name` is the delivered name used for both the archive and the games-dir
     folder (default: the folder's own basename), so a work-slot layout that
     builds into `.../out/` can still deliver under the game's real name.
     Returns the archive path in `archives`.
     """
-    folder = Path(folder)
+    owned_folder = platform.require_native_paths("deliver source", folder=folder)["folder"]
+    folder = Path(owned_folder)
     if not folder.is_dir():
-        raise FileNotFoundError("folder not found: %s" % folder)
+        raise FileNotFoundError(f"folder not found: {folder}")
     name = name or folder.name
     if not name:
-        raise ValueError("cannot derive game name from %s" % folder)
-    archives = Path(archives or config.archives_dir())
-    games = Path(games or config.games_dir())
-    local = Path(archive or Path(config.temp_dir()) / (name + ".7z"))
-    local.parent.mkdir(parents=True, exist_ok=True)
+        raise ValueError(f"cannot derive game name from {folder}")
+    archives = Path(archives or deliverables.archives_dir())
+    games = Path(games or deliverables.games_dir())
+    local = platform.require_native_paths(
+        "deliver local archive", folder=owned_folder,
+        archive=archive_mod.output_ref(
+            archive or Path(deliverables.temp_dir()) / (name + ".7z")))["archive"]
+    # Reject a mixed destination set before compression, copying, or deletion.
+    platform.require_same_side(
+        "deliver destinations", archives=platform.resolve_ref(archives),
+        games=platform.resolve_ref(games))
+    Path(local).parent.mkdir(parents=True, exist_ok=True)
 
     log.info("deliver %s -> archives=%s games=%s", name, archives, games)
 
@@ -70,10 +77,10 @@ def deliver(folder, archive=None, games=None, archives=None, level=15,
     # one, not the requested one.  Measured failure: --archive "<name>" wrote
     # "<name>.7z" into the cwd while the test looked at "<name>" and reported
     # a bogus "local archive failed integrity test".
-    local = Path(compress_mod.compress(str(folder), str(local), level=level,
+    local = Path(compress_mod.compress(owned_folder, local, level=level,
                                        root=name))
     if not compress_mod.test_archive(str(local)):
-        raise RuntimeError("local archive failed integrity test: %s" % local)
+        raise RuntimeError(f"local archive failed integrity test: {local}")
 
     os.makedirs(archives, exist_ok=True)
     dst_archive = archives / (name + ".7z")
@@ -83,7 +90,7 @@ def deliver(folder, archive=None, games=None, archives=None, level=15,
 
     target = games / name
     if os.path.exists(target):
-        if config.is_windows_side(target):
+        if platform.is_windows_side(target):
             _remove_windows_side(target)
         else:
             log.info("removing stale folder %s", target)
@@ -102,9 +109,9 @@ def _refuse_cross_side(what, path, hint):
     """Raise the CRITICAL cross-side refusal: the tool about to process
     `path` runs on the other platform than the file itself (AGENTS.md)."""
     raise RuntimeError(
-        "refusing to %s %s from inside WSL: a file and the tool processing "
+        f"refusing to {what} {path} from inside WSL: a file and the tool processing "
         "it must live on the same platform (AGENTS.md CRITICAL cross-system "
-        "rule). %s" % (what, path, hint))
+        f"rule). {hint}")
 
 
 def _run_powershell(command):
@@ -112,9 +119,9 @@ def _run_powershell(command):
 
     Thin alias over config.run_powershell so the interpreter lookup, the
     cross-system failure hint and the exit-code handling live in one place
-    (shared with the WSL bridge in rpgmaker/config.py).
+    (shared with the WSL bridge in rpgmaker/tool_registry.py).
     """
-    return config.run_powershell(command)
+    return tool_registry.run_powershell(command)
 
 
 def _remove_windows_side(target):
@@ -122,9 +129,8 @@ def _remove_windows_side(target):
     must not touch /mnt/* files). Single-quoted paths: double quotes would
     expand $vars inside the command; the trailing $? check makes a failed
     removal exit non-zero even under -ErrorAction SilentlyContinue."""
-    _run_powershell("Remove-Item -Recurse -Force -LiteralPath %s "
-                    "-ErrorAction SilentlyContinue; if (-not $?) { exit 1 }"
-                    % ps_quote(config.to_windows_path(target)))
+    _run_powershell(f"Remove-Item -Recurse -Force -LiteralPath {ps_quote(platform.to_windows_path(target))} "
+                    "-ErrorAction SilentlyContinue; if (-not $?) { exit 1 }")
     log.info("removed stale folder %s (Windows side)", target)
 
 
@@ -137,13 +143,20 @@ def _extract(archive, dest, name):
     powershell.exe - a WSL-native process must never write that tree
     (AGENTS.md CRITICAL cross-system rule).
     """
-    archive_win = config.is_windows_side(archive)
-    dest_win = config.is_windows_side(dest)
+    platform.require_same_side("extract", archive=platform.resolve_ref(archive),
+                               dest=platform.resolve_ref(dest))
+    archive_win = platform.is_windows_side(archive)
+    dest_win = platform.is_windows_side(dest)
     if archive_win != dest_win:
+        # The structured report names which of the two paths is the odd one
+        # out, so the operator sees the mistake rather than a bare mismatch.
+        report = platform.check_same_side({"archive": archive, "dest": dest})
+        detail = (report.detail if not report.ok else
+                  "archive and destination are on different platforms")
         _refuse_cross_side(
             "extract", archive,
-            "archive and destination are on different platforms; copy the "
-            "archive to the destination side first, then extract there.")
+            f"{detail}; copy the archive to the destination side first, then "
+            "extract there.")
     if archive_win:
         return _extract_windows_side(archive, dest, name)
     return _extract_wsl_side(archive, dest, name)
@@ -151,16 +164,17 @@ def _extract(archive, dest, name):
 
 def _extract_wsl_side(archive, dest, name):
     """WSL-side destination: py7zr extracts in-process (no 7-Zip needed)."""
-    targets = [n for n in archive_mod.names(str(archive))
+    owned = platform.require_native_paths("extract delivery", archive=archive, dest=dest)
+    targets = [n for n in archive_mod.names(owned["archive"])
                if n == name or n.startswith(name + "/")]
     if not targets:
-        raise RuntimeError("archive %s has no %s/ entry" % (archive, name))
-    archive_mod.extract(str(archive), str(dest), targets=targets)
+        raise RuntimeError(f"archive {archive} has no {name}/ entry")
+    archive_mod.extract(owned["archive"], owned["dest"], targets=targets)
     return _check_extracted(dest, name)
 
 
 def _extract_windows_side(archive, dest, name):
-    win7z = config.win_7z()
+    win7z = tool_registry.win_7z()
     if not win7z:
         _refuse_cross_side(
             "extract", archive,
@@ -168,9 +182,9 @@ def _extract_windows_side(archive, dest, name):
             "Windows side (probed: Program Files/7-Zip*), or set SEVENZ_WIN "
             "to its full path; alternatively run the extraction on the "
             "Windows side manually.")
-    command = "& {0} x -y {1} {2} {3}; if (-not $?) {{ exit 1 }}".format(
-        ps_quote(win7z), "-o" + ps_quote(config.to_windows_path(dest)),
-        ps_quote(config.to_windows_path(archive)), ps_quote(name))
+    command = "& {} x -y {} {} {}; if (-not $?) {{ exit 1 }}".format(
+        ps_quote(win7z), "-o" + ps_quote(platform.to_windows_path(dest)),
+        ps_quote(platform.to_windows_path(archive)), ps_quote(name))
     log.info("running (Windows side): %s", command)
     _run_powershell(command)
     return _check_extracted(dest, name)
@@ -179,6 +193,6 @@ def _extract_windows_side(archive, dest, name):
 def _check_extracted(dest, name):
     target = Path(dest) / name
     if not target.is_dir():
-        raise RuntimeError("extract did not produce %s" % target)
+        raise RuntimeError(f"extract did not produce {target}")
     log.info("extracted -> %s", target)
     return str(target)

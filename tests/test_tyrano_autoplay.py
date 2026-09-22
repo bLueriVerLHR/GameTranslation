@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tyrano/autoplay.py ([bgmovie] autoplay-policy fix).
 
 The engine's kag.tag_ext.js calls <video>.play() inside event handlers

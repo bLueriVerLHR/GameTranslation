@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for rpgmaker/doctor.py environment self-check.
 
-The report is driven by the declarative rpgmaker.config.TOOLS table plus the
+The report is driven by the declarative rpgmaker.tool_registry.TOOLS table plus the
 deliverable/dir resolvers, so every check can be monkeypatched into a
 hermetic pass/fail matrix: positive (everything available -> all OK, exit 0),
 negative (each resolver returns None -> that line is [MISS], exit 1) and edge
@@ -13,14 +12,17 @@ import json
 
 import pytest
 
-from rpgmaker import config, doctor
+from rpgmaker import deliverables, doctor, platform, settings, tool_registry
 
-TOOL_KEYS = [t.key for t in config.TOOLS]
-NATIVE_TOOLS = [t for t in config.TOOLS if t.side == "native"]
-WIN_TOOLS = [t for t in config.TOOLS if t.side == "win32"]
+TOOL_KEYS = [t.key for t in tool_registry.TOOLS]
+NATIVE_TOOLS = [t for t in tool_registry.TOOLS if t.side == "native"]
+WIN_TOOLS = [t for t in tool_registry.TOOLS if t.side == "win32"]
 DIR_CHECKS = [("games_dir", "games_dir"), ("archives_dir", "archives_dir"),
               ("temp_dir", "temp_dir")]
-TOTAL_CHECKS = len(TOOL_KEYS) + 1 + len(DIR_CHECKS)
+# One row per tool, plus the machine config, the three deliverable folders,
+# the workspace root and one row per logical private location.
+TOTAL_CHECKS = (len(TOOL_KEYS) + 1 + len(DIR_CHECKS) + 1
+                + len(settings.PRIVATE_PATHS))
 
 
 @pytest.fixture
@@ -29,15 +31,17 @@ def healthy(monkeypatch, tmp_path):
     readable; every deliverable dir exists -> all checks must be OK."""
     exe = tmp_path / "tool.bin"
     exe.write_bytes(b"x")
-    for tool in config.TOOLS:
-        monkeypatch.setattr(config, tool.resolver, lambda _p=exe: str(_p))
+    for tool in tool_registry.TOOLS:
+        # doctor resolves each tool through the registry module, so that is
+        # where a test must patch it
+        monkeypatch.setattr(tool_registry, tool.resolver, lambda _p=exe: str(_p))
     cfg = tmp_path / "env_config.json"
     cfg.write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+    monkeypatch.setattr(settings, "LOCAL_ENV_FILE", cfg)
     for _label, fname in DIR_CHECKS:
         d = tmp_path / fname
         d.mkdir()
-        monkeypatch.setattr(config, fname, lambda _d=d: str(_d))
+        monkeypatch.setattr(deliverables, fname, lambda _d=d: str(_d))
     return tmp_path
 
 
@@ -59,8 +63,8 @@ class TestCollectChecks:
 
     @pytest.mark.parametrize("key", TOOL_KEYS)
     def test_each_tool_missing(self, monkeypatch, healthy, key):
-        tool = config.TOOLS_BY_KEY[key]
-        monkeypatch.setattr(config, tool.resolver, lambda: None)
+        tool = tool_registry.TOOLS_BY_KEY[key]
+        monkeypatch.setattr(tool_registry, tool.resolver, lambda: None)
         by = _by_label(doctor.collect_checks())
         assert not by[key].ok
         expected = "(not configured)" if tool.side == "win32" else "(not found)"
@@ -68,11 +72,44 @@ class TestCollectChecks:
         assert by[key].hint
         assert all(c.ok for lbl, c in by.items() if lbl != key)
 
+    @pytest.mark.parametrize("key", TOOL_KEYS)
+    def test_only_required_tools_block_a_build(self, monkeypatch, healthy,
+                                               key):
+        """A missing tool is a MISS only when a build cannot proceed without
+        it; everything else is a WARN (PLAN Phase 4 task 8)."""
+        tool = tool_registry.TOOLS_BY_KEY[key]
+        monkeypatch.setattr(tool_registry, tool.resolver, lambda: None)
+        expected = doctor._is_fatal(key)
+        assert expected is tool.status.missing_is_fatal or \
+            tool.status is tool_registry.ToolStatus.WINDOWS_BRIDGE
+
+    def test_a_missing_optional_tool_does_not_fail_the_report(
+            self, monkeypatch, healthy):
+        monkeypatch.setattr(tool_registry, "find_node", lambda: None)
+        lines = doctor.render(doctor.collect_checks())
+        assert "[WARN] node" in "\n".join(lines)
+        assert not any(l.startswith("[MISS] node") for l in lines)
+
+    def test_a_missing_window_tool_warns_on_windows_only(
+            self, monkeypatch, healthy):
+        """The PowerShell bridge exists to reach the Windows side FROM WSL,
+        so its absence is only a problem there."""
+        monkeypatch.setattr(tool_registry, "find_powershell", lambda: None)
+        monkeypatch.setattr(platform, "is_wsl", lambda: False)
+        assert not doctor._is_fatal("powershell")
+        monkeypatch.setattr(platform, "is_wsl", lambda: True)
+        assert doctor._is_fatal("powershell")
+
+    def test_non_tool_checks_are_always_fatal(self):
+        for label in ("machine config", "games_dir", "archives_dir",
+                      "temp_dir", "workspace root"):
+            assert doctor._is_fatal(label), label
+
     def test_registry_covers_every_tool_resolver(self):
-        names = {t.resolver for t in config.TOOLS}
-        assert len(names) == len(config.TOOLS)
+        names = {t.resolver for t in tool_registry.TOOLS}
+        assert len(names) == len(tool_registry.TOOLS)
         for name in names:
-            assert callable(getattr(config, name))
+            assert callable(getattr(tool_registry, name))
 
     def test_native_and_win_split(self):
         assert {t.key for t in NATIVE_TOOLS}.isdisjoint(
@@ -80,24 +117,26 @@ class TestCollectChecks:
         assert "win7z" in {t.key for t in WIN_TOOLS}
 
     def test_env_config_absent_is_ok(self, monkeypatch, healthy, tmp_path):
-        monkeypatch.setattr(config, "LOCAL_ENV_FILE", tmp_path / "no-such.json")
+        monkeypatch.setattr(settings, "LOCAL_ENV_FILE", tmp_path / "no-such.json")
         by = _by_label(doctor.collect_checks())
-        assert by["env_config.json"].ok
-        assert "(absent)" in by["env_config.json"].detail
+        assert by["machine config"].ok
+        assert "(absent)" in by["machine config"].detail
 
     def test_env_config_unreadable(self, monkeypatch, healthy, tmp_path):
         cfg = tmp_path / "env_config.json"
         cfg.write_text("{ not valid json", encoding="utf-8")
-        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
+        monkeypatch.setattr(settings, "LOCAL_ENV_FILE", cfg)
         by = _by_label(doctor.collect_checks())
-        assert not by["env_config.json"].ok
-        assert "(unreadable)" in by["env_config.json"].detail
+        assert not by["machine config"].ok
+        assert "(invalid)" in by["machine config"].detail
 
     def test_env_config_non_dict_root(self, monkeypatch, healthy, tmp_path):
         cfg = tmp_path / "env_config.json"
         cfg.write_text("[1, 2]", encoding="utf-8")
-        monkeypatch.setattr(config, "LOCAL_ENV_FILE", cfg)
-        assert not _by_label(doctor.collect_checks())["env_config.json"].ok
+        monkeypatch.setattr(settings, "LOCAL_ENV_FILE", cfg)
+        by = _by_label(doctor.collect_checks())
+        assert not by["machine config"].ok
+        assert "(invalid)" in by["machine config"].detail
 
     @pytest.mark.parametrize("label,fname", DIR_CHECKS)
     def test_each_dir_missing_when_uncreatable(self, monkeypatch, healthy,
@@ -106,7 +145,7 @@ class TestCollectChecks:
         blocker = tmp_path / "not-a-dir"
         blocker.write_text("x", encoding="utf-8")
         ghost = str(blocker / label)
-        monkeypatch.setattr(config, fname, lambda _d=ghost: _d)
+        monkeypatch.setattr(deliverables, fname, lambda _d=ghost: _d)
         assert not _by_label(doctor.collect_checks())[label].ok
 
     @pytest.mark.parametrize("label,fname", DIR_CHECKS)
@@ -131,27 +170,84 @@ class TestRender:
         assert lines[-1] == "%d/%d checks OK" % (TOTAL_CHECKS, TOTAL_CHECKS)
 
     def test_render_miss_has_hint(self, monkeypatch, healthy):
-        monkeypatch.setattr(config, "find_7z", lambda: None)
+        # ffmpeg is `required`, so its absence is a MISS (with a hint)
+        monkeypatch.setattr(tool_registry, "find_ffmpeg", lambda: None)
         lines = doctor.render(doctor.collect_checks())
         miss = next(l for l in lines if l.startswith("[MISS]"))
         assert "->" in miss
-        assert "7z" in miss
+        assert "ffmpeg" in miss
 
 
 class TestJsonReport:
+    """`doctor --json` is a stable interface other tooling reads, so its shape
+    is pinned here."""
+
     def test_json_is_machine_readable(self, healthy, capsys):
         assert doctor.run(["--json"]) == 0
         payload = json.loads(capsys.readouterr().out)
+        assert set(payload) == {"ok", "checks", "tools", "private",
+                                "warnings"}
         assert payload["ok"] is True
+        assert payload["warnings"] == []
         assert [c["label"] for c in payload["checks"]][:len(TOOL_KEYS)] == \
             TOOL_KEYS
         assert {t["key"] for t in payload["tools"]} == set(TOOL_KEYS)
 
     def test_json_reports_failure(self, monkeypatch, healthy, capsys):
-        monkeypatch.setattr(config, "win_7z", lambda: None)
+        monkeypatch.setattr(tool_registry, "win_7z", lambda: None)
+        monkeypatch.setattr(platform, "is_wsl", lambda: True)
         assert doctor.run(["--json"]) == 1
         payload = json.loads(capsys.readouterr().out)
         assert payload["ok"] is False
+
+    def test_json_keeps_warnings_out_of_ok(self, monkeypatch, healthy,
+                                           capsys):
+        monkeypatch.setattr(tool_registry, "find_node", lambda: None)
+        assert doctor.run(["--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["ok"] is True
+        assert payload["warnings"] == ["node"]
+
+    def test_every_check_row_has_the_pinned_shape(self, healthy, capsys):
+        doctor.run(["--json"])
+        payload = json.loads(capsys.readouterr().out)
+        for row in payload["checks"]:
+            assert set(row) == {"label", "ok", "detail", "hint", "source"}
+            assert isinstance(row["label"], str) and row["label"]
+            assert isinstance(row["ok"], bool)
+            assert isinstance(row["detail"], str)
+            assert isinstance(row["hint"], str)
+            assert isinstance(row["source"], str)
+
+    def test_every_tool_row_reports_its_status(self, healthy, capsys):
+        """A missing tool must be reported with its role, so 'required' and
+        'test-only' are not treated alike by the reader."""
+        doctor.run(["--json"])
+        payload = json.loads(capsys.readouterr().out)
+        known = {s.value for s in tool_registry.ToolStatus}
+        for row in payload["tools"]:
+            assert set(row) >= {"key", "path", "source", "side", "purpose",
+                                "hint", "status"}
+            assert row["status"] in known, row
+
+    def test_private_section_reports_the_migration_state(self, healthy,
+                                                        capsys):
+        doctor.run(["--json"])
+        payload = json.loads(capsys.readouterr().out)
+        rows = payload["private"]
+        assert {r["key"] for r in rows} == set(settings.PRIVATE_PATHS)
+        for row in rows:
+            assert set(row) == {"key", "path", "source",
+                                "legacy_available"}
+            assert row["source"] in ("current", "legacy", "missing")
+
+    def test_each_private_location_has_a_check_row(self, healthy, capsys):
+        doctor.run(["--json"])
+        payload = json.loads(capsys.readouterr().out)
+        labels = {c["label"] for c in payload["checks"]}
+        for key in settings.PRIVATE_PATHS:
+            assert f"private:{key}" in labels
+        assert "workspace root" in labels
 
 
 class TestRun:
@@ -159,14 +255,27 @@ class TestRun:
         assert doctor.run() == 0
         out = capsys.readouterr().out
         assert "[MISS]" not in out
+        assert "[WARN]" not in out
         assert "%d/%d checks OK" % (TOTAL_CHECKS, TOTAL_CHECKS) in out
 
-    def test_run_exit_one_when_missing(self, monkeypatch, healthy, capsys):
-        monkeypatch.setattr(config, "find_rg", lambda: None)
+    def test_run_exit_one_when_a_required_tool_is_missing(
+            self, monkeypatch, healthy, capsys):
+        monkeypatch.setattr(tool_registry, "find_ffmpeg", lambda: None)
         assert doctor.run() == 1
         out = capsys.readouterr().out
-        assert "[MISS] rg" in out
+        assert "[MISS] ffmpeg" in out
         assert "%d/%d checks OK" % (TOTAL_CHECKS - 1, TOTAL_CHECKS) in out
+
+    def test_run_exit_zero_when_only_optional_tools_are_missing(
+            self, monkeypatch, healthy, capsys):
+        """A machine without node/git still builds games; doctor must say so
+        instead of exiting 1 as though the environment were broken."""
+        monkeypatch.setattr(tool_registry, "find_node", lambda: None)
+        monkeypatch.setattr(tool_registry, "find_git", lambda: None)
+        assert doctor.run() == 0
+        out = capsys.readouterr().out
+        assert "[WARN] node" in out and "[WARN] git" in out
+        assert "not required for a build here" in out
 
 
 class TestPipelineWiring:

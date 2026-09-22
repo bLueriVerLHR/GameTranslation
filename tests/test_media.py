@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for rpgmaker/media.py - the PyAV-based probe/decode surface.
 
 Everything here runs in-process: the audio fixture is a committed real Ogg
 Vorbis file (tests/fixtures/sine_loop.ogg, 5.8 KB, LOOPSTART/LOOPLENGTH at
 stream level) and the video fixture is encoded by PyAV itself when the build
 has libvpx-vp9.  No ffmpeg/ffprobe binary is involved.
+
+Marked `media` where a real codec is the point (video encode/decode/transcode:
+the PyAV wheel must carry libvpx-vp9, and the assertions are about container
+and codec details).  Probing a committed Ogg stays in the fast layer - the
+fixture is tracked, so it works on any machine.
 """
 import math
 import os
@@ -195,6 +199,7 @@ class TestDecode:
 
 
 class TestProbeVideo:
+    @pytest.mark.media
     def test_generated_webm_is_probed(self, tmp_path):
         path = make_video(tmp_path / "v.webm", frames=5, rate=5)
         info = media.probe_video(path)
@@ -215,6 +220,8 @@ def test_has_codec_reports_this_build():
 
 class TestTranscodeToWebm:
     """The VP9 + Opus step that used to shell out to ffmpeg."""
+
+    pytestmark = pytest.mark.media
 
     def test_round_trip_produces_webm_vp9_opus(self, tmp_path):
         src = make_wmv(tmp_path / "in.wmv", seconds=1.0)
@@ -266,7 +273,10 @@ class TestTranscodeToWebm:
         assert os.path.getsize(small) < os.path.getsize(large)
 
     def test_missing_input_raises(self, tmp_path):
-        with pytest.raises(Exception):
+        # PyAV raises its own FileNotFoundError for a missing container; the
+        # point of the assertion is that the failure is an OSError and not,
+        # say, a silent success.
+        with pytest.raises(OSError):
             media.transcode_to_webm(str(tmp_path / "nope.wmv"),
                                     str(tmp_path / "out.webm"))
 

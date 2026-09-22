@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Inject a translated.json ({ja: zh}) dictionary into the extracted
 KiriKiri scenario tree and (optionally) pack a patch.xp3.
 
@@ -20,7 +19,7 @@ Usage:
 import logging
 import os
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -129,12 +128,12 @@ def pack_patch(patch_dir, out_path):
 
 
 def cmd(work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
-        scenario_dir: Annotated[Optional[str], cliutil.Option(
+        scenario_dir: Annotated[str | None, cliutil.Option(
             "--scenario-dir", help="scenario tree to patch "
             "(default: <work>/scenario)")] = None,
-        out: Annotated[Optional[str], cliutil.Option(
+        out: Annotated[str | None, cliutil.Option(
             "--out", help="patched tree output (default: <work>/patch)")] = None,
-        pack: Annotated[Optional[str], cliutil.Option(
+        pack: Annotated[str | None, cliutil.Option(
             "--pack", metavar="patch.xp3",
             help="also pack the patched tree into a patch.xp3 "
             "(relative to <work_dir>)")] = None,
@@ -143,6 +142,9 @@ def cmd(work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
         log_file: cliutil.LogFile = None) -> int:
     """Write translated.json back into the .ks tree (optional patch.xp3)."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("apply ks translation", work_dir=work_dir, scenario_dir=scenario_dir, out=out)
     work = os.path.abspath(work_dir)
     scenario = os.path.abspath(scenario_dir or os.path.join(work, "scenario"))
     out_dir = os.path.abspath(out or os.path.join(work, "patch"))

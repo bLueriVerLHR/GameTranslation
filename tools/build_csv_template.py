@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """build_csv_template.py - Extract ExternMessage.csv dialogue into a
 translation work package (for the static-subagent workflow, docs/translation.md).
 
@@ -16,7 +15,7 @@ from the template. Only `ExternMessage.csv` is read (the plugin loads one CSV,
 path from its "Csv File Path" parameter).
 
 Usage:
-    python build_csv_template.py <game_dir> <work_dir>
+    python -m tools.build_csv_template <game_dir> <work_dir>
 """
 import csv
 import io
@@ -24,6 +23,11 @@ import json
 import os
 import re
 import sys
+from typing import Annotated
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from rpgmaker import cliutil  # noqa: E402
 
 DIRECTIVE_RE = re.compile(
     r"\\M\[[^\]]*\]|:name\[[^\]]*\]|:bg\[[^\]]*\]|:layout\[[^\]]*\]"
@@ -46,16 +50,16 @@ def has_text(body):
     return bool(JP_TEXT_RE.search(rest))
 
 
-def main():
-    if len(sys.argv) != 3:
-        print(__doc__)
-        sys.exit(1)
-    game, work = sys.argv[1], sys.argv[2]
-    csv_path = os.path.join(game, "data", "ExternMessage.csv")
+def cmd(game_dir: Annotated[str, cliutil.Argument(
+            help="game directory containing data/ExternMessage.csv")],
+        work_dir: Annotated[str, cliutil.Argument(
+            help="work directory to write csv_template.json / csv_meta.json")],
+        ) -> int:
+    csv_path = os.path.join(game_dir, "data", "ExternMessage.csv")
     if not os.path.exists(csv_path):
         print("no data/ExternMessage.csv; nothing to do")
-        sys.exit(0)
-    os.makedirs(work, exist_ok=True)
+        return 0
+    os.makedirs(work_dir, exist_ok=True)
 
     rows = list(csv.reader(io.StringIO(read_csv(csv_path))))
     bodies = {}
@@ -73,17 +77,28 @@ def main():
         if translatable:
             bodies.setdefault(body, row_id)
 
-    tpl = {k: "" for k in bodies}
-    with open(os.path.join(work, "csv_template.json"), "w",
+    tpl = dict.fromkeys(bodies, "")
+    with open(os.path.join(work_dir, "csv_template.json"), "w",
               encoding="utf-8") as f:
         json.dump(tpl, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(work, "csv_meta.json"), "w",
+    with open(os.path.join(work_dir, "csv_meta.json"), "w",
               encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
     print("csv rows: %d  translatable bodies: %d (unique: %d)  identity: %d"
           % (len(meta), sum(1 for m in meta if m["text"]),
              len(tpl), sum(1 for m in meta if not m["text"])))
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+# Typer renders the command's own docstring for a single-command app; keep
+# the module docstring visible in --help.
+cmd.__doc__ = __doc__
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="build_csv_template.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

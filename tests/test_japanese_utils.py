@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""Unit tests for tools/japanese_utils.py - the single source of kana
+"""Unit tests for rpgmaker/japanese.py - the single source of kana
 detection regexes.
 
 Guards the C4 convergence contract: every tool that previously inlined its
@@ -12,9 +11,9 @@ import re
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
+sys.path.insert(0, REPO_ROOT)
 
-import japanese_utils  # noqa: E402
+from rpgmaker import japanese as japanese_utils  # noqa: E402
 
 
 class TestKANA:

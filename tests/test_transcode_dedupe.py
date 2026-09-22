@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """`tools/transcode_video.py`: one output name must have exactly one encoder.
 
 KAG3 games routinely ship the same movie twice (.mpg and .wmv).  The tool used

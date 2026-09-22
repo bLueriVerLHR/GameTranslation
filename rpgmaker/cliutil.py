@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """cliutil.py - the shared CLI conventions for every tool.
 
 Every tool used to build its own ``argparse.ArgumentParser`` (53 files, 223
@@ -59,14 +58,18 @@ for a failure raised deep inside a helper.
 import logging
 import os
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
 from . import logsetup
+from . import platform
+from .platform import CrossSideError
 
 __all__ = ["app", "command_app", "run", "setup_logging", "fail",
-           "Verbose", "Quiet", "LogFile", "Argument", "Option"]
+           "own_paths",
+           "Verbose", "Quiet", "LogFile", "JsonOut", "Argument", "Option",
+           "shared_options", "app_options"]
 
 #: ``-v`` / ``--verbose``: DEBUG diagnostics (per-file detail).
 Verbose = Annotated[bool, typer.Option(
@@ -77,8 +80,17 @@ Quiet = Annotated[bool, typer.Option(
     "-q", "--quiet", help="only warnings and errors (batch runs)")]
 
 #: ``--log-file PATH``: tee the log into a UTF-8 file as well.
-LogFile = Annotated[Optional[str], typer.Option(
+LogFile = Annotated[str | None, typer.Option(
     "--log-file", metavar="PATH", help="also write the log to PATH (UTF-8)")]
+
+#: ``--json``: machine-readable structured output instead of prose.
+#:
+#: Unlike the three logging options this cannot live on the app callback:
+#: only the commands that actually have a structured form accept it, so a
+#: top-level flag would either be silently ignored or wrongly accepted by
+#: every subcommand.  The *definition* is still shared by using this type.
+JsonOut = Annotated[bool, typer.Option(
+    "--json", help="machine-readable structured output")]
 
 # Re-exported so a tool needs one import for its type annotations.
 Argument = typer.Argument
@@ -88,6 +100,76 @@ Option = typer.Option
 def setup_logging(verbose=False, quiet=False, log_file=None):
     """Configure logging for one command run (single entry point: logsetup)."""
     return logsetup.setup(verbose=verbose, quiet=quiet, log_file=log_file)
+
+
+def own_paths(what, **paths):
+    """Declare the storage side of every path a command is about to touch.
+
+    Call this first in a command body, before any ``os.path.isdir`` /
+    ``makedirs`` / open: a WSL-native process must never read or write a
+    Windows-side file (AGENTS.md, "cross-system file handling" CRITICAL
+    rule - the incident was caused by exactly that, and it was a *read* as
+    well as a write).  ``rpgmaker/archive.py`` and ``rpgmaker/deliver.py``
+    were the only entry points enforcing it; every engine and tool was free
+    to bypass it.
+
+    Roles whose value is ``None`` / ``""`` are skipped, so optional options
+    can be passed unconditionally::
+
+        cliutil.own_paths("apply ks translation",
+                          work_dir=work_dir, scenario_dir=scenario_dir,
+                          out=out)
+
+    On refusal ``run()`` turns the raised error into ``error: refusing to
+    <what>: ...`` plus exit code 1, matching :func:`fail`.  The returned
+    mapping is available for the handlers that need the owned spelling, but
+    most callers only need the gate.
+
+    A path option that takes several values (Typer's ``list[str]``) is
+    expanded to ``role[0]``, ``role[1]``, ... so one refused table still
+    names its exact position.
+    """
+    declared = {}
+    for role, value in paths.items():
+        if value is None or value == "":
+            continue
+        if isinstance(value, (list, tuple)):
+            for index, item in enumerate(value):
+                if item is not None and item != "":
+                    declared[f"{role}[{index}]"] = item
+        else:
+            declared[role] = value
+    return platform.require_native_paths(what, **declared)
+
+
+def shared_options(verbose: Verbose = False, quiet: Quiet = False,
+                   log_file: LogFile = None) -> None:
+    """The toolkit's shared top-level options, as one Typer callback.
+
+    ``-v`` / ``-q`` / ``--log-file`` mean the same thing for every app, so
+    they are declared once (here) instead of being re-spelled per entry
+    point - the two pipeline apps used to carry their own near-identical
+    callback and drifted apart.  App-level options go *before* the
+    subcommand::
+
+        python pipeline.py -v audio <dir>
+
+    ``--json`` is deliberately NOT here: it only makes sense for commands
+    that have a structured form, and a top-level flag would then be accepted
+    (and ignored) by every other subcommand.  Use :data:`JsonOut` per command
+    instead.
+    """
+    setup_logging(verbose, quiet, log_file)
+
+
+def app_options(application):
+    """Attach the shared top-level options to `application`; returns it.
+
+    Keeps the assembly in one line at each entry point, so a new app cannot
+    forget the logging options or wire them differently.
+    """
+    application.callback()(shared_options)
+    return application
 
 
 def app(help=None, no_args_is_help=True):
@@ -128,7 +210,7 @@ def fail(message, code=1):
     ``return cliutil.fail("...", 2)`` keeps the message on stderr and the code
     flowing back through ``run()``.
     """
-    print("error: %s" % message, file=sys.stderr)
+    print(f"error: {message}", file=sys.stderr)
     return code
 
 
@@ -142,14 +224,25 @@ def run(target, argv=None, prog=None):
     application = target
     if not isinstance(application, typer.Typer):
         application = command_app(target)
-    if argv is None:
-        args = list(sys.argv[1:])
-    else:
-        args = [str(a) for a in argv]
+    # Make the console UTF-8 safe *before* the framework gets a chance to
+    # print.  `--help` short-circuits before any command body runs, so a tool
+    # whose docstring contains CJK (game tags, Japanese examples) used to die
+    # with UnicodeEncodeError on a cp1252 console before reaching the
+    # `setup_logging()` call inside its command - i.e. the documented
+    # `python -m <tool> --help` failed.  setup() does this too, but it runs
+    # far too late for the help path.
+    logsetup.ensure_utf8_streams()
+    args = list(sys.argv[1:]) if argv is None else [str(a) for a in argv]
     if prog is None:
         prog = os.path.basename(sys.argv[0]) or "tool"
     try:
         result = application(args=args, prog_name=prog, standalone_mode=False)
+    except CrossSideError as exc:
+        # A domain refusal from `own_paths` (AGENTS.md CRITICAL cross-system
+        # rule).  The operator gets the same shape as `fail()` - one line on
+        # stderr and exit 1 - instead of a traceback that buries the reason
+        # under six frames of Typer.
+        return fail(str(exc))
     except BaseException as exc:          # noqa: BLE001 - re-raised below
         code = _error_code(exc)
         if code is None:

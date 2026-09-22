@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for the resolved-storage path form in the generated shim.
 
 Each asset exists in exactly ONE directory, and the tag hook resolves a name

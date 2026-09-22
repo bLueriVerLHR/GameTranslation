@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Patch the translation dict so character names use consistent Chinese
 transliterations.  The replacement rules are game-specific and MUST come from
 an external rules file, never hardcoded here:
@@ -14,27 +13,37 @@ Replacement-order tricks (e.g. protecting a proper noun via a placeholder so a
 generic rule can't mangle it) are a rule-file concern - see the example in
 the docstring of gen_csv_shards.py's tone block for the general pattern.
 
-Usage: python patch_names.py <in_dict.json> <out_dict.json> [rules.json]
+Usage: python -m tools.patch_names <in_dict.json> <out_dict.json> [rules.json]
 Writes a new JSON; the original dict is not modified.  Without rules.json the
 script is a no-op (reports 0 changes).
 """
 import json
+import os
 import sys
+from typing import Annotated
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from rpgmaker import cliutil  # noqa: E402
 
 
-def main():
-    if len(sys.argv) not in (3, 4):
-        sys.exit(__doc__)
-    with open(sys.argv[1], encoding="utf-8") as f:
+def cmd(in_dict: Annotated[str, cliutil.Argument(
+            help="input translation dict JSON")],
+        out_dict: Annotated[str, cliutil.Argument(
+            help="output JSON path (the input is never modified)")],
+        rules_json: Annotated[str, cliutil.Argument(
+            help="rules file; without it the run is a no-op")] = "",
+        ) -> int:
+    with open(in_dict, encoding="utf-8") as f:
         D = json.load(f)
 
     rules = {}
-    if len(sys.argv) == 4:
-        with open(sys.argv[3], encoding="utf-8") as f:
+    if rules_json:
+        with open(rules_json, encoding="utf-8") as f:
             rules = json.load(f)
     else:
         print("no rules file given - nothing to do")
-        return
+        return 0
 
     value_replacements = rules.get("value_replacements", [])
     name_keys = rules.get("name_keys", {})
@@ -55,10 +64,21 @@ def main():
             D[k] = v
             changed += 1
 
-    with open(sys.argv[2], "w", encoding="utf-8") as f:
+    with open(out_dict, "w", encoding="utf-8") as f:
         json.dump(D, f, ensure_ascii=False, indent=2)
-    print("patched %d entries -> %s" % (changed, sys.argv[2]))
+    print("patched %d entries -> %s" % (changed, out_dict))
+    return 0
+
+
+app = cliutil.command_app(cmd, help=__doc__)
+# Typer renders the command's own docstring for a single-command app; keep
+# the module docstring visible in --help.
+cmd.__doc__ = __doc__
+
+
+def main(argv=None) -> int:
+    return cliutil.run(app, argv, prog="patch_names.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

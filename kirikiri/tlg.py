@@ -38,10 +38,7 @@ def parse_header(data):
     """Return (version, width, height, colors, data_offset)."""
     if len(data) < 64:
         raise TlgError("file too small")
-    if data[:11] == b"TLG0.0\x00sds\x1a":
-        offset = 0xF
-    else:
-        offset = 0
+    offset = 15 if data[:11] == b"TLG0.0\x00sds\x1a" else 0
     if data[offset + 6:offset + 11] != b"\x00raw\x1a":
         raise TlgError("missing 'raw' marker at offset %d" % offset)
     h = bytearray(data[offset:offset + 32])
@@ -62,7 +59,7 @@ def parse_header(data):
         h[0x0C] ^= 0x1A
         h[0x10] ^= 0x1C
     else:
-        raise TlgError("unknown TLG magic %r" % bytes(h[:8]))
+        raise TlgError(f"unknown TLG magic {bytes(h[:8])!r}")
     colors = h[11]
     if version == 6:
         if colors not in (1, 3, 4):
@@ -295,8 +292,7 @@ for n in range(GOLOMB_N):
 def _make_gt_mask(a, b):
     tmp2 = (~b) & MASK32
     tmp = ((a & tmp2) + (((a ^ tmp2) >> 1) & 0x7F7F7F7F)) & 0x80808080
-    tmp = ((tmp >> 7) + 0x7F7F7F7F) ^ 0x7F7F7F7F
-    return tmp
+    return ((tmp >> 7) + 0x7F7F7F7F) ^ 0x7F7F7F7F
 
 
 def _packed_add(a, b):
@@ -626,10 +622,7 @@ def _decode_line_generic(prevline, prevline_index, curline, curline_index, width
                 v = _filter_value(ftype, inbuf[inbuf_index])
             else:
                 v = inbuf[inbuf_index]
-            if even:
-                p = _med(p, u, up, v)
-            else:
-                p = _avg(p, u, up, v)
+            p = _med(p, u, up, v) if even else _avg(p, u, up, v)
             up = u
             curline[curline_index] = p
             curline_index += 1
@@ -898,8 +891,7 @@ if _USE_NUMBA:
     def _nb_gt_mask(a, b):
         tmp2 = (~b) & 0xFFFFFFFF
         tmp = ((a & tmp2) + (((a ^ tmp2) >> 1) & 0x7F7F7F7F)) & 0x80808080
-        tmp = ((tmp >> 7) + 0x7F7F7F7F) ^ 0x7F7F7F7F
-        return tmp
+        return ((tmp >> 7) + 0x7F7F7F7F) ^ 0x7F7F7F7F
 
     @_njit(cache=True)
     def _nb_packed_add(a, b):
@@ -1035,10 +1027,7 @@ if _USE_NUMBA:
                     v = _nb_filter(ftype, inbuf[inbuf_index])
                 else:
                     v = inbuf[inbuf_index]
-                if even:
-                    p = _nb_med(p, u, up, v)
-                else:
-                    p = _nb_avg(p, u, up, v)
+                p = _nb_med(p, u, up, v) if even else _nb_avg(p, u, up, v)
                 up = u
                 curline[curline_index] = p
                 curline_index += 1

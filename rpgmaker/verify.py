@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Verification: PNG signatures, JSON parse, referenced audio exists,
 System.json flags, decode integrity, and key-file presence."""
 import json
@@ -123,7 +122,7 @@ def verify_system_flags(web_root):
         head = f.read(3)
     if head == b"\xef\xbb\xbf":
         issues.append("System.json has UTF-8 BOM (breaks JSON.parse)")
-    log.info("System.json flags %s", "OK" if not issues else issues)
+    log.info("System.json flags %s", issues if issues else "OK")
     return issues
 
 
@@ -244,7 +243,7 @@ def verify_key_files(web_root):
     # MV fallback for main.js
     if "js/main.js" in missing and os.path.exists(os.path.join(web_root, "js", "rpg_core.js")):
         missing.remove("js/main.js")
-    log.info("key files %s", "OK" if not missing else "missing: %s" % missing)
+    log.info("key files %s", "OK" if not missing else f"missing: {missing}")
     return missing
 
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Build the standard translation work package from a TyranoScript /
 TyranoBuilder game's scenario tree.
 
@@ -36,7 +35,7 @@ import logging
 import os
 import sys
 from collections import deque
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -123,9 +122,9 @@ def _line_keys(text):
                 if translatable(stripped):
                     hits.append((stripped, kind, lineno))
             continue
-        if stripped.startswith("[") and stripped.endswith("]"):
-            if translatable(stripped) and _has_text_attr(stripped):
-                hits.append((stripped, "text", lineno))
+        if stripped.startswith("[") and stripped.endswith("]") \
+                and translatable(stripped) and _has_text_attr(stripped):
+            hits.append((stripped, "text", lineno))
     return hits
 
 
@@ -140,7 +139,7 @@ def extract_file(path, name, tpl, kinds, ctx, items):
     Returns the count of extracted lines."""
     text, _enc = load_ks(path)
     hits = _line_keys(text)
-    for pos, (key, kind, lineno) in enumerate(hits):
+    for pos, (key, _kind, lineno) in enumerate(hits):
         if key not in tpl:
             tpl[key] = ""
             kinds[key] = "story"
@@ -206,7 +205,7 @@ def build(game_dir, work_dir, scenario_dir, entry):
 
 def cmd(game_dir: Annotated[str, cliutil.Argument(help="extracted game dir")],
         work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
-        scenario_dir: Annotated[Optional[str], cliutil.Option(
+        scenario_dir: Annotated[str | None, cliutil.Option(
             "--scenario-dir", help="scenario dir relative to game_dir "
             "(default: auto-detect scenario/ or data/scenario)")] = None,
         entry: Annotated[str, cliutil.Option(
@@ -217,6 +216,9 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="extracted game dir")],
         log_file: cliutil.LogFile = None) -> int:
     """Build the TyranoScript translation work package (.ks lines -> keys)."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("build tyrano translation", game_dir=game_dir, work_dir=work_dir, scenario_dir=scenario_dir)
     build(game_dir, work_dir, scenario_dir, entry)
     return 0
 

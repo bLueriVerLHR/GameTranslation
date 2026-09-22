@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """cli.py - the v2 translation toolkit command line (Typer, per cliutil).
 
 ``prepare`` is the one call the parent needs before handing a workspace to the
@@ -57,6 +56,8 @@ def prepare(
 ) -> int:
     """Extract the key list and scaffold the workspace in one go."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    cliutil.own_paths("prepare translation workspace",
+                      game_dir=game_dir, work_dir=work_dir)
     stats = mvkeys.extract(game_dir, work_dir, window=window,
                            note_tags=_note_tag_list(note_tags))
     created = workspace.scaffold(work_dir, stats)
@@ -81,6 +82,8 @@ def extract(
 ) -> int:
     """Extract every translatable string, in story order, into keys.jsonl."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    cliutil.own_paths("extract translation keys",
+                      game_dir=game_dir, work_dir=work_dir)
     stats = mvkeys.extract(game_dir, work_dir, window=window,
                            note_tags=_note_tag_list(note_tags))
     print(json.dumps(stats, ensure_ascii=False, indent=1))
@@ -95,10 +98,10 @@ def scaffold(
 ) -> int:
     """Create the state files and MISSION.md (never overwrites content)."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    cliutil.own_paths("scaffold translation workspace", work_dir=work_dir)
     for name in ("keys.jsonl",):
         if not os.path.isfile(os.path.join(work_dir, name)):
-            return cliutil.fail("%s missing in %s (run extract first)"
-                                % (name, work_dir))
+            return cliutil.fail(f"{name} missing in {work_dir} (run extract first)")
     created = workspace.scaffold(work_dir)
     log.info("created: %s", ", ".join(created))
     return 0
@@ -112,10 +115,10 @@ def codes_(
 ) -> int:
     """Regenerate control_codes.md from the game's JS plus observed counts."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    cliutil.own_paths("read translation codes", work_dir=work_dir)
     stats_path = os.path.join(work_dir, "stats.json")
     if not os.path.isfile(stats_path):
-        return cliutil.fail("stats.json missing in %s (run extract first)"
-                            % work_dir)
+        return cliutil.fail(f"stats.json missing in {work_dir} (run extract first)")
     with open(stats_path, encoding="utf-8") as handle:
         stats = json.load(handle)
     table = codes.inventory(stats.get("game_dir") or "", stats.get("codes") or {})
@@ -135,6 +138,7 @@ def to_json(
 ) -> int:
     """Turn the raw library into JSON - the only place escaping happens."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    cliutil.own_paths("export translation library", work_dir=work_dir, out=out)
     report = rawlib.to_json(work_dir, out)
     log.info("translated %d/%d keys (%d unique sources, %d conflicts)",
              report["translated"], report["keys"], report["unique_sources"],
@@ -152,6 +156,7 @@ def rewrite(
 ) -> int:
     """Apply rewrites.jsonl to the library and report the impact."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    cliutil.own_paths("apply translation rewrites", work_dir=work_dir)
     report = rawlib.apply_rewrites(work_dir)
     log.info("%d rewrite rules, %d keys changed", report["rules"],
              report["changed_keys"])
@@ -169,9 +174,9 @@ def gates(
 ) -> int:
     """Run the five hard gates; a non-zero exit means: do not bake."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    cliutil.own_paths("run translation gates", work_dir=work_dir, markdown=markdown)
     if not os.path.isfile(os.path.join(work_dir, "keys.jsonl")):
-        return cliutil.fail("keys.jsonl missing in %s (run extract first)"
-                            % work_dir)
+        return cliutil.fail(f"keys.jsonl missing in {work_dir} (run extract first)")
     report = rawlib.run_gates(work_dir)
     summary = rawlib.gate_markdown(report)
     if markdown:
@@ -195,6 +200,7 @@ def status(
 ) -> int:
     """Progress at a glance (keys, translated, pending, last gate result)."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    cliutil.own_paths("translation status", work_dir=work_dir)
     print(json.dumps(workspace.status_summary(work_dir), ensure_ascii=False,
                      indent=1))
     return 0
@@ -230,9 +236,9 @@ def slice_(
     done before the translator reads its first key.
     """
     cliutil.setup_logging(verbose, quiet, log_file)
+    cliutil.own_paths("slice translation batch", work_dir=work_dir, out=out)
     if not os.path.isfile(os.path.join(work_dir, "keys.jsonl")):
-        return cliutil.fail("keys.jsonl missing in %s (run extract first)"
-                            % work_dir)
+        return cliutil.fail(f"keys.jsonl missing in {work_dir} (run extract first)")
     done = None
     if todo:
         library = rawlib.read_library(
@@ -291,13 +297,13 @@ def prefill(
     gates as a hand-written one.
     """
     cliutil.setup_logging(verbose, quiet, log_file)
+    cliutil.own_paths("prefill translation", work_dir=work_dir, dict_path=dict_path, out=out)
     if not os.path.isfile(os.path.join(work_dir, "keys.jsonl")):
-        return cliutil.fail("keys.jsonl missing in %s (run extract first)"
-                            % work_dir)
+        return cliutil.fail(f"keys.jsonl missing in {work_dir} (run extract first)")
     try:
         values, report = prefill_mod.harvest(work_dir, dict_path)
     except (ValueError, OSError) as error:
-        return cliutil.fail("cannot read %s: %s" % (dict_path, error))
+        return cliutil.fail(f"cannot read {dict_path}: {error}")
     path = prefill_mod.write_batch(
         out or os.path.join(work_dir, "prefill.batch.txt"), values)
     log.info("prefilled %d/%d keys (%.1f%%), %d missed -> %s",
@@ -330,16 +336,16 @@ def append(
     them restored first - that saves retyping a code on every continuation line.
     """
     cliutil.setup_logging(verbose, quiet, log_file)
+    cliutil.own_paths("append translation batch", work_dir=work_dir, batch=batch)
     if not os.path.isfile(batch):
-        return cliutil.fail("batch file not found: %s" % batch)
+        return cliutil.fail(f"batch file not found: {batch}")
     if not os.path.isfile(os.path.join(work_dir, "keys.jsonl")):
-        return cliutil.fail("keys.jsonl missing in %s (run extract first)"
-                            % work_dir)
+        return cliutil.fail(f"keys.jsonl missing in {work_dir} (run extract first)")
     try:
         report = rawlib.append_batch(work_dir, batch, note=note,
                                      fix_leading=fix_leading)
     except ValueError as error:
-        return cliutil.fail("bad batch file: %s" % error)
+        return cliutil.fail(f"bad batch file: {error}")
     if report["problems"]:
         for key_id, problem in report["problems"][:40]:
             log.error("%s: %s", key_id or "(batch)", problem)
@@ -370,6 +376,7 @@ def pending(
     for you, so a question with control codes in it is always parseable.
     """
     cliutil.setup_logging(verbose, quiet, log_file)
+    cliutil.own_paths("list pending translations", work_dir=work_dir)
     record = {"status": status, "why": why, "at": "cli"}
     if key_id:
         record["id"] = key_id
@@ -404,6 +411,7 @@ def decide(
     still auditable), which is what the pending gate reads.
     """
     cliutil.setup_logging(verbose, quiet, log_file)
+    cliutil.own_paths("decide pending translations", work_dir=work_dir)
     path = os.path.join(work_dir, "pending.jsonl")
     records, errors = rawlib.read_jsonl_report(path)
     if errors:
@@ -419,7 +427,7 @@ def decide(
     if key_id:
         targets = [key for key in targets if key == key_id]
         if not targets:
-            return cliutil.fail("no open entry with id %r" % key_id)
+            return cliutil.fail(f"no open entry with id {key_id!r}")
     elif not all_open:
         return cliutil.fail("pass --all-open or --id <entry>")
     for key in targets:
@@ -440,7 +448,15 @@ def bake(
     font_only: Annotated[bool, cliutil.Option(
         "--font-only", help="only unify fonts (text is already baked)")] = False,
     font: Annotated[str, cliutil.Option(
-        "--font", help="font asset to install (default: local strategy table)")] = None,
+        "--font", help="font asset to install (default: the font policy's "
+        "own resolution: registered manifest, then CJK_FONT_PATH, then the "
+        "local font-paths file)")] = None,
+    font_policy: Annotated[str, cliutil.Option(
+        "--font-policy",
+        help="required = the project font must be applied (self-translated "
+             "builds; fails when unavailable) | auto = inspect and report "
+             "only, never write (games that already ship a translation) | "
+             "preserve = leave the game's font alone")] = "required",
     dry_run: Annotated[bool, cliutil.Option(
         "--dry-run", help="report what would be written, change nothing")] = False,
     verbose: cliutil.Verbose = False,
@@ -451,14 +467,21 @@ def bake(
 
     Every modified file is backed up under `<work>/backup/` first, so a bake is
     reversible.  The unified-font step is mandatory by house rule: a Chinese
-    build with a kana-only font renders every Chinese character as a box.
+    build with a kana-only font renders every Chinese character as a box, and
+    `--font-policy required` (the default) makes a font that cannot be applied
+    stop the bake instead of shipping that build.
     """
     cliutil.setup_logging(verbose, quiet, log_file)
+    own = cliutil.own_paths("bake translation",
+                            game_dir=game_dir, work_dir=work_dir)
+    game_dir = str(own["game_dir"])
+    work_dir = str(own["work_dir"])
     try:
         report = bake_mod.bake(game_dir, work_dir,
                                apply_unified_font=not no_font,
                                font_path=font, dry_run=dry_run,
-                               font_only=font_only)
+                               font_only=font_only,
+                               font_policy=font_policy)
     except bake_mod.BakeError as error:
         return cliutil.fail(str(error))
     log.info("baked %d/%d keys into %d file(s)", report["applied"],

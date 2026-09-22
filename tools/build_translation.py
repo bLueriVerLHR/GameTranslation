@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 r"""
 build_translation.py - Build a static-translation work package from an RPG
 Maker MZ game (replaces the old extract_text.py for the new workflow).
@@ -45,7 +44,7 @@ from typing import Annotated
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ctrl_codes  # noqa: E402
 import plain_io  # noqa: E402
-import plugins_io  # noqa: E402
+from rpgmaker import plugins_io  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
 
@@ -106,10 +105,10 @@ def talk_lines(lst):
             out.append((idx, params[0] if params and isinstance(params[0], str)
                         else None))
         elif code == 101 and len(params) >= 5 and isinstance(params[4], str):
-            out.append((idx, "【%s】" % params[4]))
+            out.append((idx, f"【{params[4]}】"))
         elif code == 102 and params and isinstance(params[0], list):
-            out.append((idx, "【选项】%s" % " / ".join(
-                str(x) for x in params[0] if isinstance(x, str))))
+            out.append((idx, "【选项】{}".format(" / ".join(
+                str(x) for x in params[0] if isinstance(x, str)))))
         else:
             out.append((idx, None))
     return out
@@ -152,7 +151,7 @@ def loc_key(base, loc):
     return base + LOC_SEP + loc
 
 
-class Collector(object):
+class Collector:
     def __init__(self):
         self.keys = set()            # all keys (plain + located)
         self.kind_of = {}            # key -> kind
@@ -238,6 +237,43 @@ def iter_message_blocks(cmds, collector, kind="block", where="", loc="",
         i = j
 
 
+def _collect_choice(params, collector, where, idx, tl, pos, cloc):
+    """Code 102: every choice caption carrying kana."""
+    if not (params and isinstance(params[0], list)):
+        return
+    for x in params[0]:
+        if isinstance(x, str) and JA.search(x):
+            collector.add(x, "choice", where, window_for(idx, tl, pos=pos), cloc)
+
+
+def _collect_event_text(code, params, collector, where, idx, tl, pos, cloc):
+    """Codes in EVENT_TEXT_IDX: the display-text operands."""
+    for i2 in EVENT_TEXT_IDX[code]:
+        if i2 < len(params) and isinstance(params[i2], str) and params[i2]:
+            if code == 101 and len(params) >= 5:
+                collector.add_name(params[4])
+            collector.add(params[i2], "event-text", where,
+                          window_for(idx, tl, pos=pos), cloc)
+
+
+def _collect_script_operand(params, collector, where, idx, tl, pos, cloc):
+    """Code 122: script operands, skipping JS code (operandType == 4)."""
+    if len(params) > 3 and params[3] == 4:
+        return
+    for i2 in (3, 4):
+        if i2 < len(params) and isinstance(params[i2], str) and params[i2]:
+            collector.add(params[i2], "event-text", where,
+                          window_for(idx, tl, pos=pos), cloc)
+
+
+def _collect_comment(params, collector, where, idx, tl, pos, cloc):
+    """Code 408: a comment line shown by choice-help plugins."""
+    if params and isinstance(params[0], str) and params[0] \
+            and not DIRECTIVE.match(params[0]):
+        collector.add(params[0], "help", where,
+                      window_for(idx, tl, pos=pos), cloc)
+
+
 def process_commands(cmds, collector, where="", loc="", tl=None, pos=None):
     """`tl`/`pos` are the shared talk list + position map computed once per
     command list by the caller (see iter_message_blocks); window_for() uses
@@ -252,39 +288,20 @@ def process_commands(cmds, collector, where="", loc="", tl=None, pos=None):
         if not isinstance(params, list):
             continue
         cloc = loc + "#c%d" % idx
-        if code == 102 and params and isinstance(params[0], list):
-            for x in params[0]:
-                if isinstance(x, str) and JA.search(x):
-                    collector.add(x, "choice", where, window_for(idx, tl, pos=pos), cloc)
+        if code == 102:
+            _collect_choice(params, collector, where, idx, tl, pos, cloc)
         elif code in EVENT_TEXT_IDX:
-            for i2 in EVENT_TEXT_IDX[code]:
-                if i2 < len(params) and isinstance(params[i2], str) \
-                        and params[i2]:
-                    if code == 101 and len(params) >= 5:
-                        collector.add_name(params[4])
-                    collector.add(params[i2], "event-text", where,
-                                  window_for(idx, tl, pos=pos), cloc)
+            _collect_event_text(code, params, collector, where, idx, tl, pos, cloc)
         elif code == 122:
-            # skip script operands (operandType == 4): params[4] is JS code
-            if len(params) > 3 and params[3] == 4:
-                pass
-            else:
-                for i2 in (3, 4):
-                    if i2 < len(params) and isinstance(params[i2], str) \
-                            and params[i2]:
-                        collector.add(params[i2], "event-text", where,
-                                      window_for(idx, tl, pos=pos), cloc)
+            _collect_script_operand(params, collector, where, idx, tl, pos, cloc)
         elif code == 408:
-            if params and isinstance(params[0], str) and params[0] \
-                    and not DIRECTIVE.match(params[0]):
-                collector.add(params[0], "help", where, window_for(idx, tl, pos=pos),
-                              cloc)
+            _collect_comment(params, collector, where, idx, tl, pos, cloc)
 
 
 def process_db(obj, collector, where="", loc=""):
     if isinstance(obj, dict):
         for k, v in list(obj.items()):
-            kloc = loc + "#%s" % k
+            kloc = loc + f"#{k}"
             if k in DISPLAY_KEYS and isinstance(v, str) and JA.search(v):
                 collector.add(v, "db-" + k, where, [], kloc)
             elif k == "note" and isinstance(v, str) and JA.search(v):
@@ -300,7 +317,7 @@ def process_system(system, collector):
     for f in SYSTEM_TEXT_FIELDS + SYSTEM_TEXT_ARRAYS:
         if f in system:
             collect_values(system[f], collector, "System.json",
-                           "System.json#%s" % f)
+                           f"System.json#{f}")
 
 
 def collect_values(obj, collector, where="", loc=""):
@@ -309,7 +326,7 @@ def collect_values(obj, collector, where="", loc=""):
             collector.add(obj, "system", where, [], loc)
     elif isinstance(obj, dict):
         for k, v in obj.items():
-            collect_values(v, collector, where, loc + "#%s" % k)
+            collect_values(v, collector, where, loc + f"#{k}")
     elif isinstance(obj, list):
         for i, v in enumerate(obj):
             collect_values(v, collector, where, loc + "[%d]" % i)
@@ -337,7 +354,7 @@ def extract_plugin_text(game_dir, collector):
             # parser; on any failure (ValueError/IndexError/TypeError/KeyError
             # from malformed plugin params) we skip plugin text rather than
             # abort.  A failed parse is NOT cached, so a later fix re-parses.
-            log("WARN: plugins.js parse failed (%s) - plugin text skipped" % e)
+            log(f"WARN: plugins.js parse failed ({e}) - plugin text skipped")
             return 0
         _plugin_cache[key] = plugins
     n = 0
@@ -361,12 +378,9 @@ def build_tree(data, map_id, map_name, display_name, collector, fname=""):
         eloc = "%s#ev%d" % (fname, evi)
         if ev.get("name"):
             collector.add(ev["name"], "event-name", where, [], eloc + "#name")
-        lists = []
-        if isinstance(ev.get("list"), list):
-            lists.append(ev["list"])
-        for pg in ev.get("pages") or []:
-            if isinstance(pg, dict) and isinstance(pg.get("list"), list):
-                lists.append(pg["list"])
+        lists = [ev["list"]] if isinstance(ev.get("list"), list) else []
+        lists.extend(pg["list"] for pg in ev.get("pages") or []
+                     if isinstance(pg, dict) and isinstance(pg.get("list"), list))
         for li, lst in enumerate(lists):
             ploc = eloc + "#pg%d" % li
             # One shared talk list + position map per command list: both
@@ -376,7 +390,7 @@ def build_tree(data, map_id, map_name, display_name, collector, fname=""):
             tl = talk_lines(lst)
             pos = pos_map(tl)
             process_commands(lst, collector, where, ploc, tl=tl, pos=pos)
-            for block_key, lines in iter_message_blocks(lst, collector,
+            for block_key, _lines in iter_message_blocks(lst, collector,
                                                         where=where,
                                                         loc=ploc, tl=tl,
                                                         pos=pos):
@@ -394,39 +408,23 @@ def build_tree(data, map_id, map_name, display_name, collector, fname=""):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
-        out_dir: Annotated[str, cliutil.Argument(
-            help="work folder to write the translation package into")],
-        no_plugins: Annotated[bool, cliutil.Option(
-            "--no-plugins",
-            help="skip js/plugins.js parameter text extraction")] = False,
-        verbose: cliutil.Verbose = False,
-        quiet: cliutil.Quiet = False,
-        log_file: cliutil.LogFile = None) -> int:
-    """Extract the MZ template/context/structure/kinds/names/name macros."""
-    cliutil.setup_logging(verbose, quiet, log_file)
+def _load_map_names(data_dir):
+    """`{id: name}` from MapInfos.json, for labelling a map's tree node.
 
-    game_dir = os.path.abspath(game_dir)
-    out_dir = os.path.abspath(out_dir)
-    data_dir = os.path.join(game_dir, "data")
-    if not os.path.isdir(data_dir):
-        return cliutil.fail("no data/ dir under %s" % game_dir)
-    os.makedirs(out_dir, exist_ok=True)
-
-    col = Collector()
-
-    # story order from MapInfos
+    (The pre-split code also built a `map_order` list here; it was never read,
+    so only the lookup survives.)
+    """
     mapinfos_path = os.path.join(data_dir, "MapInfos.json")
-    map_order = []
     map_names = {}
     if os.path.exists(mapinfos_path):
-        mi = plain_io.load_json(mapinfos_path)
-        for x in mi:
+        for x in plain_io.load_json(mapinfos_path):
             if x:
-                map_order.append((x["id"], x.get("name", "")))
                 map_names[x["id"]] = x.get("name", "")
+    return map_names
 
-    # per-file collection + tree
+
+def _collect_data_files(data_dir, map_names, col):
+    """Walk data/*.json once: per-file collection + the structure tree."""
     tree = []
     for path in sorted(os.listdir(data_dir)):
         if not path.endswith(".json"):
@@ -444,9 +442,9 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
                 col.add(disp, "displayName", fname, [], fname + "#displayName")
             if map_id is not None:
                 tree.append({"id": map_id, "events": []})
-                cur = tree[-1]
-                cur["items"] = build_tree(data, map_id, map_names.get(map_id, fname),
-                                          disp, col, fname)
+                tree[-1]["items"] = build_tree(data, map_id,
+                                               map_names.get(map_id, fname),
+                                               disp, col, fname)
             elif fname == "CommonEvents.json":
                 tree.append({"id": -1, "events": []})
                 tree[-1]["items"] = build_tree(data, None, "CommonEvents",
@@ -457,6 +455,65 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
             process_system(data, col)
         else:
             process_db(data, col, fname, fname)
+    return tree
+
+
+def _collect_actor_names(data_dir, col):
+    """Speaker-name candidates: actor names plus frequent standalone lines."""
+    names = {}
+    actors_path = os.path.join(data_dir, "Actors.json")
+    if os.path.exists(actors_path):
+        for a in plain_io.load_json(actors_path):
+            if a and a.get("name"):
+                names[a["name"]] = [""]
+    for cand, _count in col.name_cands.most_common(120):
+        names.setdefault(cand, [""])
+    return names
+
+
+def _write_translation_package(out_dir, template, col, tree, names,
+                               name_macros):
+    """Write template/names/kinds/structure/context/name_macros."""
+    payloads = {
+        "template.json": template,
+        "names.json": names,
+        "kinds.json": col.kind_of,
+        "structure.json": {"maps": tree},
+        "context.json": col.context,
+        "name_macros.json": name_macros,
+    }
+    for fname, payload in payloads.items():
+        with open(os.path.join(out_dir, fname), "w",
+                  encoding="utf-8-sig") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=1)
+
+
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
+        out_dir: Annotated[str, cliutil.Argument(
+            help="work folder to write the translation package into")],
+        no_plugins: Annotated[bool, cliutil.Option(
+            "--no-plugins",
+            help="skip js/plugins.js parameter text extraction")] = False,
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Extract the MZ template/context/structure/kinds/names/name macros."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("build translation package", game_dir=game_dir, out_dir=out_dir)
+
+    game_dir = os.path.abspath(game_dir)
+    out_dir = os.path.abspath(out_dir)
+    data_dir = os.path.join(game_dir, "data")
+    if not os.path.isdir(data_dir):
+        return cliutil.fail(f"no data/ dir under {game_dir}")
+    os.makedirs(out_dir, exist_ok=True)
+
+    col = Collector()
+
+    _map_names = _load_map_names(data_dir)
+    tree = _collect_data_files(data_dir, _map_names, col)
 
     if not no_plugins:
         n = extract_plugin_text(game_dir, col)
@@ -465,35 +522,15 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
 
     # drop pure-ASCII keys (EV001-style ids, "OK", ...) - nothing to translate
     ja_keys = {k for k in col.keys if JA.search(k)}
-    template = {k: "" for k in sorted(ja_keys, key=lambda k: (-col.count[k], k))}
+    template = dict.fromkeys(sorted(ja_keys, key=lambda k: (-col.count[k], k)), "")
     col.kind_of = {k: v for k, v in col.kind_of.items() if k in ja_keys}
     col.context = {k: col.context[k] for k in ja_keys}
 
-    # names: name-position + frequent standalone lines
-    names = {}
-    actors_path = os.path.join(data_dir, "Actors.json")
-    if os.path.exists(actors_path):
-        for a in plain_io.load_json(actors_path):
-            if a and a.get("name"):
-                names[a["name"]] = [""]
-    for cand, n in col.name_cands.most_common(120):
-        names.setdefault(cand, [""])
-
+    names = _collect_actor_names(data_dir, col)
     name_macros = build_name_macros(data_dir)
 
-    with open(os.path.join(out_dir, "template.json"), "w", encoding="utf-8-sig") as f:
-        json.dump(template, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "names.json"), "w", encoding="utf-8-sig") as f:
-        json.dump(names, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "kinds.json"), "w", encoding="utf-8-sig") as f:
-        json.dump(col.kind_of, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "structure.json"), "w", encoding="utf-8-sig") as f:
-        json.dump({"maps": tree}, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "context.json"), "w", encoding="utf-8-sig") as f:
-        json.dump(col.context, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "name_macros.json"), "w",
-              encoding="utf-8-sig") as f:
-        json.dump(name_macros, f, ensure_ascii=False, indent=1)
+    _write_translation_package(out_dir, template, col, tree, names,
+                               name_macros)
 
     log("template: %d keys; names: %d candidates; maps: %d; name macros: %d"
         % (len(template), len(names), len(tree), len(name_macros)))

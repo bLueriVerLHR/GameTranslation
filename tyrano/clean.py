@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Clean a built TyranoScript folder: MTool residues, junk and desktop
 runtime leftovers.
 
@@ -10,15 +9,10 @@ before removal.
 """
 import logging
 import os
-import sys
 from typing import Annotated
 
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-# Repo root, appended (not inserted) so a same-named sibling module in
-# this directory still wins.
-sys.path.append(os.path.dirname(_HERE))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, platform
 
 log = logging.getLogger("tyrano.clean")
 
@@ -69,6 +63,13 @@ def _remove(path, what, stats):
 def cleanup_all(web_root, dry_run=False):
     """Remove residues; returns the list of removed paths (relative)."""
     removed = []
+    # AGENTS.md CRITICAL: this deletes files with plain Python I/O, so the
+    # folder must belong to this processor's side.  `--dry-run` is exempt
+    # because it only stats and prints - refusing to *report* what a
+    # Windows-side clean would remove would be less useful than saying it.
+    if not dry_run:
+        web_root = str(platform.require_native_paths(
+            "clean tyrano build", web_root=web_root)["web_root"])
     root = web_root
 
     for name in list(os.listdir(root)):

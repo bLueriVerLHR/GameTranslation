@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """proctools.py - the single place external programs are executed.
 
 Every call site needs the same four things, and each one used to get them
@@ -22,7 +21,7 @@ Usage::
 
 `check=True` (the default) raises RuntimeError; a missing program still
 raises FileNotFoundError unchanged, so the resolver's install hint
-(`config.find_7z()` etc.) remains the message the user sees.
+(`rpgmaker.tool_registry.find_7z()` etc.) remains the message the user sees.
 """
 import logging
 import subprocess

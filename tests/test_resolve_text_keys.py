@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for tools/resolve_text_keys.py (build-time ``\\T[id]`` inlining).
 
 Fixtures are synthetic MZ trees: a text table (``csv/UI.csv``), a runtime
@@ -8,7 +7,6 @@ The point is to pin the resolution tiers, the "display text only" rule (which
 is delegated to qc_build_kana) and the write/no-write behaviour, without
 shipping any game's data.
 """
-import io
 import json
 import os
 
@@ -31,14 +29,14 @@ ZH_TABLE = ZH_NEW_GAME
 
 def write_text(path, text, newline="\n"):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with io.open(path, "w", encoding="utf-8", newline=newline) as handle:
+    with open(path, "w", encoding="utf-8", newline=newline) as handle:
         handle.write(text)
     return path
 
 
 def dump_json(path, payload):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
     return path
 
@@ -105,15 +103,14 @@ def make_build(root, table=True, dictionary=True, plugins=None):
         make_dict(root)
     if plugins is not None:
         os.makedirs(os.path.join(root, "js"), exist_ok=True)
-        with io.open(os.path.join(root, "js", "plugins.js"), "w",
+        with open(os.path.join(root, "js", "plugins.js"), "w",
                      encoding="utf-8", newline="\n") as handle:
-            handle.write("var $plugins =\n%s;\n"
-                         % json.dumps(plugins, ensure_ascii=False, indent=4))
+            handle.write(f"var $plugins =\n{json.dumps(plugins, ensure_ascii=False, indent=4)};\n")
     return root
 
 
 def load(path):
-    with io.open(path, encoding="utf-8-sig") as handle:
+    with open(path, encoding="utf-8-sig") as handle:
         return json.load(handle)
 
 
@@ -155,21 +152,19 @@ def test_read_text_table_keeps_quoted_cells(tmp_path):
 
 
 def test_chinese_field_shapes():
-    assert rtk.chinese_field("SIS1,コマンド,%s,%s,%s"
-                             % (JP_NEW_GAME, ZH_NEW_GAME, "New game")) \
+    assert rtk.chinese_field("SIS1,コマンド,{},{},{}".format(JP_NEW_GAME, ZH_NEW_GAME, "New game")) \
         == ZH_NEW_GAME
-    assert rtk.chinese_field("N001,%s,%s" % (JP_LUCIA, ZH_LUCIA)) == ZH_LUCIA
+    assert rtk.chinese_field(f"N001,{JP_LUCIA},{ZH_LUCIA}") == ZH_LUCIA
     # kana-only cells are skipped, an ASCII tail is skipped, id is skipped
-    assert rtk.chinese_field("%s,%s" % (JP_SWORD, "Sword")) is None
-    assert rtk.chinese_field("ID,%s" % KANA_ONLY) is None
+    assert rtk.chinese_field("{},{}".format(JP_SWORD, "Sword")) is None
+    assert rtk.chinese_field(f"ID,{KANA_ONLY}") is None
     # last CJK-no-kana cell wins when a category is translated too
     assert rtk.chinese_field("SIS1,基本状态,等级,Level") == "\u7b49\u7ea7"
 
 
 def test_japanese_field_picks_last_kana_cell():
-    assert rtk.japanese_field("SIS1,コマンド,%s,%s,New game"
-                              % (JP_NEW_GAME, ZH_NEW_GAME)) == JP_NEW_GAME
-    assert rtk.japanese_field("SIS1,%s" % ZH_NEW_GAME) is None
+    assert rtk.japanese_field(f"SIS1,コマンド,{JP_NEW_GAME},{ZH_NEW_GAME},New game") == JP_NEW_GAME
+    assert rtk.japanese_field(f"SIS1,{ZH_NEW_GAME}") is None
 
 
 def test_read_term_dict_splits_pairs_and_terms(tmp_path):
@@ -235,7 +230,7 @@ def test_resolve_value_nested_key(tmp_path):
     write_text(os.path.join(root, "csv", "UI.csv"),
                "id,who,tw,cn,en\n"
                "A1,,ja,\\T[A2],x\n"
-               "A2,,ja,%s,y\n" % ZH_NEW_GAME)
+               f"A2,,ja,{ZH_NEW_GAME},y\n")
     resolver = rtk.Resolver([rtk.read_text_table(os.path.join(root, "csv", "UI.csv"))])
     stats = new_stats()
     assert rtk.resolve_value("\\T[A1]", resolver, stats) == ZH_NEW_GAME
@@ -312,7 +307,7 @@ def test_resolve_build_rewrites_plugin_parameters(tmp_path):
         }},
     ])
     rtk.resolve_build(build)
-    with io.open(os.path.join(build, "js", "plugins.js"), encoding="utf-8") as fh:
+    with open(os.path.join(build, "js", "plugins.js"), encoding="utf-8") as fh:
         text = fh.read()
     plugins = json.loads(text[text.index("["):text.rindex("]") + 1])
     params = plugins[0]["parameters"]
@@ -327,12 +322,12 @@ def test_resolve_build_dry_run_writes_nothing(tmp_path):
         {"name": "P.js", "status": True, "parameters": {"a": "\\T[SIS1]"}}])
     before = {}
     for rel in ("data/System.json", "data/Items.json", "js/plugins.js"):
-        with io.open(os.path.join(build, rel), encoding="utf-8") as fh:
+        with open(os.path.join(build, rel), encoding="utf-8") as fh:
             before[rel] = fh.read()
     stats = rtk.resolve_build(build, write=False)
     assert sum(stats["tiers"].values()) > 0
     for rel, text in before.items():
-        with io.open(os.path.join(build, rel), encoding="utf-8") as fh:
+        with open(os.path.join(build, rel), encoding="utf-8") as fh:
             assert fh.read() == text
 
 
@@ -398,9 +393,9 @@ def test_resolver_pattern_is_the_shared_codes_pattern():
 def test_escape_for_round_trips_through_json_levels():
     text = 'a "b" \\ c\n d'
     assert rtk.escape_for(text, 0) == text
-    assert json.loads('"%s"' % rtk.escape_for(text, 1)) == text
-    once = json.loads('"%s"' % rtk.escape_for(text, 2))
-    assert json.loads('"%s"' % once) == text
+    assert json.loads(f'"{rtk.escape_for(text, 1)}"') == text
+    once = json.loads(f'"{rtk.escape_for(text, 2)}"')
+    assert json.loads(f'"{once}"') == text
 
 
 def test_nested_json_parameter_keeps_parsing(tmp_path):
@@ -420,7 +415,7 @@ def test_nested_json_parameter_keeps_parsing(tmp_path):
          "parameters": {"QuestDatas": json.dumps([inner], ensure_ascii=False)}},
     ])
     rtk.resolve_build(root)
-    with io.open(os.path.join(root, "js", "plugins.js"), encoding="utf-8") as fh:
+    with open(os.path.join(root, "js", "plugins.js"), encoding="utf-8") as fh:
         text = fh.read()
     params = json.loads(text[text.index("["):text.rindex("]") + 1])[0]["parameters"]
     outer = json.loads(params["QuestDatas"])          # the plugin's first parse

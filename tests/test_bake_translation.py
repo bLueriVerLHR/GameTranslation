@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/bake_translation.py - the static-bake step of the
 translation pipeline.
 
@@ -444,10 +443,10 @@ class TestMainCoverageGate:
         return root
 
     def _run_main(self, root, out, trs, *extra, monkeypatch):
-        # Hermetic: never resolve a machine-local CJK/JP font (the worktree has
-        # no docs/table/fonts); font policy must no-op in these tests.
-        monkeypatch.setattr(bake.config, "find_cjk_font", lambda: "")
-        monkeypatch.setattr(bake.config, "find_jp_font", lambda: "")
+        # Hermetic: never resolve a machine-local CJK/JP font (a clean checkout
+        # has no registered fonts); font policy must no-op in these tests.
+        monkeypatch.setattr(bake.assets, "find_cjk_font", lambda: "")
+        monkeypatch.setattr(bake.assets, "find_jp_font", lambda: "")
         argv = ["bake_translation.py", root, out, "--trs", trs] + list(extra)
         monkeypatch.setattr("sys.argv", argv)
         return bake.main()
@@ -756,8 +755,8 @@ class TestTextKeyInlining:
         return root
 
     def _run(self, root, out, trs, *extra, monkeypatch):
-        monkeypatch.setattr(bake.config, "find_cjk_font", lambda: "")
-        monkeypatch.setattr(bake.config, "find_jp_font", lambda: "")
+        monkeypatch.setattr(bake.assets, "find_cjk_font", lambda: "")
+        monkeypatch.setattr(bake.assets, "find_jp_font", lambda: "")
         argv = ["bake_translation.py", root, out, "--trs", trs] + list(extra)
         monkeypatch.setattr("sys.argv", argv)
         return bake.main()

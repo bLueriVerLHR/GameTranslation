@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Integration tests: the full conversion pipeline on a synthetic game.
 
 Runs build -> decrypt -> clean -> verify -> serve smoke test -> compress
@@ -15,7 +14,7 @@ import pytest
 
 from conftest import free_port, make_game
 
-from rpgmaker import build, clean, compress, decrypt, serve, verify
+from rpgmaker import build, clean, compress, decrypt, deliverables, serve, tool_registry, verify
 
 
 class TestFullPipeline:
@@ -28,7 +27,7 @@ class TestFullPipeline:
         # passes after decryption)
         from conftest import make_png_bytes
         plain = make_png_bytes(16, 16)
-        from rpgmaker import config as cfg
+        from rpgmaker import constants as cfg
         enc = bytearray(cfg.RPGMV_HEADER + plain)
         key = bytes.fromhex("0123456789abcdef0123456789abcdef")
         for i in range(min(16, len(enc) - 16)):
@@ -61,13 +60,17 @@ class TestFullPipeline:
         assert "out/index.html" in archive_mod.names(archive)
 
     def test_compress_needs_no_7z_binary(self, tmp_path, monkeypatch):
-        """The packaged backend is in-process: no 7-Zip required to package."""
-        from rpgmaker import config
+        """The packaged backend is in-process: no 7-Zip required to package.
+
+        There is no native-``7z`` resolver to disable any more (py7zr never
+        spawns a process), so assert its absence instead - re-adding one has
+        to come with a caller and this test updated.
+        """
+        assert not hasattr(tool_registry, "find_7z")
         root = str(tmp_path / "src")
         web = make_game(root)
         out = str(tmp_path / "out")
         build.build_joiplay(web, out, workers=2)
-        monkeypatch.setattr(config, "find_7z", lambda: None)
         archive = compress.compress(out, str(tmp_path / "g.7z"))
         assert compress.test_archive(archive) is True
 
@@ -81,8 +84,8 @@ class TestDeliver:
         archives = str(tmp_path / "archives")
         build.build_joiplay(web, out, workers=2)
 
-        from rpgmaker import config, deliver
-        monkeypatch.setattr(config, "temp_dir", lambda: str(tmp_path / "temp"))
+        from rpgmaker import deliver
+        monkeypatch.setattr(deliverables, "temp_dir", lambda: str(tmp_path / "temp"))
         arch = deliver.deliver(out, games=games, archives=archives)
         assert os.path.isfile(arch)
         assert os.path.isdir(os.path.join(games, "build"))
@@ -98,16 +101,18 @@ class TestDeliver:
 
         stale = os.path.join(games, "build")
         os.makedirs(stale)
-        with open(os.path.join(stale, "stale.txt"), "w") as f:
+        with open(os.path.join(stale, "stale.txt"), "w", encoding="utf-8") as f:
             f.write("old")
-        from rpgmaker import config, deliver
-        monkeypatch.setattr(config, "temp_dir", lambda: str(tmp_path / "temp"))
+        from rpgmaker import deliver
+        monkeypatch.setattr(deliverables, "temp_dir", lambda: str(tmp_path / "temp"))
         deliver.deliver(out, games=games, archives=archives)
         assert not os.path.exists(os.path.join(games, "build", "stale.txt"))
 
-    def test_extract_wsl_side_raises_when_7z_missing(self, monkeypatch):
-        from rpgmaker import config, deliver
-        monkeypatch.setattr(config, "find_7z", lambda: None)
+    def test_extract_wsl_side_reports_a_missing_archive(self, monkeypatch):
+        """The WSL-side extract is pure py7zr, so a missing archive surfaces
+        as the file error itself - no external 7-Zip lookup is involved."""
+        from rpgmaker import deliver
+        assert not hasattr(tool_registry, "find_7z")
         with pytest.raises(FileNotFoundError):
             deliver._extract_wsl_side("a.7z", "dest", "name")
 
@@ -120,11 +125,11 @@ class TestCli:
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         env = dict(os.environ)
         env["FFMPEG"] = fake_tools["ffmpeg"]
-        env["SEVENZ"] = fake_tools["7z"]
         r = subprocess.run(
             [sys.executable, os.path.join(repo, "pipeline.py"), "build",
              web, "-o", out, "--workers", "2"],
-            capture_output=True, text=True, env=env, cwd=repo)
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", env=env, cwd=repo)
         assert r.returncode == 0, r.stderr
         assert os.path.isfile(os.path.join(out, "index.html"))
         assert not os.path.exists(os.path.join(out, "Game.exe"))
@@ -136,18 +141,19 @@ class TestCli:
         repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         env = dict(os.environ)
         env["FFMPEG"] = fake_tools["ffmpeg"]
-        env["SEVENZ"] = fake_tools["7z"]
         build.build_joiplay(web, out, workers=2)
         r = subprocess.run(
             [sys.executable, os.path.join(repo, "pipeline.py"), "verify", out],
-            capture_output=True, text=True, env=env, cwd=repo)
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", env=env, cwd=repo)
         assert r.returncode == 0
         # corrupt a PNG -> verify must fail
         with open(os.path.join(out, "img", "pictures", "pic1.png"), "wb") as f:
             f.write(b"broken")
         r = subprocess.run(
             [sys.executable, os.path.join(repo, "pipeline.py"), "verify", out],
-            capture_output=True, text=True, env=env, cwd=repo)
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", env=env, cwd=repo)
         assert r.returncode == 1
 
 

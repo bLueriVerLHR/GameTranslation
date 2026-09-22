@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for tyrano/asar.py - asar access through the ``asar`` package.
 
 `tyrano/asar.py` used to run `npx @electron/asar` for every operation, which

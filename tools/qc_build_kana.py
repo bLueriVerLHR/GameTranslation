@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Kana-residue QC on a *baked* RPG Maker MZ/MV build - the acceptance check.
 
 The five library gates run **before** baking and only see the strings the
@@ -56,7 +55,7 @@ import logging
 import os
 import re
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpgmaker import cliutil  # noqa: E402
@@ -219,7 +218,7 @@ def walk_strings(node, trail, code=None):
             found.extend(walk_strings(item, "%s[%d]" % (trail, index), code))
     elif isinstance(node, dict):
         for key, item in node.items():
-            found.extend(walk_strings(item, "%s.%s" % (trail, key), code))
+            found.extend(walk_strings(item, f"{trail}.{key}", code))
     return found
 
 
@@ -233,7 +232,7 @@ def walk_document(node, trail=""):
     found = []
     if isinstance(node, dict):
         for key, item in node.items():
-            path = "%s.%s" % (trail, key) if trail else key
+            path = f"{trail}.{key}" if trail else key
             if key == "list" and isinstance(item, list):
                 for index, command in enumerate(item):
                     code = mvkeys.command_code(command)
@@ -312,7 +311,7 @@ def scan(build_dir, source_dir=None, work_dir=None, plugin_scan=True):
     data_dir = os.path.join(build_dir, "data")
     if not os.path.isfile(os.path.join(data_dir, "System.json")):
         raise FileNotFoundError(
-            "not an MZ/MV build (no data/System.json): %s" % build_dir)
+            f"not an MZ/MV build (no data/System.json): {build_dir}")
     allow_list = load_allow_list(work_dir)
     table_texts = load_source_table_texts(build_dir)
     findings = {"unexpected": [], "by_design": [], "allowed": [],
@@ -440,9 +439,8 @@ def report(findings, limit=25, stream=None):
     if table_lines:
         stream.write("source-table lines (the repack's own table holds only "
                      "Japanese for these): %d\n" % len(table_lines))
-        for file_name, trail, text, code in table_lines[:limit]:
-            stream.write("   JA-TABLE %s %s = %s\n"
-                         % (file_name, trail[-45:], repr(text[:70])))
+        for file_name, trail, text, _code in table_lines[:limit]:
+            stream.write(f"   JA-TABLE {file_name} {trail[-45:]} = {repr(text[:70])}\n")
         if len(table_lines) > limit:
             stream.write("   ... %d more\n" % (len(table_lines) - limit))
     text_keys = findings.get("text_keys") or []
@@ -452,15 +450,13 @@ def report(findings, limit=25, stream=None):
                      "player reads the key (inline them with "
                      "tools/resolve_text_keys.py)\n"
                      % ("\\T[id]", len(text_keys)))
-        for file_name, trail, text, code in text_keys[:limit]:
-            stream.write("   TEXT-KEY %s %s = %s\n"
-                         % (file_name, trail[-45:], repr(text[:70])))
+        for file_name, trail, text, _code in text_keys[:limit]:
+            stream.write(f"   TEXT-KEY {file_name} {trail[-45:]} = {repr(text[:70])}\n")
         if len(text_keys) > limit:
             stream.write("   ... %d more\n" % (len(text_keys) - limit))
     for file_name, trail, text, code in unexpected[:limit]:
-        stream.write("   UNEXPECTED %s (code %s) %s\n"
-                     % (file_name, code, trail[-60:]))
-        stream.write("      %s\n" % repr(text[:90]))
+        stream.write(f"   UNEXPECTED {file_name} (code {code}) {trail[-60:]}\n")
+        stream.write(f"      {repr(text[:90])}\n")
     if len(unexpected) > limit:
         stream.write("   ... %d more\n" % (len(unexpected) - limit))
         stream.write("placeholder (%%N) mismatches: %d\n" % len(placeholders))
@@ -474,36 +470,32 @@ def report(findings, limit=25, stream=None):
                      "the event name together (bake checks these refs):\n"
                      % len(lookups))
         for file_name, trail, text in lookups[:5]:
-            stream.write("   %s %s = %s\n"
-                         % (file_name, trail[-45:], repr(text[:70])))
+            stream.write(f"   {file_name} {trail[-45:]} = {repr(text[:70])}\n")
         if len(lookups) > 5:
             stream.write("   ... %d more\n" % (len(lookups) - 5))
     for file_name, trail, japanese, translated in placeholders[:limit]:
-        stream.write("   %s %s\n      ja=%s\n      zh=%s\n"
-                     % (file_name, trail[-60:], repr(japanese[:70]),
-                        repr(translated[:70])))
+        stream.write(f"   {file_name} {trail[-60:]}\n      ja={repr(japanese[:70])}\n      zh={repr(translated[:70])}\n")
     plugins = findings.get("plugins")
     if plugins is not None:
         stream.write("plugin parameters (js/plugins.js, excluded by policy): "
                      "%d kana string(s)\n" % plugins["strings"])
         for where, text in plugins["samples"][:limit]:
-            stream.write("   INFO %s = %s\n" % (where, repr(text[:70])))
+            stream.write(f"   INFO {where} = {repr(text[:70])}\n")
         review = plugins.get("review") or []
         if review:
             stream.write("plugin parameters with kana-free CJK (review: a kanji-only "
                          "Japanese label hides here): %d\n" % len(review))
             for where, text in review[:limit]:
-                stream.write("   REVIEW %s = %s\n" % (where, repr(text[:70])))
+                stream.write(f"   REVIEW {where} = {repr(text[:70])}\n")
             if len(review) > limit:
                 stream.write("   ... %d more\n" % (len(review) - limit))
     for file_name, trail, text in findings.get("identical", [])[:limit]:
-        stream.write("   IDENTICAL %s %s = %s\n"
-                     % (file_name, trail[-45:], repr(text[:70])))
+        stream.write(f"   IDENTICAL {file_name} {trail[-45:]} = {repr(text[:70])}\n")
     if len(findings.get("identical", [])) > limit:
         stream.write("   ... %d more\n"
                      % (len(findings["identical"]) - limit))
     for file_name, message in findings.get("unreadable", []):
-        stream.write("   UNREADABLE %s: %s\n" % (file_name, message))
+        stream.write(f"   UNREADABLE {file_name}: {message}\n")
     problems = len(unexpected) + len(placeholders) \
         + len(findings.get("unreadable", [])) \
         + len(findings.get("text_keys", []))
@@ -513,9 +505,9 @@ def report(findings, limit=25, stream=None):
 
 def cmd(build_dir: Annotated[str, cliutil.Argument(
             help="baked MZ/MV build (web root) to scan")],
-        source: Annotated[Optional[str], cliutil.Option(
+        source: Annotated[str | None, cliutil.Option(
             "--source", help="Japanese original build, for %N parity")] = None,
-        work: Annotated[Optional[str], cliutil.Option(
+        work: Annotated[str | None, cliutil.Option(
             "--work", help="translation workspace, for allow_kana.json")] = None,
         limit: Annotated[int, cliutil.Option(
             "--limit", help="samples printed per section")] = 25,
@@ -526,6 +518,9 @@ def cmd(build_dir: Annotated[str, cliutil.Argument(
         log_file: cliutil.LogFile = None) -> int:
     """Scan a baked build for Japanese residue and %N parity breaks."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("qc build kana", build_dir=build_dir, source=source, work=work)
     try:
         findings = scan(build_dir, source, work)
     except FileNotFoundError as exc:

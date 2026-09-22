@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for wolfrpg/dxarchive.py DXArchive v8 unpacker.
 
 The LZ and Huffman encoders below were derived from the decoder semantics
@@ -314,7 +313,7 @@ def make_wolf_archive(files, key_string=b"DXLIBARC", no_key=False):
     data_start = 0
     payload = bytearray()
 
-    for name, content in files:
+    for name, _content in files:
         name_b = name.encode("shift_jis")
         upper = name.upper().encode("shift_jis")
         words = (len(upper) + 3) // 4
@@ -382,11 +381,19 @@ class TestUnpackArchive:
         assert (out / "k.txt").read_bytes() == b"secret"
 
     def test_wrong_key_garbage_warns(self, tmp_path, caplog):
+        """A wrong key yields garbage that must be reported as a ValueError.
+
+        The broad ``(ValueError, IndexError, UnicodeDecodeError, OSError)``
+        tuple this used to accept was the symptom of the decoders leaking
+        IndexError / UnicodeDecodeError on a corrupt stream; the contract is
+        one exception type with a message that says the block is corrupt, so
+        the caller can tell a bad key from a bug in this module.
+        """
         files = [("k.txt", b"secret")]
         arch = tmp_path / "k.wolf"
         arch.write_bytes(make_wolf_archive(files, key_string=b"custom"))
         out = tmp_path / "out"
-        with pytest.raises((ValueError, IndexError, UnicodeDecodeError, OSError)):
+        with pytest.raises(ValueError, match="Huffman|LZ block"):
             dx.unpack_archive(str(arch), str(out), b"wrong")
 
     def test_no_key_archive(self, tmp_path):

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """downscale_images.py - downscale oversized PNG images for mobile rendering.
 
 Android WebView/PixiJS cap WebGL textures at 4096 px per side; PNGs larger
@@ -9,7 +8,7 @@ The single-build policy: every build downscales any PNG whose width or height
 exceeds the limit (aspect ratio + alpha preserved) so the same folder runs on
 both PC and Android. No separate LowRes sibling build is produced anymore.
 
-The default per-side limit is PNG_MAX_DIMENSION (rpgmaker/config.py).
+The default per-side limit is PNG_MAX_DIMENSION (rpgmaker/constants.py).
 
 Usage:
   python downscale_images.py <web_root> [--glob PATTERN] [--limit N]
@@ -26,12 +25,12 @@ import os
 import struct
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from typing import Annotated, Optional
+from typing import Annotated
 
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import config  # noqa: E402
+from rpgmaker import constants  # noqa: E402
 from rpgmaker import runtime  # noqa: E402
 
 from rpgmaker import cliutil  # noqa: E402
@@ -115,23 +114,26 @@ def cmd(web_root: Annotated[str, cliutil.Argument(
             "img/**/*.png; TyranoScript builds pass '**/*.png')"
         )] = DEFAULT_GLOB,
         limit: Annotated[int, cliutil.Option(
-            "--limit", help="max pixels per side")] = config.PNG_MAX_DIMENSION,
+            "--limit", help="max pixels per side")] = constants.PNG_MAX_DIMENSION,
         dry_run: Annotated[bool, cliutil.Option(
             "--dry-run", help="report only, write nothing")] = False,
-        workers: Annotated[Optional[int], cliutil.Option(
+        workers: Annotated[int | None, cliutil.Option(
             "--workers", help="parallel workers (default: auto-tuned to "
             "the machine)")] = None,
         verbose: cliutil.Verbose = False,
         quiet: cliutil.Quiet = False,
         log_file: cliutil.LogFile = None) -> int:
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("downscale images", web_root=web_root)
     root = os.path.abspath(web_root)
     if not os.path.isdir(root):
-        print("not a directory: %s" % root, file=sys.stderr)
+        print(f"not a directory: {root}", file=sys.stderr)
         return 1
     if not scan(root, limit, workers, dry_run, pattern=pattern):
-        print("no PNG matched %s under %s (RPG Maker uses img/; pass "
-              "--glob '**/*.png' for other layouts)" % (pattern, root),
+        print(f"no PNG matched {pattern} under {root} (RPG Maker uses img/; pass "
+              "--glob '**/*.png' for other layouts)",
               file=sys.stderr)
         return 1
     return 0

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """merge_translation.py - Final merge of prefilled (MTool exact hits) + agent
 chunks into translated.json, with an optional terminology sweep.
 

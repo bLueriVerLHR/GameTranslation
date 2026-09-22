@@ -1,0 +1,116 @@
+{
+  "schema": 1,
+  "about": [
+    "测试固件清单：每个文件的来源、用途、许可与校验值。",
+    "规范要求（PLAN 第5阶段任务8）：固件必须记录输入、期望产物、来源、许可，",
+    "且不得包含可识别的游戏内容——本仓库公开托管，固件同样是公开内容。",
+    "校验值是固定点：固件被改动而没同步本文件时，tests/test_fixture_manifest.py 会失败。"
+  ],
+  "license_note": [
+    "这些固件是格式样本（容器/压缩/字形），不是游戏内容：",
+    "没有任何一处是某款游戏的剧情、立绘、音频或数据表。",
+    "TLG 样本是从真实游戏档案中截取的单张图像再经 GARbro 解码，属于",
+    "格式回归样本的最小必要物；如权利人提出异议，可删除并改为合成样本",
+    "（合成编码路径见 tests/test_tlg.py 的 build_tlg6* 系列，覆盖解码逻辑）。"
+  ],
+  "files": {
+    "sine_loop.ogg": {
+      "kind": "media",
+      "purpose": "PyAV 探测/解码的真实容器；带 LOOPSTART/LOOPLENGTH 循环标签",
+      "provenance": "本仓库合成：440 Hz 正弦，1 声道，22.05 kHz，2 秒，libvorbis 编码",
+      "license": "合成内容，随本仓库许可",
+      "representation": "as-is",
+      "sha256": "a93ec8eba1e6e8bb688dcba804cbc08f90ebf3cea749cb05071a9ad33d85d453",
+      "size": 5841
+    },
+    "tiny_app.asar": {
+      "kind": "archive",
+      "purpose": "asar 读取契约的真实归档（含 unpacked 条目）",
+      "provenance": "由官方 node 工具 `npx @electron/asar pack` 打包的极简 Electron 应用结构",
+      "license": "合成内容，随本仓库许可",
+      "representation": "as-is",
+      "sha256": "a6725e3e439b1abf3ef85eafe050f87bc60c20a8f8eda7d16118a1e2755e7866",
+      "size": 933
+    },
+    "tlg/a_t002a.tlg": {
+      "kind": "format",
+      "purpose": "TLG6 真实文件解码回归（第 2 通道）",
+      "provenance": "真实游戏档案中的单张图像（未修改）；同目录 .rgb.z 为 GARbro 导出",
+      "license": "格式样本；见 license_note",
+      "representation": "as-is",
+      "sha256": "e033720133c0231e4746999d4b7deb3b36d7e9b1e31606727f2426b878da8eaf",
+      "size": 232334
+    },
+    "tlg/a_t005j.tlg": {
+      "kind": "format",
+      "purpose": "TLG6 真实文件解码回归（第 2 通道）",
+      "provenance": "真实游戏档案中的单张图像（未修改）；同目录 .rgb.z 为 GARbro 导出",
+      "license": "格式样本；见 license_note",
+      "representation": "as-is",
+      "sha256": "701ef40e96382222ee2b947d82da984f682aed242762b61391e329122bb53338",
+      "size": 218346
+    },
+    "tlg/ev028b.tlg": {
+      "kind": "format",
+      "purpose": "TLG6 真实文件解码回归（第 2 通道）",
+      "provenance": "真实游戏档案中的单张图像（未修改）；同目录 .rgb.z 为 GARbro 导出",
+      "license": "格式样本；见 license_note",
+      "representation": "as-is",
+      "sha256": "51c0ffc42d0c8ce3b1d5fa692b69b9bc38e65d7d49dd8e66f2bb06e2c914b579",
+      "size": 625033
+    },
+    "tlg/ev036e.tlg": {
+      "kind": "format",
+      "purpose": "TLG6 真实文件解码回归（第 3 通道，3 色）",
+      "provenance": "真实游戏档案中的单张图像（未修改）；同目录 .rgb.z 为 GARbro 导出",
+      "license": "格式样本；见 license_note",
+      "representation": "as-is",
+      "sha256": "e2126271481cd2cf162183644f400e671edb3370826463ecc38bd80987bd7a1f",
+      "size": 764280
+    },
+    "tlg/a_t002a.rgb.z": {
+      "kind": "format-reference",
+      "purpose": "独立参考产物：GARbro 导出像素的规范 RGB 流（自下而上、去掉 alpha）",
+      "provenance": "GARbro 导出的 32bpp BMP 取 RGB 平面后 zlib level 9 压缩；不是本仓库解码器的输出",
+      "license": "格式样本；见 license_note",
+      "representation": "zlib-compressed raw RGB (1024x768x3)",
+      "width": 1024,
+      "height": 768,
+      "sha256": "8172b51c0e0937bd10c90bcfc6614d2c5e449d8474527d22a8e43b4917f8f0d4",
+      "size": 349087
+    },
+    "tlg/a_t005j.rgb.z": {
+      "kind": "format-reference",
+      "purpose": "独立参考产物：GARbro 导出像素的规范 RGB 流（自下而上、去掉 alpha）",
+      "provenance": "GARbro 导出的 32bpp BMP 取 RGB 平面后 zlib level 9 压缩；不是本仓库解码器的输出",
+      "license": "格式样本；见 license_note",
+      "representation": "zlib-compressed raw RGB (1024x768x3)",
+      "width": 1024,
+      "height": 768,
+      "sha256": "a9238257637e4fc7fca7a7c4aa6f4663f0a1d7f90e033ab6b970744bea8b0e3f",
+      "size": 351194
+    },
+    "tlg/ev028b.rgb.z": {
+      "kind": "format-reference",
+      "purpose": "独立参考产物：GARbro 导出像素的规范 RGB 流（自下而上、去掉 alpha）",
+      "provenance": "GARbro 导出的 32bpp BMP 取 RGB 平面后 zlib level 9 压缩；不是本仓库解码器的输出",
+      "license": "格式样本；见 license_note",
+      "representation": "zlib-compressed raw RGB (1024x768x3)",
+      "width": 1024,
+      "height": 768,
+      "sha256": "1bd013723dde118ba08cea1487ae3ad675075d18aecbe89f308884f88d44b300",
+      "size": 1026633
+    },
+    "tlg/ev036e.rgb.z": {
+      "kind": "format-reference",
+      "purpose": "独立参考产物：GARbro 导出像素的规范 RGB 流（自下而上、去掉 alpha）",
+      "provenance": "GARbro 导出的 32bpp BMP 取 RGB 平面后 zlib level 9 压缩；不是本仓库解码器的输出",
+      "license": "格式样本；见 license_note",
+      "representation": "zlib-compressed raw RGB (1024x768x3)",
+      "width": 1024,
+      "height": 768,
+      "sha256": "1595f5773c0c7b9533799ea492018c50dfb1377d25cfe952a50639894a306f63",
+      "size": 1531912
+    }
+  }
+}

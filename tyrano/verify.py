@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Verify a built TyranoScript JoiPlay folder.
 
 Checks the essentials for the game to actually run in JoiPlay / a browser:
@@ -14,16 +13,12 @@ import logging
 import os
 import re
 import struct
-import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
+from rpgmaker import constants as rpg_constants
+from .tyrano_extract import load_ks
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from rpgmaker import config as rpg_config  # noqa: E402
-from .tyrano_extract import load_ks  # noqa: E402
-
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, platform
 
 log = logging.getLogger("tyrano.verify")
 
@@ -36,11 +31,8 @@ def _rel(path, root):
 
 
 def check_layout(web_root):
-    problems = []
-    for name in ("index.html", "tyrano", "data"):
-        if not os.path.exists(os.path.join(web_root, name)):
-            problems.append("missing %s" % name)
-    return problems
+    return [f"missing {name}" for name in ("index.html", "tyrano", "data")
+            if not os.path.exists(os.path.join(web_root, name))]
 
 
 def check_save_backend(web_root):
@@ -53,15 +45,12 @@ def check_save_backend(web_root):
     if not m:
         return ["no configSave= line in data/system/Config.tjs"]
     if m.group(1) != "webstorage":
-        return ["configSave=%s (needs webstorage for JoiPlay)" % m.group(1)]
+        return [f"configSave={m.group(1)} (needs webstorage for JoiPlay)"]
     return []
 
 
 def _audio_exists(web_root, ref):
-    for base in AUDIO_DIRS:
-        if os.path.isfile(os.path.join(web_root, base, ref)):
-            return True
-    return False
+    return any(os.path.isfile(os.path.join(web_root, base, ref)) for base in AUDIO_DIRS)
 
 
 def _audio_refs(web_root):
@@ -100,7 +89,7 @@ def check_audio_refs(web_root, source=None):
         if ref.endswith(".mp3"):
             mp3_refs += 1
         if not _audio_exists(web_root, ref):
-            missing.append("%s: %s" % (_rel(path, web_root), ref))
+            missing.append(f"{_rel(path, web_root)}: {ref}")
     if source:
         source_missing = {ref for _p, ref in _audio_refs(source)
                           if not _audio_exists(source, ref)}
@@ -109,7 +98,7 @@ def check_audio_refs(web_root, source=None):
         missing = [m for m in missing if m.split(": ", 1)[1] not in source_missing]
     problems = ["%d mp3 refs left after conversion" % mp3_refs] \
         if mp3_refs else []
-    problems += ["dangling audio ref %s" % m for m in missing[:10]]
+    problems += [f"dangling audio ref {m}" for m in missing[:10]]
     if len(missing) > 10:
         problems.append("...and %d more" % (len(missing) - 10))
     return problems
@@ -145,7 +134,7 @@ def check_png_limits(web_root):
     over-limit.  A file that carries the PNG signature but no readable IHDR
     (interrupted copy / truncation) is reported too - it renders broken on
     every platform, and silently skipping it made this check blind."""
-    limit = rpg_config.PNG_MAX_DIMENSION
+    limit = rpg_constants.PNG_MAX_DIMENSION
     over = []
     broken = []
     count = 0
@@ -164,7 +153,7 @@ def check_png_limits(web_root):
             if w > limit or h > limit:
                 over.append("%s (%dx%d)" % (_rel(path, web_root), w, h))
     log.info("png: %d checked, %d unreadable", count, len(broken))
-    problems = ["png unreadable: %s" % b for b in broken[:10]]
+    problems = [f"png unreadable: {b}" for b in broken[:10]]
     problems += ["png over %d: %s" % (limit, o) for o in over[:10]]
     return problems
 
@@ -172,6 +161,13 @@ def check_png_limits(web_root):
 def verify(web_root, source=None, check_png=True):
     """Return the list of problems (empty = OK).  `source` is an optional
     original game folder whose audio tree supplements the built one."""
+    # AGENTS.md CRITICAL: reading is covered too - the archived gate on
+    # `archive.names`/`verify` is precedent, and the point is that no
+    # processor touches the other side's bytes, not just that it writes none.
+    own = platform.require_native_paths("verify tyrano build", web_root=web_root,
+                                        source=source or web_root)
+    web_root = str(own["web_root"])
+    source = None if source is None else str(own["source"])
     problems = []
     problems += check_layout(web_root)
     problems += check_save_backend(web_root)
@@ -186,7 +182,7 @@ def verify(web_root, source=None, check_png=True):
 
 
 def cmd(web_root: Annotated[str, cliutil.Argument(help="built game folder")],
-        source: Annotated[Optional[str], cliutil.Option(
+        source: Annotated[str | None, cliutil.Option(
             "--source", help="original game folder (audio existence fallback)"
         )] = None,
         no_png: Annotated[bool, cliutil.Option(

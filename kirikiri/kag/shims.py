@@ -33,7 +33,7 @@ def _decode_shim(data, name):
     """
     text = data.decode("utf-8")
     if "\r" in text:
-        raise ValueError("shim asset %s must use LF line endings" % name)
+        raise ValueError(f"shim asset {name} must use LF line endings")
     if text.endswith("\n"):
         text = text[:-1]
     return text
@@ -49,9 +49,9 @@ def _assemble(name, pieces):
     """Expand the ``__KAG3_INCLUDE__`` markers of one shim template."""
     text = _shim_text(name)
     for marker_name, value in pieces:
-        marker = "// __KAG3_INCLUDE:%s__" % marker_name
+        marker = f"// __KAG3_INCLUDE:{marker_name}__"
         if marker not in text:
-            raise ValueError("shim template %s lost its %s marker" % (name, marker_name))
+            raise ValueError(f"shim template {name} lost its {marker_name} marker")
         text = text.replace(marker, value)
     return text
 
@@ -115,10 +115,10 @@ def _shim_js(macros=(), engine_dir=None, used_tags=None, usage=None):
         lines.append("  // [%s] -- KAG3 tag, NOT implemented by TyranoScript: "
                      "%d call site(s)." % (name, rec.get("count", 0)))
         if attrs:
-            lines.append("  //   arguments seen: %s" % ", ".join(attrs[:12]))
-        for ex in (rec.get("examples") or [])[:2]:
-            lines.append("  //   example: %s" % ex)
-        lines.append("  //   INTENT: %s" % tag_intent(name, usage or {}))
-        lines.append('  define("%s");' % name)
+            lines.append("  //   arguments seen: {}".format(", ".join(attrs[:12])))
+        lines.extend(f"  //   example: {ex}"
+                     for ex in (rec.get("examples") or [])[:2])
+        lines.append(f"  //   INTENT: {tag_intent(name, usage or {})}")
+        lines.append(f'  define("{name}");')
     lines.append(NOOP_PLUS_REAL_JS)
     return "\n".join(lines) + "\n", len(names)

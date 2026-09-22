@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """plugincompat.py - browser/JoiPlay compatibility scan + repair for plugins.
 
 Why this exists
@@ -37,9 +36,10 @@ Only the first matching rule is applied per line, and only to files that decode
 as UTF-8 or CP932 - community plugin files are often Shift-JIS, and a blind
 utf-8 read+write would corrupt them.
 
-``js/plugins.js`` parsing is delegated to ``tools/plugins_io.py``, the
-toolkit's single plugins.js parser (``tools/`` sits next to this package and is
-importable in every supported invocation: pipeline entry, tools, tests).
+``js/plugins.js`` parsing is delegated to ``rpgmaker/plugins_io.py``, the
+toolkit's single plugins.js parser (core, so it is importable without
+``tools/`` on ``sys.path``; ``tools/plugins_io.py`` re-exports it for the
+remaining maintenance scripts).
 
 Usage (pipeline command ``compat``, run it right after ``build``)::
 
@@ -52,7 +52,7 @@ import os
 import re
 from dataclasses import dataclass, field
 
-from tools import plugins_io
+from . import plugins_io
 
 log = logging.getLogger("rpgmaker.plugincompat")
 
@@ -306,11 +306,22 @@ def _read_text(path):
         raw = f.read()
     attempts = ("utf-8-sig", "utf-8") if raw.startswith(_BOM) else ("utf-8",)
     for enc in attempts + ("cp932",):
-        try:
-            return raw.decode(enc), enc
-        except UnicodeDecodeError:
-            continue
+        decoded = _try_decode(raw, enc)
+        if decoded is not None:
+            return decoded, enc
     return None, None
+
+
+def _try_decode(raw, enc):
+    """`raw` as `enc`, or None when the bytes are not valid in it.
+
+    Returning a sentinel keeps the per-encoding `try` out of the caller's
+    loop; the caller is a candidate search, not a retry loop.
+    """
+    try:
+        return raw.decode(enc)
+    except UnicodeDecodeError:
+        return None
 
 
 def _plugin_paths(web_root):
@@ -422,7 +433,7 @@ def run(web_root, dry_run=False, strict=False):
                  ", ".join(report.files_changed))
     elif report.skipped:
         log.warning("nothing repaired: %s",
-                    ", ".join("%s (%s)" % s for s in report.skipped))
+                    ", ".join("{} ({})".format(*s) for s in report.skipped))
     else:
         log.info("plugin compat: no known browser/JoiPlay plugin breakage found")
     for finding in report.findings:

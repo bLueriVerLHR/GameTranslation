@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Inject a translated.json ({ja: zh}) dictionary into the extracted
 TyranoScript scenario tree.
 
@@ -17,7 +16,7 @@ Usage:
 import logging
 import os
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -112,16 +111,19 @@ def apply(work_dir, scenario_dir, out_dir):
 
 
 def cmd(work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
-        scenario_dir: Annotated[Optional[str], cliutil.Option(
+        scenario_dir: Annotated[str | None, cliutil.Option(
             "--scenario-dir", help="scenario tree to patch "
             "(default: <work>/scenario)")] = None,
-        out: Annotated[Optional[str], cliutil.Option(
+        out: Annotated[str | None, cliutil.Option(
             "--out", help="patched tree output (default: <work>/patch)")] = None,
         verbose: cliutil.Verbose = False,
         quiet: cliutil.Quiet = False,
         log_file: cliutil.LogFile = None) -> int:
     """Write translated.json back into the TyranoScript .ks tree."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("apply tyrano translation", work_dir=work_dir, scenario_dir=scenario_dir, out=out)
     work = os.path.abspath(work_dir)
     scenario = os.path.abspath(scenario_dir or os.path.join(work, "scenario"))
     out_dir = os.path.abspath(out or os.path.join(work, "patch"))

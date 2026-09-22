@@ -13,7 +13,7 @@ import logging
 import os
 import re
 
-from kirikiri.ks_extract import detect_encoding
+from kirikiri.ks_extract import decode_text, detect_encoding
 
 log = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ SYSTEM_ISCRIPT_DROP = {
     "load_test.ks", "loadgame.ks", "save_test.ks", "slide.ks",
     "staff_roll.ks", "config_test.ks", "config_test2.ks", "config_test3.ks",
     "menu_help.ks", "s_select.ks",
-    "loadgame.ks", "sys_voice_set.ks", "sys_voice_mload.ks",
+    "sys_voice_set.ks", "sys_voice_mload.ks",
     "sys_voice_load.ks", "sys_voice_save.ks", "sys_voice_slide.ks",
     "sys_voice_menu.ks", "sys_voice_mcon.ks", "sys_voice_mpg.ks",
     "sys_voice_seen.ks", "sys_voice_seen_ani.ks", "sys_voice_seen_ani_set.ks",
@@ -222,16 +222,16 @@ def collect_scene_tags(unpacked):
             path = os.path.join(dirpath, fn)
             try:
                 raw = open(path, "rb").read()
-                text = raw.decode(detect_encoding(raw), errors="replace")
+                text = decode_text(raw, detect_encoding(raw))
             except OSError:
                 continue
             in_script = False
             for line in text.splitlines():
                 s = line.strip()
-                if s.startswith("[iscript") or s.startswith("@iscript"):
+                if s.startswith(("[iscript", "@iscript")):
                     in_script = True
                     continue
-                if s.startswith("[endscript") or s.startswith("@endscript"):
+                if s.startswith(("[endscript", "@endscript")):
                     in_script = False
                     continue
                 if in_script or s.startswith(";"):
@@ -449,17 +449,17 @@ def collect_tag_usage(unpacked):
             path = os.path.join(dirpath, fn)
             try:
                 raw = open(path, "rb").read()
-                text = raw.decode(detect_encoding(raw), errors="replace")
+                text = decode_text(raw, detect_encoding(raw))
             except OSError:
                 continue
             rel = os.path.relpath(path, unpacked).replace("\\", "/")
             in_script = False
             for lineno, line in enumerate(text.splitlines(), 1):
                 s = line.strip()
-                if s.startswith("[iscript") or s.startswith("@iscript"):
+                if s.startswith(("[iscript", "@iscript")):
                     in_script = True
                     continue
-                if s.startswith("[endscript") or s.startswith("@endscript"):
+                if s.startswith(("[endscript", "@endscript")):
                     in_script = False
                     continue
                 if in_script or s.startswith(";"):

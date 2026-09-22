@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Recover a game database that a launcher packer hid inside the game .exe.
 
 Some launcher repacks ship the MZ/MV engine and every asset on disk but *no*
@@ -41,7 +40,7 @@ CONTAINER_SECTION = ".enigma1"
 COMPANION_SECTION = ".enigma2"
 
 # UTF-16LE runs of printable characters (the name table's strings).
-NAME_UTF16_RE = re.compile((r"(?:[\x20-\x7e]\x00){3,}(?=\x00\x00)").encode())
+NAME_UTF16_RE = re.compile(br"(?:[\x20-\x7e]\x00){3,}(?=\x00\x00)")
 # Only database files are recovered; everything else in the container stays.
 DATA_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+\.json$")
 # The u32 size field sits this many bytes past the end of the name string.
@@ -200,15 +199,14 @@ def _read(path):
 def _packed_executable(game_dir):
     """The game .exe that carries the container (warns when several do)."""
     if not os.path.isdir(game_dir):
-        raise EvbError("not a folder: %s" % game_dir)
+        raise EvbError(f"not a folder: {game_dir}")
     candidates = sorted(os.path.join(game_dir, fn) for fn in os.listdir(game_dir)
                         if fn.lower().endswith(".exe"))
     if not candidates:
-        raise EvbError("no .exe in %s" % game_dir)
+        raise EvbError(f"no .exe in {game_dir}")
     packed = [p for p in candidates if container_region(_read(p))]
     if not packed:
-        raise EvbError("no %s section in %s - not a launcher-packed game"
-                       % (CONTAINER_SECTION, ", ".join(os.path.basename(p) for p in candidates)))
+        raise EvbError("no {} section in {} - not a launcher-packed game".format(CONTAINER_SECTION, ", ".join(os.path.basename(p) for p in candidates)))
     if len(packed) > 1:
         log.warning("evb: %d packed executables found, using %s",
                     len(packed), os.path.basename(packed[0]))
@@ -225,23 +223,20 @@ def unpack(game_dir, out_dir=None, dry_run=False, exe=None):
         exe = _packed_executable(game_dir)
     located = container_region(_read(exe))
     if located is None:
-        raise EvbError("no %s section in %s - not a launcher-packed game"
-                       % (CONTAINER_SECTION, exe))
+        raise EvbError(f"no {CONTAINER_SECTION} section in {exe} - not a launcher-packed game")
     region, section = located
 
     records = name_records(region)
     if not records:
-        raise EvbError("%s: no name table in %s" % (os.path.basename(exe), section))
+        raise EvbError(f"{os.path.basename(exe)}: no name table in {section}")
     start = find_payload_start(region, data_entries(records, len(region)))
     if start is None:
         raise EvbError(
-            "%s: %s has a name table but no plaintext JSON payload "
-            "(compressed/encrypted container - unsupported)"
-            % (os.path.basename(exe), section))
+            f"{os.path.basename(exe)}: {section} has a name table but no plaintext JSON payload "
+            "(compressed/encrypted container - unsupported)")
     entries = data_entries(records, start)
     if not entries:
-        raise EvbError("%s: %s packs no database .json files"
-                       % (os.path.basename(exe), section))
+        raise EvbError(f"{os.path.basename(exe)}: {section} packs no database .json files")
     log.info("evb: %s %s: %d packed files, payload at 0x%x",
              os.path.basename(exe), section, len(entries), start)
 
@@ -267,8 +262,8 @@ def _slice_files(region, section, start, entries):
                         if _slice_parses(region, cand, size)), None)
             if nxt is None:
                 raise EvbError(
-                    "%s+0x%x: %s does not parse as JSON - payload is not plaintext JSON "
-                    "(compressed/encrypted container?)" % (section, pos, name))
+                    f"{section}+0x{pos:x}: {name} does not parse as JSON - payload is not plaintext JSON "
+                    "(compressed/encrypted container?)")
             skipped.append((pos, nxt))
             log.warning("evb: %s+0x%x..0x%x: skipped %d non-JSON payload bytes before %s (%r)",
                         section, pos, nxt, nxt - pos, name, region[pos:pos + 32])
@@ -309,7 +304,7 @@ def _self_check(files):
     warnings = []
     for name, chunk in sorted(files.items()):
         if set(chunk) <= {0x30, 0x0A, 0x0D, 0x20}:  # only "0", CR/LF, spaces
-            warnings.append("%s looks like filler, not a database file" % name)
+            warnings.append(f"{name} looks like filler, not a database file")
 
     def load(n):
         try:

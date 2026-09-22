@@ -67,6 +67,6 @@ command 窗位置可用 `eval` 读 `SceneManager._scene._commandWindow`）。
 | `cannot execute binary file: Exec format error` | 用上面两条命令重建 binfmt 条目（先 register 立即生效，再写 `/etc/binfmt.d/` 持久化） |
 | 重启后再次失效 | 确认 `/etc/binfmt.d/wsl-interop.conf` 已写入且 `systemd-binfmt` 已启动 |
 
-互操作相关逻辑：`rpgmaker/config.py` 的 `find_powershell()`（Windows 侧
+互操作相关逻辑：`rpgmaker/tool_registry.py` 的 `find_powershell()`（Windows 侧
 程序解析）；`rpgmaker/deliver.py` 的自动桥接（WSL 下对 `/mnt/*` 的删除/
 解压改走 Windows 7z.exe 与 PowerShell）。

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Re-encode TyranoScript audio to Ogg Vorbis and rewrite the script refs.
 
 The engine plays whatever filename the scripts reference (mediaFormatDefault
@@ -12,19 +11,16 @@ import logging
 import os
 import re
 import subprocess
-import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Annotated, Optional
+from typing import Annotated
 
+from rpgmaker import audio as rpg_audio
+from rpgmaker import runtime as rpg_runtime
+from rpgmaker import platform
+from rpgmaker import tool_registry as rpg_tools
+from .tyrano_extract import load_ks
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from rpgmaker import audio as rpg_audio  # noqa: E402
-from rpgmaker import config as rpg_config  # noqa: E402
-from rpgmaker import runtime as rpg_runtime  # noqa: E402
-from .tyrano_extract import load_ks  # noqa: E402
-
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
 
 log = logging.getLogger("tyrano.audio")
 
@@ -59,10 +55,10 @@ def convert_one(ffmpeg, path, keep=False):
            "-c:a", "libvorbis", "-q:a", "3", ogg]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
                            timeout=rpg_audio.FFMPEG_TIMEOUT)
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-        # OSError: spawn failure; TimeoutExpired: slow file; ValueError:
-        # UnicodeDecodeError on non-UTF-8 ffmpeg output (text=True).
+        # OSError: spawn failure; TimeoutExpired: slow file.
         log.error("%s: ffmpeg failed: %s", path, exc)
         return None
     if r.returncode != 0 or not os.path.isfile(ogg):
@@ -84,7 +80,7 @@ def convert_all(web_root, workers=None, keep=False, sample=None):
     if sample:
         files = files[:sample]
     workers = rpg_runtime.resolve_workers("encode", workers, path=web_root)
-    ffmpeg = rpg_config.find_ffmpeg()
+    ffmpeg = rpg_tools.find_ffmpeg()
     if not ffmpeg:
         raise FileNotFoundError(
             "ffmpeg not found - install ffmpeg or set the FFMPEG env var")
@@ -153,6 +149,12 @@ def rewrite_script_refs(web_root):
 
 
 def convert(web_root, workers=None, keep=False, sample=None):
+    # AGENTS.md CRITICAL: this rewrites scripts and deletes the source mp3s
+    # with WSL-native tools (plain I/O + ffmpeg), so the folder must be on
+    # this processor's side.  Gated before any rewrite, not before the first
+    # deletion.
+    web_root = str(platform.require_native_paths(
+        "convert tyrano audio", web_root=web_root)["web_root"])
     # Rewrite script refs FIRST: conversion removes the mp3 files, and the
     # ref rewrite only touches refs whose source file exists (or whose ogg
     # already exists).  Running conversion first would orphan every ref.
@@ -168,9 +170,9 @@ def cmd(web_root: Annotated[str, cliutil.Argument(
             help="built game folder (contains data/)")],
         keep: Annotated[bool, cliutil.Option(
             "--keep", help="keep the original mp3 files")] = False,
-        sample: Annotated[Optional[int], cliutil.Option(
+        sample: Annotated[int | None, cliutil.Option(
             "--sample", help="convert at most N files (trial run)")] = None,
-        workers: Annotated[Optional[int], cliutil.Option(
+        workers: Annotated[int | None, cliutil.Option(
             "--workers", help="parallel ffmpeg processes (default: auto-tuned)"
         )] = None,
         verbose: cliutil.Verbose = False,

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 build_wolf_translation.py - Convert rewolf-trans patch files into the
 standard GameTranslation work package (template/kinds/structure/context),
@@ -95,7 +94,7 @@ def scene_key(ctx_line):
     m = re.search(r"\[NEW\]\s+([A-Z]+):([^/]+)/([^/]+)/([^/]+)/", ctx_line)
     if not m:
         return None
-    return "%s:%s/%s/%s" % (m.group(1), m.group(2), m.group(3), m.group(4))
+    return f"{m.group(1)}:{m.group(2)}/{m.group(3)}/{m.group(4)}"
 
 
 def collect(patch_dir, with_danger, with_extra):
@@ -111,9 +110,8 @@ def collect(patch_dir, with_danger, with_extra):
                 if fn.endswith("_Danger.txt"):
                     if not with_danger:
                         continue
-                elif fn.endswith("_Extra.txt"):
-                    if not with_extra:
-                        continue
+                elif fn.endswith("_Extra.txt") and not with_extra:
+                    continue
                 paths.append(os.path.join(root, fn))
         paths.sort()
         for i, p in enumerate(paths):
@@ -153,7 +151,7 @@ def build_structure(items):
             maps.append(cur)
         cur["items"].append({"key": key, "ctx": ctx})
 
-    for key, ctx, order, kind, label in items:
+    for key, ctx, _order, kind, label in items:
         if kind in ("story", "commonevent"):
             append_map(label, key, ctx, kind)
         else:
@@ -183,10 +181,13 @@ def cmd(patch_dir: Annotated[str, cliutil.Argument(
         log_file: cliutil.LogFile = None) -> int:
     """Turn a rewolf-trans patch tree into the standard work package."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("build wolf translation", patch_dir=patch_dir, out_dir=out_dir)
 
     patch_root = os.path.join(patch_dir, "rewt-patch")
     if not os.path.isdir(patch_root):
-        return cliutil.fail("no rewt-patch/ under %s" % patch_dir)
+        return cliutil.fail(f"no rewt-patch/ under {patch_dir}")
     os.makedirs(out_dir, exist_ok=True)
 
     items = collect(patch_root, not no_danger, not no_extra)
@@ -202,7 +203,7 @@ def cmd(patch_dir: Annotated[str, cliutil.Argument(
         seen[key] = {"ctx": list(ctx), "order": order, "kind": kind, "label": label}
 
     keys = sorted(seen, key=lambda k: (seen[k]["order"], k))
-    template = {k: "" for k in keys}
+    template = dict.fromkeys(keys, "")
     kinds = {k: seen[k]["kind"] for k in keys}
     context = {k: {"where": seen[k]["label"], "window": []} for k in keys}
 

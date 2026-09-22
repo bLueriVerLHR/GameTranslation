@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/build_translation.py - the static-translation work
 package builder (template / names / structure / context / name macros).
 

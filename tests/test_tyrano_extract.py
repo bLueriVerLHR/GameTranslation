@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tyrano/tyrano_extract.py TyranoScript .ks parsing."""
 from tyrano import tyrano_extract as te
 
@@ -139,7 +138,7 @@ class TestScenarioStorageRefs:
 
 class TestEncoding:
     def test_utf8_detection(self):
-        raw = "本文です。\n".encode("utf-8")
+        raw = "本文です。\n".encode()
         assert te.detect_encoding(raw) == "utf-8"
 
     def test_utf16le_detection(self):
@@ -150,7 +149,7 @@ class TestEncoding:
         # use tmp_path so the test runs even when /tmp is read-only
         p = str(tmp_path / "t_bom.ks")
         with open(p, "wb") as f:
-            f.write(b"\xef\xbb\xbf" + "本文です。".encode("utf-8"))
+            f.write(b"\xef\xbb\xbf" + "本文です。".encode())
         text, enc = te.load_ks(p)
         assert enc == "utf-8"
         assert text == "本文です。" and not text.startswith("\ufeff")

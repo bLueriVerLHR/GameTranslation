@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for rpgmaker/serve.py HTTP server + smoke test.
 
 The handler is exercised through real loopback HTTP round-trips so the
@@ -229,7 +228,8 @@ class TestSmokePaths:
         root = self._tyrano_build(str(tmp_path / "t"))
         os.remove(os.path.join(root, "data", "bgm", "theme.ogg"))
         os.makedirs(os.path.join(root, "data", "bgm"), exist_ok=True)
-        with open(os.path.join(root, "data", "bgm", "theme.m4a"), "w") as f:
+        with open(os.path.join(root, "data", "bgm", "theme.m4a"), "w",
+              encoding="utf-8") as f:
             f.write("ftyp")
         assert "data/bgm/theme.m4a" in serve.smoke_paths(root)
 

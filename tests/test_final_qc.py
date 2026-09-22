@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for tools/final_qc.py - QC of the MERGED translation dictionary.
 
 Two levels: the pure `collect()` (finding lists, keyed by report name) and the

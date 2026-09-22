@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gametranslation.invalid/schema/workspace.schema.json",
+  "title": "GameTranslation workspace metadata",
+  "description": "Metadata for one per-game workspace under the system temp workspace root. Private data (glossary/tone/notes) lives beside this file but is NEVER committed to the repo.",
+  "type": "object",
+  "required": ["schema_version", "engine", "created_at", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Bump when a field changes meaning. Readers must refuse unknown versions."
+    },
+    "engine": {
+      "type": "string",
+      "enum": ["rpgmaker", "tyrano", "kirikiri", "wolfrpg", "unity", "unknown"],
+      "description": "Detected engine family (not a game name)."
+    },
+    "source": {
+      "type": "object",
+      "description": "Fingerprint of the ORIGINAL game directory. Never the workspace path.",
+      "additionalProperties": false,
+      "properties": {
+        "fingerprint": {
+          "type": "string",
+          "description": "Stable hash/identity of the source used to detect staleness."
+        },
+        "path_hint": {
+          "type": "string",
+          "description": "Masked or relative hint only. Do NOT store a real machine path."
+        }
+      }
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "status": {
+      "type": "string",
+      "enum": ["active", "built", "verified", "delivered", "abandoned"],
+      "description": "delivered/abandoned workspaces may be cleaned; the rest are protected."
+    },
+    "delivered": {
+      "type": "boolean",
+      "default": false,
+      "description": "True once a build was delivered; workspace clean keeps it."
+    },
+    "exported": {
+      "type": "boolean",
+      "default": false,
+      "description": "True once per-game dictionaries were exported outside the workspace."
+    },
+    "translation_language": {
+      "type": "string",
+      "description": "Target language tag for the translation, e.g. zh-Hans."
+    },
+    "notes": {"type": "string"}
+  }
+}

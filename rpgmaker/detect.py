@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Detect the engine / deploy layout of an RPG Maker game folder."""
 import os
 
@@ -59,7 +58,7 @@ def audio_exts(web_root):
     audio_dir = os.path.join(web_root, "audio")
     exts = set()
     if os.path.isdir(audio_dir):
-        for dp, _dn, fns in os.walk(audio_dir):
+        for _dp, _dn, fns in os.walk(audio_dir):
             for fn in fns:
                 exts.add(os.path.splitext(fn)[1].lower())
     return exts
@@ -71,7 +70,7 @@ def has_encrypted_extensions(web_root):
         base = os.path.join(web_root, sub)
         if not os.path.isdir(base):
             continue
-        for dp, _dn, fns in os.walk(base):
+        for _dp, _dn, fns in os.walk(base):
             for fn in fns:
                 if fn.endswith("_"):
                     return True

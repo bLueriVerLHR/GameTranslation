@@ -57,9 +57,9 @@ def convert_dict_literals(text):
             k, v = part.split(":", 1)
             k = k.strip()
             if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', k):
-                pairs.append("%s: %s" % (k, v.strip()))
+                pairs.append(f"{k}: {v.strip()}")
             else:
-                pairs.append("%r: %s" % (k, v.strip()))
+                pairs.append(f"{k!r}: {v.strip()}")
         return "{" + ", ".join(pairs) + "}"
     return re.sub(r"%\[(.*?)\]", repl, text, flags=re.S)
 
@@ -102,7 +102,7 @@ def convert_sprintf(text):
     """\"%02d\".sprintf(x) -> sprintf shim call (String.prototype.sprintf)."""
     return re.sub(
         r'("(?:[^"\\]|\\.)*")\.sprintf\s*\((.*?)\)',
-        lambda m: "%s.sprintf(%s)" % (m.group(1), m.group(2)),
+        lambda m: f"{m.group(1)}.sprintf({m.group(2)})",
         text,
         flags=re.S,
     )
@@ -223,27 +223,27 @@ def convert_classes(text):
             ctor_body.extend(blk.splitlines())
 
         fieldnames = [f[0] for f in fields]
-        lines = ["function %s() {" % name]
+        lines = [f"function {name}() {{"]
         for fname, fval in fields:
-            lines.append("    this.%s = %s;" % (fname, fval))
-        for cl in ctor_body:
-            lines.append("    " + _fieldref(fieldnames, cl.strip()))
+            lines.append(f"    this.{fname} = {fval};")
+        lines.extend("    " + _fieldref(fieldnames, cl.strip())
+                     for cl in ctor_body)
         lines.append("}")
         out.append("\n".join(lines))
         for fname, params, body_lines in methods:
             body = "\n".join(_fieldref(fieldnames, ln) for ln in body_lines)
-            out.append("%s.prototype.%s = function (%s) {" % (name, fname, params))
+            out.append(f"{name}.prototype.{fname} = function ({params}) {{")
             out.append(body)
             out.append("};")
         for pname, getter, setter in props:
-            d = ["Object.defineProperty(%s.prototype, %r, {" % (name, pname)]
+            d = [f"Object.defineProperty({name}.prototype, {pname!r}, {{"]
             if getter is not None:
                 d.append("    get: function () {")
                 d.append("\n".join(_fieldref(fieldnames, ln) for ln in getter.splitlines()))
                 d.append("    },")
             if setter is not None:
                 sparam, sbody = setter
-                d.append("    set: function (%s) {" % sparam)
+                d.append(f"    set: function ({sparam}) {{")
                 d.append("\n".join(_fieldref(fieldnames, ln) for ln in sbody.splitlines()))
                 d.append("    },")
             d.append("});")
@@ -356,8 +356,8 @@ def _fieldref(fields, body):
     """Prefix bare field references inside a method body with `this.`."""
     for f in fields:
         body = re.sub(
-            r"(?<![\w.])%s(?![\w])" % re.escape(f),
-            "this.%s" % f,
+            rf"(?<![\w.]){re.escape(f)}(?![\w])",
+            f"this.{f}",
             body,
         )
     return body
@@ -369,8 +369,7 @@ def convert_iscript(text):
     text = convert_sprintf(text)
     text = convert_concat(text)
     text = convert_classes(text)
-    text = convert_count(text)
-    return text
+    return convert_count(text)
 
 
 def convert_count(text):
@@ -388,8 +387,7 @@ def convert_casts(text):
     text = re.sub(r"\(int\)\s*\(([^()]*)\)", r"Math.floor(\1)", text)
     text = re.sub(r"\(int\)\s*([\w.]+)", r"Math.floor(\1)", text)
     text = re.sub(r"\(real\)\s*\(", "Number(", text)
-    text = re.sub(r"\(real\)\s*([\w.]+)", r"Number(\1)", text)
-    return text
+    return re.sub(r"\(real\)\s*([\w.]+)", r"Number(\1)", text)
 
 
 def convert_backslash_div(text):
@@ -419,5 +417,4 @@ def convert_expr(text):
     text = convert_casts(text)
     text = convert_backslash_div(text)
     text = convert_amp_ref(text)
-    text = convert_incontextof(text)
-    return text
+    return convert_incontextof(text)

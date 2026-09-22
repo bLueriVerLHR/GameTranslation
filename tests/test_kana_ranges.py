@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """The kana classes must agree - the ranges live in one place.
 
 Two modules decide "is this string still Japanese?":
@@ -19,7 +18,7 @@ import re
 
 from translation import codes
 
-import japanese_utils
+from rpgmaker import japanese as japanese_utils
 
 
 #: kana-block punctuation/symbols: must NOT count as residue kana

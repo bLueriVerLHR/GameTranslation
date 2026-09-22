@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for the TyranoScript translation work package tools:
 build_tyrano_translation.py (extract) and apply_tyrano_translation.py
 (write-back)."""
@@ -186,7 +185,7 @@ class TestApplyWorkPackage:
         work = str(tmp_path / "w")
         bt.build(root, work, None, None)
         tpl = json.load(open(os.path.join(work, "template.json"), encoding="utf-8"))
-        trans = {k: "译%s" % i for i, k in enumerate(tpl)}
+        trans = {k: f"译{i}" for i, k in enumerate(tpl)}
         json.dump(trans, open(os.path.join(work, "translated.json"), "w",
                               encoding="utf-8"), ensure_ascii=False)
         at.apply(work, os.path.join(work, "scenario"), os.path.join(work, "patch"))
@@ -202,7 +201,8 @@ class TestApplyWorkPackage:
         work = str(tmp_path / "w")
         r = subprocess.run([sys.executable, os.path.join(REPO, "tools",
                                                          "build_tyrano_translation.py"),
-                            root, work], capture_output=True, text=True)
+                            root, work], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
         assert r.returncode == 0, r.stderr
         tpl = json.load(open(os.path.join(work, "template.json"), encoding="utf-8"))
         trans = {k: "CLI译%d" % i for i, k in enumerate(tpl)}
@@ -210,7 +210,8 @@ class TestApplyWorkPackage:
                               encoding="utf-8"), ensure_ascii=False)
         r = subprocess.run([sys.executable, os.path.join(REPO, "tools",
                                                          "apply_tyrano_translation.py"),
-                            work], capture_output=True, text=True)
+                            work], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
         assert r.returncode == 0, r.stderr
         assert "CLI译" in open(os.path.join(work, "patch", "first.ks"),
                                encoding="utf-8").read()

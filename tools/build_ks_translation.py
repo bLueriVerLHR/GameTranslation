@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Build the standard translation work package from a KiriKiri game's
 extracted scenario tree.
 
@@ -35,7 +34,7 @@ import logging
 import os
 import sys
 from collections import deque
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -184,7 +183,7 @@ def build(game_dir, work_dir, scenario_dir, entry):
 
 def cmd(game_dir: Annotated[str, cliutil.Argument(help="extracted game dir")],
         work_dir: Annotated[str, cliutil.Argument(help="translation work dir")],
-        scenario_dir: Annotated[Optional[str], cliutil.Option(
+        scenario_dir: Annotated[str | None, cliutil.Option(
             "--scenario-dir", help="scenario dir relative to game_dir "
             "(default: auto-detect scenario/ or System/Scenario)")] = None,
         entry: Annotated[str, cliutil.Option(
@@ -195,6 +194,9 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="extracted game dir")],
         log_file: cliutil.LogFile = None) -> int:
     """Build the KiriKiri translation work package (.ks lines -> keys)."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("build ks translation", game_dir=game_dir, work_dir=work_dir, scenario_dir=scenario_dir)
     build(game_dir, work_dir, scenario_dir, entry)
     return 0
 

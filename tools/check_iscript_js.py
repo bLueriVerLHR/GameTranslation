@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Syntax-check the JavaScript inside converted `[iscript]` blocks.
 
 Why this exists
@@ -116,8 +115,11 @@ def cmd(scenario_dir: Annotated[str, cliutil.Argument(
         log_file: cliutil.LogFile = None) -> int:
     """Syntax-check the JavaScript inside converted [iscript] blocks."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("scan iscript js", scenario_dir=scenario_dir)
     if not os.path.isdir(scenario_dir):
-        return cliutil.fail("not a directory: %s" % scenario_dir)
+        return cliutil.fail(f"not a directory: {scenario_dir}")
 
     try:
         checked, problems = scan_tree(scenario_dir, limit)

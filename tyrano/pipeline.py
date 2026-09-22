@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """TyranoScript / TyranoBuilder -> JoiPlay conversion pipeline (CLI wrapper).
 
 The commands live in `rpgmaker/cli.py` (built with Typer) and share the

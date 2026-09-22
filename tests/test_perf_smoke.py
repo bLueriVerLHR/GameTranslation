@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Large-directory performance smoke test (review report §3.4 / D).
 
 Principle: NO hard timing threshold that could flake on a slow machine.  The
@@ -7,15 +6,22 @@ primary assertions are behavioral - the walkers and the pipeline must touch
 EVERY file in a large synthetic build - and a deliberately generous wall-clock
 bound (60s) only guards against an O(n^2) regression (double copying, repeated
 rescans), never against normal machine slowness.
+
+Marked `slow`: the point is scale (80 data files, 120 PNGs, 60 audio files),
+so it belongs to the nightly/soak layer rather than every PR.
 """
 import io
 import os
 import time
 
+import pytest
 
 from conftest import make_game
 
 from rpgmaker import audio, build, runtime, verify
+
+
+pytestmark = pytest.mark.slow
 
 
 def make_large_game(root, n_maps=80, n_pngs=120, n_audio=60):
@@ -64,14 +70,14 @@ class TestLargeBuildSmoke:
         t0 = time.monotonic()
         build.build_joiplay(web, out, workers=4)
         t_build = time.monotonic() - t0
-        assert t_build < 60, "build took %.1fs - likely O(n^2) regression" % t_build
+        assert t_build < 60, f"build took {t_build:.1f}s - likely O(n^2) regression"
 
         t0 = time.monotonic()
         issues = verify.verify_all(out, workers=4)
         t_verify = time.monotonic() - t0
         assert issues == []
         assert t_verify < 60, \
-            "verify took %.1fs - likely O(n^2) regression" % t_verify
+            f"verify took {t_verify:.1f}s - likely O(n^2) regression"
 
         # every map JSON survived the build (count preserved through copy)
         n_built = len([f for f in os.listdir(os.path.join(out, "data"))
@@ -88,7 +94,7 @@ class TestLargeBuildSmoke:
         counts, _saved = audio.reencode_all(web, infos, workers=4)
         elapsed = time.monotonic() - t0
         assert elapsed < 60, \
-            "reencode took %.1fs - likely O(n^2) regression" % elapsed
+            f"reencode took {elapsed:.1f}s - likely O(n^2) regression"
         assert sum(counts.values()) == 60
 
     def test_auto_workers_parallelism_active(self, tmp_path, fake_tools):

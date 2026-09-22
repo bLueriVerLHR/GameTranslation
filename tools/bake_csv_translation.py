@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """bake_csv_translation.py - Bake a translated dict into ExternMessage.csv
 (exact-match per body text; companion to build_csv_template.py and
 gen_csv_shards.py).
@@ -53,6 +52,9 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="built game directory")],
         quiet: cliutil.Quiet = False,
         log_file: cliutil.LogFile = None) -> int:
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("bake csv translation", game_dir=game_dir, trs=trs)
 
     trs_dict = json.load(open(trs, encoding="utf-8"))
     csv_path = os.path.join(game_dir, "data", "ExternMessage.csv")

@@ -94,9 +94,9 @@ class TestConvertKsLine:
             "scroll": "slideInUp",
         }
         for src, dst in cases.items():
-            out = ck.convert_ks_line("[trans method=%s time=1000]\n" % src,
+            out = ck.convert_ks_line(f"[trans method={src} time=1000]\n",
                                      str(fake_unpacked), set(), False)
-            assert "method=%s" % dst in out, (src, out)
+            assert f"method={dst}" in out, (src, out)
 
     def test_trans_method_kept_when_supported(self, fake_unpacked):
         # crossfade is natively handled by the engine; unknown methods
@@ -349,7 +349,7 @@ class TestShim:
     def test_real_implementations_are_not_shimmed_as_noops(self):
         js, _n = ck._shim_js()
         for tag in ck.VIDEO_TAGS:
-            assert ('define("%s")' % tag) not in js, tag
+            assert (f'define("{tag}")') not in js, tag
 
     def test_non_macro_kept_in_shim(self):
         js, n = ck._shim_js(macros={"bgm"})
@@ -360,7 +360,7 @@ class TestShim:
         assert "start: noop" in js
         # every shimmed tag is registered through the guarded define()
         for name in ck.SHIM_TAG_NAMES[:5]:
-            assert 'define("%s");' % name in js
+            assert f'define("{name}");' in js
 
 
 class TestWaitskipShim:
@@ -455,7 +455,7 @@ class TestMapEngine:
     def test_storage_wrappers(self):
         for tag in ("graph", "ptext", "chara_show", "chara_mod",
                     "chara_ptext", "playse", "playbgm"):
-            assert "_wrap_storage('%s')" % tag in ck.RUNTIME_SHIM_IIFE
+            assert f"_wrap_storage('{tag}')" in ck.RUNTIME_SHIM_IIFE
 
     def test_image_map_wrapper_covers_loadimages_tags(self):
         # KAG3 loadImages semantics: image/bg/bg2/graph all clear the layer
@@ -1097,10 +1097,16 @@ def test_js_comment_stripper():
     assert "q" not in ck._strip_js_comments("/*\nq\n*/z").replace("z", "")
 
 
+@pytest.mark.engine_runtime
 def test_style_and_wq_keep_their_noops():
     """Regression guard for the blocking-popup defect: the engine does not
     implement [style] (its definition is commented out) and [style] appears 59
-    times in this corpus, so the shim must keep providing it."""
+    times in this corpus, so the shim must keep providing it.
+
+    Marked `engine_runtime`: it needs a real TyranoScript install under
+    `.tools/tyranoscript` (a local clone, gitignored), so it cannot run on a
+    clean checkout.
+    """
     eng = os.path.join(".tools", "tyranoscript")
     if not os.path.isdir(eng):
         pytest.skip("engine source not present")
@@ -1109,7 +1115,7 @@ def test_style_and_wq_keep_their_noops():
     assert 'define("wq")' in js
     # tags the engine really implements must NOT be shimmed
     for real_tag in ("bg", "bgmopt", "fadeinbgm", "fadeoutse", "wa", "wb"):
-        assert ('define("%s")' % real_tag) not in js, real_tag
+        assert (f'define("{real_tag}")') not in js, real_tag
 
 
 def test_layopt_is_a_real_implementation_not_a_noop():
@@ -1230,10 +1236,14 @@ def test_skip_speed_is_configured_below_the_template_default():
     converter lowers it (measured: 13.7 tags/s before, dominated by the driver
     gate rather than this value; 1 ms removes this cap entirely). Asserted
     through the source because it is applied by the Config.tjs rewrite in
-    cli.convert() (the converter is split by concern -- kirikiri/kag/)."""
+    kirikiri/kag/cli._rewrite_config_tjs (the converter is split by concern --
+    kirikiri/kag/; the rewrite moved out of convert() when that function was
+    split into stage helpers)."""
     import inspect
 
-    src = inspect.getsource(ck.convert)
+    from kirikiri.kag import cli as kag_cli
+
+    src = inspect.getsource(kag_cli._rewrite_config_tjs)
     assert "skipSpeed" in src
     assert ";skipSpeed = 1;" in src
 

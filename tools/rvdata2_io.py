@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """rvdata2_io.py - Ruby Marshal 4.8 decoder for RPG Maker VX Ace rvdata2 files.
 
 Spec: docs.ruby-lang.org "marshal" (version 4.8, header \\x04\\x08).
@@ -51,7 +50,7 @@ def _as_signed(b, nbits):
     return v
 
 
-class Decoder(object):
+class Decoder:
     def __init__(self, data, trace=False):
         if not data.startswith(b"\x04\x08"):
             raise MarshalError("not a Ruby Marshal 4.8 stream")
@@ -113,10 +112,44 @@ class Decoder(object):
         return name
 
     # ------------------------------------------------------------- top level
+    def _read_link(self, idx, table, what):
+        """Validate a backwards link index against `table`."""
+        if idx < 0 or idx >= len(table):
+            raise MarshalError("bad %s link %d" % (what, idx))
+        return table[idx]
+
+    def _read_array(self):
+        n = self.read_long()
+        arr = [None] * n
+        self.links.append(arr)
+        for i in range(n):
+            arr[i] = self._read_raw()
+        return arr
+
+    def _read_hash(self):
+        n = self.read_long()
+        d = {}
+        self.links.append(d)
+        for _ in range(n):
+            k = self._read_raw()
+            v = self._read_raw()
+            d[k] = v
+        return d
+
+    def _read_ivar_payload(self):
+        """`[n] {k => v}` after an `I` tag: the ivar table."""
+        n = self.read_long()
+        ivars = {}
+        for _ in range(n):
+            k = self._read_raw()
+            v = self._read_raw()
+            ivars[k] = v
+        return ivars
+
     def _read_raw(self):
         t = self._byte()
         c = chr(t)
-        self._log("type %s" % c)
+        self._log(f"type {c}")
         if c == "0":
             return None
         if c == "T":
@@ -138,41 +171,22 @@ class Decoder(object):
         if c == ":":
             return self._read_symbol()
         if c == ";":
-            idx = self.read_long()
-            if idx < 0 or idx >= len(self.symbols):
-                raise MarshalError("bad symbol link %d" % idx)
-            return self.symbols[idx]
+            return self._read_link(self.read_long(), self.symbols, "symbol")
         if c == "[":
-            n = self.read_long()
-            arr = [None] * n
-            self.links.append(arr)
-            for i in range(n):
-                arr[i] = self._read_raw()
-            return arr
+            return self._read_array()
         if c == "{":
-            n = self.read_long()
-            d = {}
-            self.links.append(d)
-            for _ in range(n):
-                k = self._read_raw()
-                v = self._read_raw()
-                d[k] = v
-            return d
+            return self._read_hash()
         if c == "}":
-            idx = self.read_long()
-            if idx < 0 or idx >= len(self.links):
-                raise MarshalError("bad hash link %d" % idx)
-            return self.links[idx]
+            return self._read_link(self.read_long(), self.links, "hash")
         if c == "o":
             return self._read_object()
         if c == "e":
             # Extended (module wrapper): the module raw is read to keep the
             # stream aligned, and is irrelevant for text extraction.
             self._read_raw()
-            obj = self._read_raw()
-            return obj
+            return self._read_raw()
         if c == "u":
-            cls = self._read_raw()
+            self._read_raw()          # class module (alignment only)
             n = self.read_long()
             raw = self._bytes(n)
             self.links.append(raw)
@@ -209,12 +223,7 @@ class Decoder(object):
             return res
         if c == "I":
             obj = self._read_raw()
-            n = self.read_long()
-            ivars = {}
-            for _ in range(n):
-                k = self._read_raw()
-                v = self._read_raw()
-                ivars[k] = v
+            ivars = self._read_ivar_payload()
             # encoding-only wrapper (E: true/false or :UTF-8) -> plain value
             if isinstance(obj, (str, list, dict, int, float, bool)) or obj is None:
                 return obj
@@ -223,13 +232,9 @@ class Decoder(object):
             # User-defined class instance: the class symbol is read to keep the
             # stream aligned; only the ivar payload matters here.
             self._read_raw()
-            val = self._read_raw()
-            return val
+            return self._read_raw()
         if c == "@":
-            idx = self.read_long()
-            if idx < 0 or idx >= len(self.links):
-                raise MarshalError("bad object link %d" % idx)
-            return self.links[idx]
+            return self._read_link(self.read_long(), self.links, "object")
         raise MarshalError("unknown marshal type %r at %d" % (c, self.pos - 1))
 
     def _read_string(self, register):

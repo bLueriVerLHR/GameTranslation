@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for unity/rmunite/prefill.py - series prefill of each game's
 translated.json from a previous game's base dict.
 
@@ -45,11 +44,12 @@ class TestImportIsSideEffectFree:
     def test_import_without_argv_does_not_execute(self):
         # Module-level execution (old code) would call parse_args() with an
         # empty argv and exit(2).  A clean import must succeed and expose main.
-        code = ("import sys; sys.path.insert(0, %r); "
+        code = (f"import sys; sys.path.insert(0, {REPO_ROOT!r}); "
                 "from unity.rmunite import prefill; "
-                "assert hasattr(prefill, 'main'); print('OK')" % REPO_ROOT)
+                "assert hasattr(prefill, 'main'); print('OK')")
         r = subprocess.run([sys.executable, "-c", code],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
         assert r.returncode == 0, r.stderr
         assert "OK" in r.stdout
 

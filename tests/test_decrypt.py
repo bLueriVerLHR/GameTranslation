@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for rpgmaker/decrypt.py RPGMV easy-decryption."""
 import json
 import os
@@ -7,7 +6,7 @@ import random
 
 from conftest import make_game
 
-from rpgmaker import config
+from rpgmaker import constants
 from rpgmaker import decrypt as dec
 
 
@@ -25,7 +24,7 @@ def make_encrypted_body(plaintext, key=KEY):
 class TestDecryptCore:
     def test_decrypt_to(self, tmp_path):
         plain = b"PNG-PLAINTEXT-DATA" + b"\x00" * 32
-        enc = config.RPGMV_HEADER + make_encrypted_body(plain)
+        enc = constants.RPGMV_HEADER + make_encrypted_body(plain)
         src = tmp_path / "a.png_"
         src.write_bytes(enc)
         dst = tmp_path / "a.png"
@@ -66,7 +65,7 @@ class TestEncryptedFileIteration:
         with open(p2, "wb") as f:
             f.write(b"x")
         jobs = list(dec._iter_encrypted_files(web))
-        pairs = {src: dst for src, dst in jobs}
+        pairs = dict(jobs)
         assert p1 in pairs and pairs[p1] == os.path.join(img, "pic_.png")
         assert p2 in pairs and pairs[p2] == os.path.join(mv, "f.png")
 
@@ -120,7 +119,7 @@ class TestTreeDecrypt:
         plain = b"SECRET-PICTURE" + b"\x00" * 40
         enc_path = os.path.join(web, "img", "pictures", "secret.png_")
         with open(enc_path, "wb") as f:
-            f.write(config.RPGMV_HEADER + make_encrypted_body(plain))
+            f.write(constants.RPGMV_HEADER + make_encrypted_body(plain))
         d, s = dec.decrypt_and_clear(web)
         assert d == 1 and s == 0
         with open(os.path.join(web, "img", "pictures", "secret.png"), "rb") as f:
@@ -153,7 +152,7 @@ class TestTreeDecrypt:
         os.makedirs(src)
         plain = b'{"events":[]}' + b"\x00" * 16
         with open(os.path.join(src, "Map001.json_"), "wb") as f:
-            f.write(config.RPGMV_HEADER + make_encrypted_body(plain))
+            f.write(constants.RPGMV_HEADER + make_encrypted_body(plain))
         d, kept = dec.decrypt_data_encrypted(web, KEY)
         assert d == 1 and kept == 0
         with open(os.path.join(web, "data", "Map001.json"), "rb") as f:
@@ -234,7 +233,7 @@ class TestRandomSampleDecrypt:
             path = os.path.join(web, src_rel)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "wb") as f:
-                f.write(config.RPGMV_HEADER + self._xor_body(body, key))
+                f.write(constants.RPGMV_HEADER + self._xor_body(body, key))
 
         decrypted, skipped = dec.decrypt_and_clear(web)
         assert (decrypted, skipped) == (40, 0)
@@ -296,7 +295,7 @@ class TestRandomSampleDecrypt:
                     (b'[]' if i % 3 == 1 else b'{"a":1}'))
             plans.append(("Map%03d.json_" % i, body))
             with open(os.path.join(src, "Map%03d.json_" % i), "wb") as f:
-                f.write(config.RPGMV_HEADER + self._xor_body(body, KEY))
+                f.write(constants.RPGMV_HEADER + self._xor_body(body, KEY))
         d, kept = dec.decrypt_data_encrypted(web, KEY)
         assert (d, kept) == (12, 0)
         for fn, body in rng.sample(plans, k=5):

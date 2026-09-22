@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 r"""
 extract_rvdata2.py - Build a static-translation work package from an RPG
 Maker VX Ace game by parsing the .rvdata2 (Ruby Marshal) files from zero.
@@ -35,7 +34,7 @@ from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ctrl_codes  # noqa: E402
-import japanese_utils  # noqa: E402
+from rpgmaker import japanese as japanese_utils  # noqa: E402
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
 from rvdata2_io import load_rvdata2  # noqa: E402
@@ -87,12 +86,12 @@ def talk_lines(lst):
             out.append((idx, params[0] if params and isinstance(params[0], str)
                         else None))
         elif code == 101:
-            out.append((idx, "【表情:%s】" % params[0]
+            out.append((idx, f"【表情:{params[0]}】"
                         if params and isinstance(params[0], str) else None))
         elif code == 102:
             choices = params[0] if params and isinstance(params[0], list) else []
-            out.append((idx, "【选项】%s" % " / ".join(
-                str(x) for x in choices if isinstance(x, str))))
+            out.append((idx, "【选项】{}".format(" / ".join(
+                str(x) for x in choices if isinstance(x, str)))))
         else:
             out.append((idx, None))
     return out
@@ -106,7 +105,7 @@ def window_for(idx, tl, radius=WINDOW):
     return [t for _, t in tl[max(0, p - radius):p + radius + 1] if t is not None]
 
 
-class Collector(object):
+class Collector:
     def __init__(self):
         self.keys = set()
         self.kind_of = {}
@@ -174,10 +173,9 @@ def process_commands(cmds, collector, where=""):
                         and params[pidx]:
                     collector.add(params[pidx], "event-text", where,
                                   window_for(idx, tl))
-        elif code == 408:
-            if params and isinstance(params[0], str) and params[0] \
-                    and not DIRECTIVE.match(params[0]):
-                collector.add(params[0], "help", where, window_for(idx, tl))
+        elif code == 408 and params and isinstance(params[0], str) and params[0] \
+                and not DIRECTIVE.match(params[0]):
+            collector.add(params[0], "help", where, window_for(idx, tl))
 
 
 def process_db(obj, collector, where=""):
@@ -254,35 +252,21 @@ def build_structure_tree(ce_data, collector, where_prefix):
     return items
 
 
-def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
-        out_dir: Annotated[str, cliutil.Argument(
-            help="work folder to write the translation package into")],
-        verbose: cliutil.Verbose = False,
-        quiet: cliutil.Quiet = False,
-        log_file: cliutil.LogFile = None) -> int:
-    """Extract VX Ace (rvdata2) text into the standard work package."""
-    cliutil.setup_logging(verbose, quiet, log_file)
-
-    game_dir = os.path.abspath(game_dir)
-    out_dir = os.path.abspath(out_dir)
-    data_dir = os.path.join(game_dir, "data")
-    if not os.path.isdir(data_dir):
-        return cliutil.fail("no data/ dir under %s" % game_dir)
-    os.makedirs(out_dir, exist_ok=True)
-
-    col = Collector()
-
-    # story order from MapInfos (@order)
-    map_order = []   # (order, id, name)
+def _collect_rvdata2_mapinfos_order(data_dir):
+    """`[(order, id, name)]` from MapInfos.rvdata2, sorted by story order."""
     mi_path = os.path.join(data_dir, "MapInfos.rvdata2")
     mi_data = load_rvdata2(mi_path) if os.path.exists(mi_path) else []
-    for x in mi_data or []:
-        if isinstance(x, dict):
-            map_order.append((x.get("@order", 0), x.get("@id", 0),
-                              x.get("@name", "")))
-    map_order.sort(key=lambda t: (t[0], t[1]))
+    order = [(x.get("@order", 0), x.get("@id", 0), x.get("@name", ""))
+             for x in mi_data or [] if isinstance(x, dict)]
+    order.sort(key=lambda t: (t[0], t[1]))
+    return order
 
-    # 1) maps in story order
+
+def _collect_rvdata2_maps(data_dir, map_order, col):
+    """Walk every map in MapInfos order, then any left over (defensive).
+
+    Returns the `tree` list of ``{id, events, items}`` nodes.
+    """
     tree = []
     seen_maps = set()
     for _o, mid, mname in map_order:
@@ -301,7 +285,6 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
         node["items"] = build_structure_tree(data, col, mname or fname)
         tree.append(node)
 
-    # 2) map files missing from MapInfos (defensive)
     for fname in sorted(os.listdir(data_dir)):
         if not is_map_file(fname) or fname in seen_maps:
             continue
@@ -309,43 +292,53 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
         if not isinstance(data, dict):
             continue
         m = re.match(r"Map(\d{3})\.rvdata2", fname)
-        tree.append({"id": int(m.group(1)), "events": []})
-        tree[-1]["items"] = build_structure_tree(data, col, fname)
+        node = {"id": int(m.group(1)), "events": []}
+        node["items"] = build_structure_tree(data, col, fname)
+        tree.append(node)
+    return tree
 
-    # 3) CommonEvents (dialogue-heavy: names + blocks + choices)
+
+def _collect_rvdata2_common_events(data_dir, col):
+    """Walk CommonEvents.rvdata2; returns its item list for `tree`."""
     ce_path = os.path.join(data_dir, "CommonEvents.rvdata2")
-    if os.path.exists(ce_path):
-        ce = load_rvdata2(ce_path)
-        ce_items = []
-        for ev in ev_containers({"@events": ce} if isinstance(ce, list) else ce):
-            where = "CommonEvents / EV%03d %s" % (ev.get("@id", 0),
-                                                  ev.get("@name") or "")
-            ev_items = {"id": ev.get("@id"), "name": ev.get("@name"),
-                        "items": []}
-            if ev.get("@name"):
-                col.add(ev["@name"], "event-name", "CommonEvents", [])
-            for lst in ([ev["@list"]] if isinstance(ev.get("@list"), list)
-                        else []):
-                process_commands(lst, col, where)
-                for block_key, _l in iter_message_blocks(lst, col, where):
-                    ev_items["items"].append({"kind": "block", "key": block_key})
-                for c in lst:
-                    params = c.get("@parameters") or []
-                    if c.get("@code") == 102 and params and \
-                            isinstance(params[0], list):
-                        for x in params[0]:
-                            if isinstance(x, str) and x in col.keys:
-                                ev_items["items"].append(
-                                    {"kind": "choice", "key": x})
-            ce_items.append(ev_items)
-        tree.append({"id": -1, "events": [], "items": ce_items})
+    if not os.path.exists(ce_path):
+        return []
+    ce = load_rvdata2(ce_path)
+    ce_items = []
+    for ev in ev_containers({"@events": ce} if isinstance(ce, list) else ce):
+        where = "CommonEvents / EV%03d %s" % (ev.get("@id", 0),
+                                              ev.get("@name") or "")
+        ev_items = {"id": ev.get("@id"), "name": ev.get("@name"),
+                    "items": []}
+        if ev.get("@name"):
+            col.add(ev["@name"], "event-name", "CommonEvents", [])
+        if isinstance(ev.get("@list"), list):
+            process_commands(ev["@list"], col, where)
+            for block_key, _l in iter_message_blocks(ev["@list"], col, where):
+                ev_items["items"].append({"kind": "block", "key": block_key})
+            for c in ev["@list"]:
+                params = c.get("@parameters") or []
+                if c.get("@code") == 102 and params \
+                        and isinstance(params[0], list):
+                    for x in params[0]:
+                        if isinstance(x, str) and x in col.keys:
+                            ev_items["items"].append(
+                                {"kind": "choice", "key": x})
+        ce_items.append(ev_items)
+    return ce_items
 
-    # 4) DB files + System
-    for fname in ("System.rvdata2", "Actors.rvdata2", "Classes.rvdata2",
-                  "Skills.rvdata2", "Items.rvdata2", "Weapons.rvdata2",
-                  "Armors.rvdata2", "Enemies.rvdata2", "States.rvdata2",
-                  "Animations.rvdata2", "Tilesets.rvdata2", "Troops.rvdata2",
-                  "CommonEvents.rvdata2"):
+
+#: Database files passed through `process_db` (System.rvdata2 is special).
+DB_FILES = ("System.rvdata2", "Actors.rvdata2", "Classes.rvdata2",
+            "Skills.rvdata2", "Items.rvdata2", "Weapons.rvdata2",
+            "Armors.rvdata2", "Enemies.rvdata2", "States.rvdata2",
+            "Animations.rvdata2", "Tilesets.rvdata2", "Troops.rvdata2",
+            "CommonEvents.rvdata2")
+
+
+def _collect_rvdata2_db(data_dir, col):
+    """Walk the database files (System.rvdata2 via `process_system`)."""
+    for fname in DB_FILES:
         path = os.path.join(data_dir, fname)
         if not os.path.exists(path):
             continue
@@ -357,34 +350,73 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
             continue
         process_db(data, col, fname)
 
-    # 5) names: actors + frequent standalone lines
+
+def _collect_rvdata2_names(data_dir, col, actors):
+    """Speaker-name candidates: actor names plus the frequent standalone lines."""
     names = {}
-    actors = load_rvdata2(os.path.join(data_dir, "Actors.rvdata2")) \
-        if os.path.exists(os.path.join(data_dir, "Actors.rvdata2")) else []
     for a in actors or []:
         if isinstance(a, dict) and a.get("@name"):
             names[a["@name"]] = [""]
-    for cand, n in col.name_cands.most_common(120):
+    for cand, _n in col.name_cands.most_common(120):
         names.setdefault(cand, [""])
+    return names
 
-    template = {k: "" for k in sorted(
-        col.keys, key=lambda k: (-col.count[k], k))}
-    col.kind_of = {k: v for k, v in col.kind_of.items() if k in col.keys}
-    col.context = {k: col.context[k] for k in col.keys}
 
-    with open(os.path.join(out_dir, "template.json"), "w", encoding="utf-8") as f:
-        json.dump(template, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "kinds.json"), "w", encoding="utf-8") as f:
-        json.dump(col.kind_of, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "structure.json"), "w", encoding="utf-8") as f:
-        json.dump({"maps": tree}, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "context.json"), "w", encoding="utf-8") as f:
-        json.dump(col.context, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "names.json"), "w", encoding="utf-8") as f:
-        json.dump(names, f, ensure_ascii=False, indent=1)
-    with open(os.path.join(out_dir, "name_macros.json"), "w",
-              encoding="utf-8") as f:
-        json.dump(build_name_macros(actors), f, ensure_ascii=False, indent=1)
+def _write_rvdata2_package(out_dir, col, tree, names, name_macros):
+    """Write the translation package (template/kinds/structure/context/names)."""
+    template = dict.fromkeys(sorted(col.keys, key=lambda k: (-col.count[k], k)),
+                             "")
+    kind_of = {k: v for k, v in col.kind_of.items() if k in col.keys}
+    context = {k: col.context[k] for k in col.keys}
+    payloads = {
+        "template.json": template,
+        "kinds.json": kind_of,
+        "structure.json": {"maps": tree},
+        "context.json": context,
+        "names.json": names,
+        "name_macros.json": name_macros,
+    }
+    for fname, payload in payloads.items():
+        with open(os.path.join(out_dir, fname), "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=1)
+    return template
+
+
+def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
+        out_dir: Annotated[str, cliutil.Argument(
+            help="work folder to write the translation package into")],
+        verbose: cliutil.Verbose = False,
+        quiet: cliutil.Quiet = False,
+        log_file: cliutil.LogFile = None) -> int:
+    """Extract VX Ace (rvdata2) text into the standard work package."""
+    cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("extract rvdata2 text", game_dir=game_dir, out_dir=out_dir)
+
+    game_dir = os.path.abspath(game_dir)
+    out_dir = os.path.abspath(out_dir)
+    data_dir = os.path.join(game_dir, "data")
+    if not os.path.isdir(data_dir):
+        return cliutil.fail(f"no data/ dir under {game_dir}")
+    os.makedirs(out_dir, exist_ok=True)
+
+    col = Collector()
+    map_order = _collect_rvdata2_mapinfos_order(data_dir)
+    actors_path = os.path.join(data_dir, "Actors.rvdata2")
+    actors = load_rvdata2(actors_path) if os.path.exists(actors_path) else []
+
+    # 1) maps in story order (then leftovers), 3) CommonEvents, 4) DB + System
+    tree = _collect_rvdata2_maps(data_dir, map_order, col)
+    ce_items = _collect_rvdata2_common_events(data_dir, col)
+    if ce_items:
+        tree.append({"id": -1, "events": [], "items": ce_items})
+    _collect_rvdata2_db(data_dir, col)
+
+    # 5) names: actors + frequent standalone lines
+    names = _collect_rvdata2_names(data_dir, col, actors)
+    template = _write_rvdata2_package(out_dir, col, tree, names,
+                                     build_name_macros(actors))
 
     log("template: %d keys; names: %d candidates; maps: %d"
         % (len(template), len(names), len(tree)))

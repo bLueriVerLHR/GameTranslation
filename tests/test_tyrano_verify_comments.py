@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """`tyrano/verify.py`: commented-out audio references are not runtime lookups.
 
 Measured false positive: a game ships `;[playbgm storage="bgm004.wav"]` in

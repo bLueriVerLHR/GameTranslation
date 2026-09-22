@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """prefill.py - harvest a runtime MTool/AI dictionary into the v2 library.
 
 Repacked MZ/MV builds usually ship a translation dictionary the repacker's tool
@@ -25,7 +24,6 @@ break or JSON-structure gate is rejected before it reaches the library.
 Candidates that would fail are filtered out here and reported instead, so a
 25,000-entry harvest does not fail as one all-or-nothing batch.
 """
-import io
 import json
 import logging
 import os
@@ -49,18 +47,14 @@ def load_runtime_dict(path):
     ``{source: translation}`` object is a hard error: silently reading half of
     it would look like "the dictionary only covered half the game".
     """
-    with io.open(path, encoding="utf-8-sig") as handle:
+    with open(path, encoding="utf-8-sig") as handle:
         text = handle.read()
     text = _COMMENT_RE.sub("", text)
     payload = json.loads(text)
     if not isinstance(payload, dict):
-        raise ValueError("%s: expected a JSON object of {source: translation}"
-                         % path)
-    entries = {}
-    for key, value in payload.items():
-        if isinstance(key, str) and isinstance(value, str) and value:
-            entries[key] = value
-    return entries
+        raise ValueError(f"{path}: expected a JSON object of {{source: translation}}")
+    return {key: value for key, value in payload.items()
+            if isinstance(key, str) and isinstance(value, str) and value}
 
 
 def _split_ends(text):
@@ -140,8 +134,8 @@ def harvest(work_dir, dict_path, allow_ids=None):
         "harvested": len(candidates),
         "rejected": len(allowed) - len(candidates),
         "missed": stats.get("miss", 0) + stats.get("mid-line codes", 0),
-        "lookup": {key: count for key, count in sorted(stats.items())},
-        "rejected_by": {key: count for key, count in sorted(problems.items())},
+        "lookup": dict(sorted(stats.items())),
+        "rejected_by": dict(sorted(problems.items())),
     }
     return candidates, report
 
@@ -151,7 +145,7 @@ def write_batch(path, values):
     directory = os.path.dirname(path)
     if directory:
         os.makedirs(directory, exist_ok=True)
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         for key_id, text in values.items():
-            handle.write("@@@%s@@@\n%s\n" % (key_id, text))
+            handle.write(f"@@@{key_id}@@@\n{text}\n")
     return path

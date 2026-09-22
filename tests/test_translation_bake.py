@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for `translation.bake` - writing the library back into a game.
 
 The point of these tests is the *shape* duality (editor arrays vs named
 objects) and reversibility: a bake must be exact, re-runnable, and it must back
 up whatever it touches.
 """
-import io
 import json
 import os
 
@@ -18,12 +16,12 @@ from translation import cli, mvkeys, rawlib
 
 def _dump(path, payload):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(payload, handle, ensure_ascii=False)
 
 
 def _load(path):
-    with io.open(path, encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         return json.load(handle)
 
 
@@ -43,13 +41,13 @@ def make_game(root, array_commands=False):
         "terms": {"commands": {"fight": "\u6226\u3046"}},
     })
     os.makedirs(os.path.join(root, "js"), exist_ok=True)
-    with io.open(os.path.join(root, "js", "plugins.js"), "w",
+    with open(os.path.join(root, "js", "plugins.js"), "w",
                  encoding="utf-8", newline="\n") as handle:
         handle.write("var $plugins =\n[\n" + json.dumps(
             {"name": "P", "parameters": {"Label": "\u30e9\u30d9\u30eb"}},
             ensure_ascii=False) + "\n];\n")
     os.makedirs(os.path.join(root, "fonts"), exist_ok=True)
-    with io.open(os.path.join(root, "fonts", "gamefont.css"), "w",
+    with open(os.path.join(root, "fonts", "gamefont.css"), "w",
                  encoding="utf-8", newline="\n") as handle:
         handle.write('@font-face {\n    font-family: GameFont;\n'
                      '    src: url("mplus-1m-regular.ttf");\n}\n')
@@ -59,7 +57,7 @@ def make_game(root, array_commands=False):
 def prepare_work(tmp_path, game, values):
     work = str(tmp_path / "work")
     mvkeys.extract(game, work)
-    with io.open(os.path.join(work, "translated_ids.json"), "w",
+    with open(os.path.join(work, "translated_ids.json"), "w",
                  encoding="utf-8", newline="\n") as handle:
         json.dump(values, handle, ensure_ascii=False)
     return work
@@ -109,18 +107,18 @@ def test_bake_writes_a_japanese_named_plugin_parameter(tmp_path):
     """The end-to-end guard: a non-ASCII plugin param must not crash the bake."""
     game = make_game(str(tmp_path / "game"))
     plugins_path = os.path.join(game, "js", "plugins.js")
-    with io.open(plugins_path, encoding="utf-8") as handle:
+    with open(plugins_path, encoding="utf-8") as handle:
         source = handle.read()
     source = source.replace(
         '"parameters": {"Label": "\u30e9\u30d9\u30eb"}',
         '"parameters": {"\u30d5\u30a9\u30f3\u30c8\u767b\u9332\u30ea\u30b9\u30c8": "\u65e5\u672c\u8a9e"}')
-    with io.open(plugins_path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(plugins_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(source)
     key = "js/plugins.js#[0].parameters.\u30d5\u30a9\u30f3\u30c8\u767b\u9332\u30ea\u30b9\u30c8"
     work = prepare_work(tmp_path, game, {key: "\u65e5\u672c\u8a9e"})
     report = bake_mod.bake(game, work, apply_unified_font=False)
     assert report["applied"] == 1 and report["skipped"] == 0
-    assert "\u30d5\u30a9\u30f3\u30c8\u767b\u9332\u30ea\u30b9\u30c8" in io.open(
+    assert "\u30d5\u30a9\u30f3\u30c8\u767b\u9332\u30ea\u30b9\u30c8" in open(
         plugins_path, encoding="utf-8").read()
 
 
@@ -165,7 +163,7 @@ def test_bake_writes_plugins_and_system(tmp_path):
     work = prepare_work(tmp_path, game, values)
     report = bake_mod.bake(game, work, apply_unified_font=False)
     assert report["applied"] == 2 and report["skipped"] == 0
-    with io.open(os.path.join(game, "js", "plugins.js"), encoding="utf-8") as h:
+    with open(os.path.join(game, "js", "plugins.js"), encoding="utf-8") as h:
         source = h.read()
     assert source.startswith("var $plugins =") and "\u6807\u7b7e" in source
     assert _load(os.path.join(game, "data", "System.json"))["terms"][
@@ -195,11 +193,11 @@ def test_bake_dry_run_changes_nothing(tmp_path):
     game = make_game(str(tmp_path / "game"))
     key = ("data/Map001.json#events[1].pages[0].list[0].parameters[0]")
     work = prepare_work(tmp_path, game, {key: "\u554f\u5019"})
-    before = io.open(os.path.join(game, "data", "Map001.json"),
+    before = open(os.path.join(game, "data", "Map001.json"),
                      encoding="utf-8").read()
     report = bake_mod.bake(game, work, dry_run=True)
     assert report["applied"] == 1
-    assert io.open(os.path.join(game, "data", "Map001.json"),
+    assert open(os.path.join(game, "data", "Map001.json"),
                    encoding="utf-8").read() == before
     assert not os.path.isdir(os.path.join(game, "fonts", "x"))
     assert not os.path.isfile(os.path.join(work, "backup", "data",
@@ -211,7 +209,7 @@ def test_bake_ships_the_translation_kv(tmp_path):
     game = make_game(str(tmp_path / "game"))
     key = ("data/Map001.json#events[1].pages[0].list[0].parameters[0]")
     work = prepare_work(tmp_path, game, {key: "\u554f\u5019"})
-    with io.open(os.path.join(work, "translated.json"), "w",
+    with open(os.path.join(work, "translated.json"), "w",
                  encoding="utf-8", newline="\n") as handle:
         json.dump({"\u3042\u3044\u3046": "\u554f\u5019"}, handle,
                   ensure_ascii=False)
@@ -228,7 +226,7 @@ def test_unify_plugin_fonts_fixes_language_faces_and_js(tmp_path):
     """A Chinese face in a plugin parameter is what makes a build look mixed."""
     game = make_game(str(tmp_path / "game"))
     plugins_path = os.path.join(game, "js", "plugins.js")
-    with io.open(plugins_path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(plugins_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write("var $plugins =\n[\n" + json.dumps({
             "name": "MsgCore", "parameters": {
                 "Font Name": "GameFont",
@@ -238,12 +236,12 @@ def test_unify_plugin_fonts_fixes_language_faces_and_js(tmp_path):
                 "Outline": "true"}}, ensure_ascii=False) + "\n];\n")
     os.makedirs(os.path.join(game, "js", "plugins"), exist_ok=True)
     hud = os.path.join(game, "js", "plugins", "SRD_HUDMaker.js")
-    with io.open(hud, "w", encoding="utf-8", newline="\n") as handle:
+    with open(hud, "w", encoding="utf-8", newline="\n") as handle:
         handle.write("return `table {\n    font-family: \"Trebuchet MS\", Arial;\n}\n`;\n"
                      "// font-family: GameFont;\n")
     changed, js_files, details = bake_mod.unify_plugin_fonts(
         game, backup_dir=str(tmp_path / "backup"))
-    params = json.loads(io.open(plugins_path, encoding="utf-8").read()
+    params = json.loads(open(plugins_path, encoding="utf-8").read()
                         .split("[", 1)[1].rsplit("]", 1)[0])["parameters"]
     assert params["Font Name CH"] == "GameFont"
     assert params["Font Name KR"] == "GameFont"
@@ -251,7 +249,7 @@ def test_unify_plugin_fonts_fixes_language_faces_and_js(tmp_path):
     assert params["Outline"] == "true"
     assert changed == 2 and details
     assert js_files == ["js/plugins/SRD_HUDMaker.js"]
-    patched = io.open(hud, encoding="utf-8").read()
+    patched = open(hud, encoding="utf-8").read()
     assert 'font-family: GameFont;' in patched
     assert "Trebuchet" not in patched
     assert os.path.isfile(os.path.join(str(tmp_path / "backup"),
@@ -269,11 +267,42 @@ def test_bake_font_only_skips_key_writing(tmp_path):
     os.makedirs(work, exist_ok=True)
     asset = tmp_path / bake_mod.UNIFIED_FONT
     asset.write_bytes(b"fake")
-    report = bake_mod.bake(game, work, font_only=True, font_path=str(asset))
+    report = bake_mod.bake(game, work, font_only=True, font_path=str(asset),
+                          font_policy="required")
     assert report["applied"] == 0 and report["keys"] == 0
     assert bake_mod.FONT_CSS in report["font_files"]
     assert _load(os.path.join(game, "data", "Map001.json"))["displayName"] \
         == "\u8857"                                # data untouched
+
+
+def test_the_library_default_font_policy_writes_nothing(tmp_path):
+    """A caller that says nothing must not have files rewritten under it.
+
+    The CLI passes ``required`` for a delivery; the library default is the
+    report-only ``auto``, so forgetting the argument keeps the game's font
+    rather than silently installing one.
+    """
+    game = make_game(str(tmp_path / "game"))
+    work = str(tmp_path / "work")
+    os.makedirs(work, exist_ok=True)
+    asset = tmp_path / bake_mod.UNIFIED_FONT
+    asset.write_bytes(b"fake")
+    report = bake_mod.bake(game, work, font_only=True, font_path=str(asset))
+    assert report["font_files"] == []
+    assert report["font_report"]["applied"] is False
+    assert report["font_report"]["policy"] == "auto"
+    assert report["font_warnings"], "auto must say what it did not apply"
+    assert not os.path.isfile(os.path.join(game, "fonts", bake_mod.UNIFIED_FONT))
+
+
+def test_required_without_a_usable_font_is_a_bake_error(tmp_path):
+    """A required font that cannot be applied stops the bake, not just warns."""
+    game = make_game(str(tmp_path / "game"))
+    work = str(tmp_path / "work")
+    os.makedirs(work, exist_ok=True)
+    with pytest.raises(bake_mod.BakeError, match="cannot be satisfied"):
+        bake_mod.bake(game, work, font_only=True, font_policy="required",
+                      repo_root=str(tmp_path / "no-such-repo"))
 
 
 def test_apply_font_switches_single_face(tmp_path):
@@ -283,7 +312,7 @@ def test_apply_font_switches_single_face(tmp_path):
     files, warnings = bake_mod.apply_font(game, font_path=str(asset))
     assert warnings == []
     assert bake_mod.FONT_CSS in files
-    css = io.open(os.path.join(game, "fonts", "gamefont.css"),
+    css = open(os.path.join(game, "fonts", "gamefont.css"),
                   encoding="utf-8").read()
     assert bake_mod.UNIFIED_FONT in css
     assert "mplus-1m-regular.ttf" not in css
@@ -299,13 +328,13 @@ def test_apply_font_mz_splits_faces_and_clears_main_filename(tmp_path):
 
     assert warnings == []
     assert "css/game.css" in files and "data/System.json" in files
-    css = io.open(os.path.join(game, "css", "game.css"),
+    css = open(os.path.join(game, "css", "game.css"),
                   encoding="utf-8").read()
     assert bake_mod.MZ_MARKER in css
     for family in bake_mod.MZ_FAMILIES:
-        assert "font-family: %s" % family in css
-    assert "../fonts/%s" % bake_mod.UNIFIED_FONT in css     # prefix kept
-    assert "../fonts/%s" % bake_mod.UNIFIED_FONT_JP in css
+        assert f"font-family: {family}" in css
+    assert f"../fonts/{bake_mod.UNIFIED_FONT}" in css     # prefix kept
+    assert f"../fonts/{bake_mod.UNIFIED_FONT_JP}" in css
     assert bake_mod.MZ_KANA_RANGE in css                    # kana -> JP face
     assert os.path.isfile(os.path.join(game, "fonts", bake_mod.UNIFIED_FONT))
     assert os.path.isfile(os.path.join(game, "fonts", bake_mod.UNIFIED_FONT_JP))
@@ -332,7 +361,7 @@ def test_apply_font_mz_honours_font_switch_plugin(tmp_path):
     sc, jp = make_font_assets(tmp_path)
     files, warnings = bake_mod.apply_font_mz(game, font_path=sc, jp_path=jp)
 
-    css = io.open(os.path.join(game, "css", "game.css"),
+    css = open(os.path.join(game, "css", "game.css"),
                   encoding="utf-8").read()
     assert bake_mod.MZ_MARKER not in css                    # CSS untouched
     advanced = _load(os.path.join(game, "data", "System.json"))["advanced"]
@@ -354,9 +383,9 @@ def test_apply_font_mz_without_jp_font_declares_han_face_only(tmp_path):
     sc, _jp = make_font_assets(tmp_path)
     files, warnings = bake_mod.apply_font_mz(
         game, font_path=sc, jp_path=str(tmp_path / "missing-jp.otf"))
-    css = io.open(os.path.join(game, "css", "game.css"),
+    css = open(os.path.join(game, "css", "game.css"),
                   encoding="utf-8").read()
-    assert "../fonts/%s" % bake_mod.UNIFIED_FONT in css
+    assert f"../fonts/{bake_mod.UNIFIED_FONT}" in css
     assert bake_mod.UNIFIED_FONT_JP not in css
     assert any("JP fallback font missing" in w for w in warnings)
 
@@ -374,7 +403,7 @@ def test_apply_font_mz_ignores_a_disabled_font_switch_plugin(tmp_path):
     sc, jp = make_font_assets(tmp_path)
     files, warnings = bake_mod.apply_font_mz(game, font_path=sc, jp_path=jp)
 
-    css = io.open(os.path.join(game, "css", "game.css"),
+    css = open(os.path.join(game, "css", "game.css"),
                   encoding="utf-8").read()
     assert bake_mod.MZ_MARKER in css
     assert bake_mod.UNIFIED_FONT in css and bake_mod.UNIFIED_FONT_JP in css
@@ -394,7 +423,7 @@ def test_font_switch_plugin_ignores_disabled_and_reads_status(tmp_path):
     # an unparseable plugins.js stays conservative
     broken = tmp_path / "broken"
     os.makedirs(str(broken / "js"))
-    with io.open(str(broken / "js" / "plugins.js"), "w", encoding="utf-8",
+    with open(str(broken / "js" / "plugins.js"), "w", encoding="utf-8",
                  newline="\n") as handle:
         handle.write("var $plugins = [ {oops, ")
     assert bake_mod.font_switch_plugin(str(broken)) is False
@@ -404,7 +433,7 @@ def test_apply_font_warns_when_asset_missing(tmp_path):
     game = make_game(str(tmp_path / "game"))
     files, warnings = bake_mod.apply_font(game, font_path=str(tmp_path / "no.otf"))
     assert files == [] and warnings and "missing" in warnings[0]
-    css = io.open(os.path.join(game, "fonts", "gamefont.css"),
+    css = open(os.path.join(game, "fonts", "gamefont.css"),
                   encoding="utf-8").read()
     assert "mplus-1m-regular.ttf" in css          # left untouched
 
@@ -429,14 +458,14 @@ def make_mz_game(root, main_font="mplus-1m-regular.woff", plugin="P",
                      "fallbackFonts": "Verdana, sans-serif"},
     })
     os.makedirs(os.path.join(root, "css"), exist_ok=True)
-    with io.open(os.path.join(root, "css", "game.css"), "w",
+    with open(os.path.join(root, "css", "game.css"), "w",
                  encoding="utf-8", newline="\n") as handle:
         handle.write("#errorPrinter { color: #fff; }\n")
     os.makedirs(os.path.join(root, "fonts"), exist_ok=True)
-    with io.open(os.path.join(root, "fonts", main_font), "wb") as handle:
+    with open(os.path.join(root, "fonts", main_font), "wb") as handle:
         handle.write(b"original-font")
     os.makedirs(os.path.join(root, "js"), exist_ok=True)
-    with io.open(os.path.join(root, "js", "plugins.js"), "w",
+    with open(os.path.join(root, "js", "plugins.js"), "w",
                  encoding="utf-8", newline="\n") as handle:
         handle.write("var $plugins =\n[\n" + json.dumps(
             {"name": plugin, "status": plugin_status,
@@ -451,13 +480,13 @@ def test_cli_bake_end_to_end(tmp_path, capsys):
     work = str(tmp_path / "work")
     assert cli.main(["prepare", game, work]) == 0
     keys = mvkeys.load_keys(work)
-    with io.open(os.path.join(work, rawlib.LIBRARY_NAME), "a",
+    with open(os.path.join(work, rawlib.LIBRARY_NAME), "a",
                  encoding="utf-8", newline="\n") as handle:
         for entry in keys:
-            handle.write("@@@%s@@@\n\u8bd1\u6587\n" % entry["id"])
+            handle.write("@@@{}@@@\n\u8bd1\u6587\n".format(entry["id"]))
     assert cli.main(["to-json", work]) == 0
     assert cli.main(["bake", game, work, "--no-font"]) == 0
-    assert "\u8bd1\u6587" in io.open(os.path.join(game, "data", "Map001.json"),
+    assert "\u8bd1\u6587" in open(os.path.join(game, "data", "Map001.json"),
                                      encoding="utf-8").read()
     assert cli.main(["bake", game, work, "--dry-run"]) == 0
     capsys.readouterr()

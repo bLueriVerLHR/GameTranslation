@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for tools/check_iscript_js.py.
 
 The tool exists to turn "the scenario silently stopped advancing" into a

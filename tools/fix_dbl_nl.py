@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """fix_dbl_nl.py - repair values that contain literal \\n text where the KEY
 has a real newline: convert literal \\n back to real newlines. Opposite of
 fix_literal_nl.py. (Agent wrote "\\n" escape text for actual line breaks.)

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/merge_plain_chunks.py chunk QC + merge."""
 import json
 import random
@@ -169,8 +168,7 @@ class TestParallelQc:
             num, keys, vals, issues, ok = mpc._process_chunk(
                 str(work1 / "chunks"), i)
             assert ok
-            for k, v in zip(keys, vals):
-                merged_ref[k] = v
+            merged_ref.update(dict(zip(keys, vals, strict=True)))
         monkeypatch.setattr("sys.argv", ["merge_plain_chunks.py", str(work2)])
         mpc.main()
         with open(str(work2 / "chunks_translated.json"), encoding="utf-8") as f:

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for rpgmaker/deliver.py - the Windows-side delivery bridge.
 
 Covers the powershell.exe existence check in _run_powershell(): it must fail

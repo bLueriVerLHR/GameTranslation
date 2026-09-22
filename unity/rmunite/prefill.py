@@ -16,7 +16,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 # Repo root, appended (not inserted) so a same-named sibling module in
 # this directory still wins.
 sys.path.append(os.path.dirname(_HERE))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, platform  # noqa: E402
 
 
 def translate_line(text, base, names):
@@ -48,6 +48,10 @@ def cmd(work_dir: Annotated[str, cliutil.Argument(
         log_file: cliutil.LogFile = None) -> int:
     cliutil.setup_logging(verbose, quiet, log_file)
 
+    # AGENTS.md CRITICAL: reads and rewrites files inside work_dir with plain
+    # Python I/O.
+    work_dir = str(platform.require_native_paths(
+        "prefill unity translation", work_dir=work_dir)["work_dir"])
     out = os.path.abspath(work_dir)
     key = game_key
     base = json.load(open(os.path.join(out, "translated.json"), encoding="utf-8"))

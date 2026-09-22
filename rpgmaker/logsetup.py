@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """logsetup.py - the one logging configuration used by every entry point.
 
 Before this module every tool called ``logging.basicConfig`` itself: 24 of
@@ -54,10 +53,10 @@ _LEVELS = {
 
 # Handlers this module installed, so a second setup() in the same process
 # replaces them instead of stacking duplicates (tools called from tests).
-_owned = []
+_owned: list[logging.Handler] = []
 
 # Keys already warned about (warn_once): one message per key per process.
-_seen_warnings = set()
+_seen_warnings: set[str] = set()
 
 
 def ensure_utf8_streams():
@@ -73,11 +72,9 @@ def ensure_utf8_streams():
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is None:
             continue
-        try:
+        # detached / closed / already-wrapped stream: nothing to do
+        with contextlib.suppress(ValueError, OSError, LookupError):
             reconfigure(encoding="utf-8", errors="replace")
-        except (ValueError, OSError, LookupError):
-            # detached / closed / already-wrapped stream: nothing to do
-            pass
 
 
 def level_from_env(env=None):
@@ -160,8 +157,8 @@ def warn_once(logger, key, message, *args, seen=None):
 
     For conditions that repeat on every file/entry (e.g. "no override for
     tool X, using default") and would otherwise flood the log.  Pass `seen`
-    to keep the marks somewhere else (rpgmaker/config.py does, so tests can
-    reset them).
+    to keep the marks somewhere else, so a caller (or a test) can reset its
+    own once-per-process marks without touching everyone else's.
     """
     store = _seen_warnings if seen is None else seen
     if key in store:

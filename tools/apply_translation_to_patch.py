@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """apply_translation_to_patch.py - Inject a translated.json ({ja: zh})
 dictionary into rewolf-trans patch txt files.
 
@@ -111,12 +110,15 @@ def cmd(patch_dir: Annotated[str, cliutil.Argument(
         log_file: cliutil.LogFile = None) -> int:
     """Write a translated.json back into a rewolf-trans patch tree."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("apply translation patch", patch_dir=patch_dir, translated_json=translated_json)
 
     t = json.load(open(translated_json, encoding="utf-8"))
     stats = {"applied": 0, "files": 0}
     root = os.path.join(patch_dir, "rewt-patch")
     for path in sorted(glob.glob(os.path.join(root, "**", "*.txt"), recursive=True)):
-        if path.endswith("_Danger.txt") or path.endswith("_Extra.txt"):
+        if path.endswith(("_Danger.txt", "_Extra.txt")):
             continue
         before = stats["applied"]
         inject(path, t, stats)

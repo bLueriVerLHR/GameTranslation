@@ -12,7 +12,7 @@ import re
 import shutil
 
 from kirikiri.kag.tags import tag_intent
-from kirikiri.ks_extract import detect_encoding
+from kirikiri.ks_extract import decode_text, detect_encoding
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def _collect_macros(unpacked):
             if not fn.endswith(".ks"):
                 continue
             raw = open(os.path.join(scen, fn), "rb").read()
-            txt = raw.decode(detect_encoding(raw), errors="replace")
+            txt = decode_text(raw, detect_encoding(raw))
             for m in re.finditer(r"^\[macro name=(\S+?)([\s\]]|$)", txt, re.M):
                 macros.add(m.group(1).lower())
     return macros
@@ -79,25 +79,22 @@ def _load_state_overrides(path):
         # utf-8-sig: the override file is hand-edited on Windows, where editors
         # happily add a BOM; plain utf-8 turned that into a JSONDecodeError and
         # the converter exited 2 with a message about broken JSON.
-        with open(path, "r", encoding="utf-8-sig") as f:
+        with open(path, encoding="utf-8-sig") as f:
             data = json.load(f)
     except (OSError, UnicodeError, json.JSONDecodeError) as e:
-        raise ValueError("cannot read state overrides %s: %s" % (path, e)) from e
+        raise ValueError(f"cannot read state overrides {path}: {e}") from e
     if not isinstance(data, dict):
-        raise ValueError("state overrides root must be an object: %s" % path)
+        raise ValueError(f"state overrides root must be an object: {path}")
     allowed = {"f", "sf", "tf"}
     unknown = sorted(set(data) - allowed)
     if unknown:
-        raise ValueError("unknown state override namespace(s) in %s: %s" %
-                         (path, ", ".join(unknown)))
+        raise ValueError("unknown state override namespace(s) in {}: {}".format(path, ", ".join(unknown)))
     for namespace, values in data.items():
         if not isinstance(values, dict):
-            raise ValueError("state override namespace %s must be an object: %s" %
-                             (namespace, path))
+            raise ValueError(f"state override namespace {namespace} must be an object: {path}")
         bad = sorted(k for k in values if k in {"__proto__", "constructor", "prototype"})
         if bad:
-            raise ValueError("unsafe state override key in %s.%s: %s" %
-                             (path, namespace, ", ".join(bad)))
+            raise ValueError("unsafe state override key in {}.{}: {}".format(path, namespace, ", ".join(bad)))
     return data
 
 
@@ -106,25 +103,25 @@ def _state_overrides_js(overrides):
     if not overrides:
         return ""
     payload = json.dumps(overrides, ensure_ascii=False, separators=(",", ":"))
-    return """(function () {
-  window.__kag3_state_overrides = %s;
-  window.__kag3_apply_state_overrides = function () {
+    return f"""(function () {{
+  window.__kag3_state_overrides = {payload};
+  window.__kag3_apply_state_overrides = function () {{
     var kag = window.TYRANO && window.TYRANO.kag;
     if (!kag || !kag.variable || !kag.stat) return false;
-    var targets = { f: kag.stat.f, sf: kag.variable.sf, tf: kag.variable.tf };
+    var targets = {{ f: kag.stat.f, sf: kag.variable.sf, tf: kag.variable.tf }};
     var source = window.__kag3_state_overrides;
-    Object.keys(source).forEach(function (namespace) {
+    Object.keys(source).forEach(function (namespace) {{
       var target = targets[namespace];
       if (!target) return;
-      Object.keys(source[namespace]).forEach(function (key) {
+      Object.keys(source[namespace]).forEach(function (key) {{
         target[key] = JSON.parse(JSON.stringify(source[namespace][key]));
-      });
-    });
+      }});
+    }});
     return true;
-  };
+  }};
   window.setInterval(window.__kag3_apply_state_overrides, 100);
-})();
-""" % payload
+}})();
+"""
 
 
 def write_intents(out_dir, usage, shim_names, dropped=(), degraded=()):

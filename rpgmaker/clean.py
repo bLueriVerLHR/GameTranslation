@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Safe image/font cleanup.
 
 What is safe to delete (verified against this engine):
@@ -17,7 +16,7 @@ import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-from . import config, runtime
+from . import constants, runtime
 
 log = logging.getLogger("rpgmaker.clean")
 
@@ -50,8 +49,7 @@ def _corpus_text(web_root):
         if not os.path.isdir(base):
             continue
         for dp, _dn, fns in os.walk(base):
-            for fn in fns:
-                paths.append(os.path.join(dp, fn))
+            paths.extend(os.path.join(dp, fn) for fn in fns)
     if not paths:
         return ""
     workers = runtime.resolve_workers("clean", None, path=web_root)
@@ -68,7 +66,7 @@ def remove_img_junk(web_root, dry_run=False):
         return 0, 0
     for dp, _dn, fns in os.walk(img_dir):
         for fn in fns:
-            if os.path.splitext(fn)[1].lower() in config.IMG_JUNK_EXTS:
+            if os.path.splitext(fn)[1].lower() in constants.IMG_JUNK_EXTS:
                 p = os.path.join(dp, fn)
                 freed += os.path.getsize(p)
                 if not dry_run:
@@ -155,7 +153,7 @@ def _referenced_tilesets(web_root):
     for ts in data:
         if ts and ts.get("tilesetNames"):
             names.extend(n for n in ts["tilesetNames"] if n)
-    return set(n.lower() for n in names)
+    return {n.lower() for n in names}
 
 
 def _corpus_referenced_tilesets(web_root):

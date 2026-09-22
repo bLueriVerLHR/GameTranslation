@@ -1,223 +1,30 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""plugins_io.py - tolerant parse/serialize of RPG Maker MZ/MV js/plugins.js.
+"""plugins_io.py - DEPRECATED alias for `rpgmaker.plugins_io`.
 
-The editor writes the file as a JSON-ish JS literal:
+Kept for one compatibility cycle so an existing ``import plugins_io`` (which
+used to resolve because ``tools/`` was on ``sys.path``) keeps working.  New
+code imports ``from rpgmaker import plugins_io``.
 
-    var $plugins =
-    [
-        {
-            "name": "Foo.js",
-            "status": true,
-            "description": "...",
-            "parameters": { "Key": "Value" }
-        }
-    ];
-
-Strict path: extract the array literal and json.loads it.  If that fails
-(minified / unquoted keys / comments), a small recursive-descent parser for
-the JS-literal subset handles strings, objects (quoted or identifier keys),
-arrays, numbers, true/false/null.  On total failure, a last-resort textual
-exact-match pass is still available to bakers via iter_literals().
-
-Serialization uses the strict editor style (quoted keys, 4-space indent) -
-valid JS for the runtime, which only reads the global `$plugins` array.
+This shim deliberately does **not** touch ``sys.path`` (see
+``tools/japanese_utils.py`` for why).  Do not add behaviour here: this module
+must stay a pure re-export.
 """
-import json
-import re
+import warnings
 
-HEAD = re.compile(r"var\s+\$plugins\s*=\s*")
-JS_STR = re.compile(r'"(?:[^"\\]|\\.)*"')
+from rpgmaker.plugins_io import (  # noqa: F401
+    HEAD,
+    JS_STR,
+    dump_plugins_js,
+    iter_literals,
+    iter_plugin_strings,
+    parse_plugins_js,
+)
 
+warnings.warn(
+    "tools.plugins_io is deprecated; import rpgmaker.plugins_io instead",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
-def _find_array(text, i):
-    """Index of the outermost '[' at/after i and the matching ']'."""
-    i = text.find("[", i)
-    if i < 0:
-        raise ValueError("no array literal")
-    depth = 0
-    in_str = False
-    esc = False
-    for j in range(i, len(text)):
-        c = text[j]
-        if in_str:
-            if esc:
-                esc = False
-            elif c == "\\":
-                esc = True
-            elif c == '"':
-                in_str = False
-            continue
-        if c == '"':
-            in_str = True
-        elif c == "[":
-            depth += 1
-        elif c == "]":
-            depth -= 1
-            if depth == 0:
-                return i, j + 1
-    raise ValueError("unbalanced array literal")
-
-
-def _scan_string(text, i):
-    if text[i] != '"':
-        raise ValueError("expected string at %d" % i)
-    out = []
-    i += 1
-    while i < len(text):
-        c = text[i]
-        if c == "\\":
-            if i + 1 >= len(text):
-                raise ValueError("dangling escape")
-            nxt = text[i + 1]
-            out.append("\\" + nxt)
-            i += 2
-            continue
-        if c == '"':
-            try:
-                return json.loads('"%s"' % "".join(out)), i + 1
-            except ValueError:
-                raise ValueError("bad escape sequence in string")
-        out.append(c)
-        i += 1
-    raise ValueError("unterminated string")
-
-
-def _skip_ws(text, i):
-    """Skip whitespace AND JavaScript comments.
-
-    The editor writes plain JSON, but a repacked/hand-edited plugins.js can
-    carry ``//`` line or ``/* */`` block comments inside the array.  The
-    module docstring promises they are tolerated, and the failure mode is
-    silent: three callers swallow the parse error as a WARN and skip all
-    plugin-parameter text (plugin UI stays untranslated).
-    """
-    n = len(text)
-    while i < n:
-        c = text[i]
-        if c in " \t\r\n":
-            i += 1
-            continue
-        if c == "/" and i + 1 < n:
-            nxt = text[i + 1]
-            if nxt == "/":
-                j = text.find("\n", i)
-                i = n if j < 0 else j + 1
-                continue
-            if nxt == "*":
-                j = text.find("*/", i + 2)
-                i = n if j < 0 else j + 2
-                continue
-        break
-    return i
-
-
-def _parse_value(text, i):
-    i = _skip_ws(text, i)
-    if i >= len(text):
-        raise ValueError("unexpected end")
-    c = text[i]
-    if c == '"':
-        return _scan_string(text, i)
-    if c == "{":
-        i += 1
-        obj = {}
-        while True:
-            i = _skip_ws(text, i)
-            if i >= len(text):
-                raise ValueError("unterminated object")
-            if text[i] == "}":
-                return obj, i + 1
-            if text[i] == '"':
-                key, i = _scan_string(text, i)
-            else:
-                m = re.match(r"[A-Za-z_$][\w$]*", text[i:])
-                if not m:
-                    raise ValueError("bad object key at %d" % i)
-                key, i = m.group(0), i + len(m.group(0))
-            i = _skip_ws(text, i)
-            if i >= len(text) or text[i] != ":":
-                raise ValueError("expected ':' at %d" % i)
-            val, i = _parse_value(text, i + 1)
-            obj[key] = val
-            i = _skip_ws(text, i)
-            if i < len(text) and text[i] == ",":
-                i += 1
-    if c == "[":
-        i += 1
-        arr = []
-        while True:
-            i = _skip_ws(text, i)
-            if i >= len(text):
-                raise ValueError("unterminated array")
-            if text[i] == "]":
-                return arr, i + 1
-            val, i = _parse_value(text, i)
-            arr.append(val)
-            i = _skip_ws(text, i)
-            if i < len(text) and text[i] == ",":
-                i += 1
-    m = re.match(r"-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null", text[i:])
-    if not m:
-        raise ValueError("unexpected char at %d: %r" % (i, text[i:i + 20]))
-    tok = m.group(0)
-    if tok == "true":
-        return True, i + 4
-    if tok == "false":
-        return False, i + 5
-    if tok == "null":
-        return None, i + 4
-    if "." in tok or "e" in tok.lower():
-        return float(tok), i + len(tok)
-    return int(tok), i + len(tok)
-
-
-def parse_plugins_js(text):
-    """-> list of plugin dicts {name, status, description, parameters}."""
-    if text.startswith("\ufeff"):
-        text = text[1:]
-    m = HEAD.search(text)
-    if m:
-        text = text[m.end():]
-    try:
-        start, end = _find_array(text, 0)
-        plugins = json.loads(text[start:end])
-    except ValueError:
-        val, _ = _parse_value(text, 0)
-        plugins = val
-    return [p for p in plugins if isinstance(p, dict)]
-
-
-def dump_plugins_js(plugins):
-    return "var $plugins =\n" + json.dumps(
-        plugins, ensure_ascii=False, indent=4) + ";\n"
-
-
-def iter_plugin_strings(plugins, ja_re):
-    """Yield (where, string) for every JA-bearing display string in plugin
-    parameters.  `where` = "js/plugins.js / <plugin name> / <param key>".
-    Names (filename), status booleans and numbers are skipped."""
-    for p in plugins:
-        name = p.get("name")
-        if not isinstance(name, str):
-            name = "?"
-        params = p.get("parameters")
-        if not isinstance(params, (dict, list)):
-            continue
-        items = params.items() if isinstance(params, dict) \
-            else [(i, v) for i, v in enumerate(params)]
-        for key, val in items:
-            if not isinstance(val, str) or not val.strip():
-                continue
-            if not ja_re.search(val):
-                continue
-            yield "js/plugins.js / %s / %s" % (name, key), val
-
-
-def iter_literals(text):
-    """Fallback textual pass: yield every JS string literal in order."""
-    for m in JS_STR.finditer(text):
-        try:
-            yield json.loads(m.group(0))
-        except ValueError:
-            continue
+__all__ = ["HEAD", "JS_STR", "parse_plugins_js", "dump_plugins_js",
+           "iter_plugin_strings", "iter_literals"]

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for kirikiri/pipeline.py - the generic KAG3 port pipeline.
 
 The archive builders come from test_xp3tool.py (byte-level, hermetic), so no
@@ -153,18 +152,39 @@ class TestProfile:
         assert "bad profile" in capsys.readouterr().err
 
     def test_bom_profile_is_accepted(self, tmp_path):
-        """Windows tools write BOMs; a profile with one must still load."""
+        """Windows tools write BOMs; a profile with one must still load.
+
+        The assertion is about the load, not about how `E:/Games/x` resolves:
+        that spelling is absolute on Windows (kept) and repo-relative on POSIX
+        (joined to `REPO_ROOT`), and the previous 
+        ``normpath(...) == normpath("E:/Games/x")`` spelling only held on the
+        platform it was written on, so the Linux coverage job failed with
+        ``'/home/runner/.../E:/Games/x' == 'E:/Games/x'``.
+        """
         p = tmp_path / "p.json"
         p.write_text(json.dumps({"source": "E:/Games/x"}),
                      encoding="utf-8-sig")
-        assert os.path.normpath(pipeline.load_profile(str(p))["_source"]) \
-            == os.path.normpath("E:/Games/x")
+        prof = pipeline.load_profile(str(p))
+        assert prof["_source"], "a BOM must not stop the profile from loading"
+        assert prof["_source"].replace("\\", "/").endswith("E:/Games/x")
+        assert prof["_slot"] == str(tmp_path)
 
 
 class TestDefaultFonts:
-    def test_picks_a_font(self):
+    def test_picks_a_font(self, tmp_path, monkeypatch):
+        """The font directory is local private data, so the positive case
+        supplies its own fixture instead of reading the machine.
+
+        (Asserting on the real registered-font directory made the default
+        suite fail on any clean checkout or CI runner.)
+        """
+        font_dir = tmp_path / "fonts"
+        font_dir.mkdir()
+        (font_dir / "Common.otf").write_bytes(b"OTTO")
+        monkeypatch.setattr(pipeline, "FONT_DIR", str(font_dir))
         fonts = pipeline.default_fonts()
         assert fonts and fonts[0].endswith((".otf", ".ttf"))
+        assert os.path.basename(fonts[0]) == "Common.otf"
 
     def test_missing_font_dir_warns(self, tmp_path, monkeypatch, caplog):
         monkeypatch.setattr(pipeline, "FONT_DIR", str(tmp_path / "empty"))

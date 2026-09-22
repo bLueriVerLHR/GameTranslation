@@ -18,7 +18,15 @@ dist/
 # project-local python virtualenv (machine-specific)
 .venv/
 
-# per-game translation assets stay local (glossary/tone/notes, incl. adult word table)
+# local private data: dictionaries (incl. adult word tables), passwords,
+# machine config, private policy notes.  See docs/reference/local-layout.md.
+.private/
+
+# local reusable font assets (binaries; manifest.json is tracked)
+.asset/
+
+# legacy local data layout, replaced by the two dirs above; kept ignored so a
+# half-migrated checkout never commits the old copy.
 docs/table/
 
 # persistent work copies (per-game temp dirs, machine-local)
@@ -27,6 +35,10 @@ work/
 
 # workspace-local scratch (repo stays clean; $env:TEMP for anything large)
 .tmp/
+PLAN.md
+# Local handover/status notes, same reason as PLAN.md above: they quote the
+# operator's machine state while working and are never part of the repo.
+SESSION-STATUS.md
 
 # local-only tool/runtime downloads (engine sources used as a test runtime)
 .tools/

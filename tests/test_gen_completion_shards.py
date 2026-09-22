@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/gen_completion_shards.py - the completion-pass shard
 generator (residual text, story order).
 
@@ -51,7 +50,7 @@ def make_work(work, keys, kinds=None, ctx=None, tone=None, bom=False):
     work = str(work)
     os.makedirs(work, exist_ok=True)
     write_json(os.path.join(work, "template.json"),
-               {k: "" for k in keys}, bom=bom)
+               dict.fromkeys(keys, ""), bom=bom)
     write_json(os.path.join(work, "kinds.json"), kinds or {})
     if ctx is None:
         ctx = {k: {"where": WHERE, "window": [k]} for k in keys}
@@ -228,7 +227,7 @@ class TestChunking:
         assert "chunks: 0" in capsys.readouterr().out
         chunks_dir = os.path.join(str(work), "chunks")
         assert os.path.isdir(chunks_dir)
-        assert [f for f in os.listdir(chunks_dir)] == []
+        assert list(os.listdir(chunks_dir)) == []
         assert plain_io.load_json(os.path.join(str(work), "glossary.json")) == {}
 
     def test_bom_written_work_package_is_accepted(self, tmp_path, monkeypatch):
@@ -348,17 +347,17 @@ class TestCarryOver:
 
     def test_second_chunk_carries_the_previous_tail(self, tmp_path, monkeypatch):
         keys = [ja(i) for i in range(6)]
-        kinds = {k: "block-line" for k in keys}
+        kinds = dict.fromkeys(keys, "block-line")
         work = make_work(tmp_path / "w", keys, kinds=kinds)
         run(monkeypatch, work, "--max-chars", 24)     # 3 keys per chunk
         section = read(work, 2, "context.md").split("## Carry-over")[1]
         section = section.split("##")[0]
         carried = [ln for ln in section.splitlines() if ln.startswith("- ")]
-        assert carried == ["- %s" % k for k in keys[:3]]
+        assert carried == [f"- {k}" for k in keys[:3]]
 
     def test_carry_over_is_capped_at_eight_lines(self, tmp_path, monkeypatch):
         keys = ["k%02d" % i for i in range(20)]
-        kinds = {k: "event-text" for k in keys}
+        kinds = dict.fromkeys(keys, "event-text")
         ctx = {k: {"where": WHERE, "window": [k]} for k in keys}
         work = make_work(tmp_path / "w", keys, kinds=kinds, ctx=ctx)
         run(monkeypatch, work, "--max-chars", 30)     # 10 keys per chunk
@@ -369,7 +368,7 @@ class TestCarryOver:
 
     def test_non_dialogue_kinds_do_not_carry(self, tmp_path, monkeypatch):
         keys = ["k%02d" % i for i in range(4)]
-        kinds = {k: "db-name" for k in keys}          # no dialogue kinds
+        kinds = dict.fromkeys(keys, "db-name")          # no dialogue kinds
         work = make_work(tmp_path / "w", keys, kinds=kinds)
         run(monkeypatch, work, "--max-chars", 3)      # 1 key per chunk
         assert chunk_count(work) == 4
@@ -384,7 +383,7 @@ class TestSceneTranscript:
                          ctx={k: {"where": "Map002.json#ev3#pg0#c0",
                                   "window": [k]}})
         run(monkeypatch, work)
-        assert "[K] %s   <= Map002.json#ev3#pg0#c0" % k in read(work, 1,
+        assert f"[K] {k}   <= Map002.json#ev3#pg0#c0" in read(work, 1,
                                                                "context.md")
 
     def test_window_flag_limits_the_context_lines(self, tmp_path, monkeypatch):
@@ -393,10 +392,10 @@ class TestSceneTranscript:
         work = make_work(tmp_path / "w", [k], ctx=ctx)
         run(monkeypatch, work, "--window", 1)
         text = read(work, 1, "context.md")
-        assert "  | %s" % a in text
-        assert "  | %s" % b in text
-        assert "  | %s" % c not in text
-        assert "  | %s" % d not in text
+        assert f"  | {a}" in text
+        assert f"  | {b}" in text
+        assert f"  | {c}" not in text
+        assert f"  | {d}" not in text
 
     def test_context_lines_are_truncated(self, tmp_path, monkeypatch):
         k, long_line = "KEY", "x" * 60
@@ -412,7 +411,7 @@ class TestSceneTranscript:
         work = make_work(tmp_path / "w", keys, ctx={})
         run(monkeypatch, work)
         text = read(work, 1, "context.md")
-        assert "[K] %s   <= " % keys[0] in text
+        assert f"[K] {keys[0]}   <= " in text
         with open(chunk_path(work, 1, "meta.json"), encoding="utf-8") as f:
             assert json.load(f)["maps"] == []
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Build a krkrz XP3 archive (e.g. patch.xp3) from a directory tree.
 
 Packs every file under <in_dir> (relative paths, forward slashes) into a
@@ -31,16 +30,10 @@ Usage:
 import logging
 import os
 import struct
-import sys
 import zlib
 from typing import Annotated
 
-
-_HERE = os.path.dirname(os.path.abspath(__file__))
-# Repo root, appended (not inserted) so a same-named sibling module in
-# this directory still wins.
-sys.path.append(os.path.dirname(_HERE))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, platform
 
 log = logging.getLogger("xp3pack")
 
@@ -110,9 +103,17 @@ def build_index(entries):
 
 
 def pack(in_dir, out_path, zlib_level=9):
+    # AGENTS.md CRITICAL: the tools and their inputs must live on the same
+    # storage side.  This is a WSL-native writer (plain Python file I/O), so
+    # it must refuse a Windows-side directory or output before opening
+    # anything - a violation here is a machine-level incident, not a bug.
+    own_paths = platform.require_native_paths("pack xp3", in_dir=in_dir,
+                                              out_path=out_path)
+    in_dir = str(own_paths["in_dir"])
+    out_path = str(own_paths["out_path"])
     files = collect_files(in_dir)
     if not files:
-        raise Xp3PackError("nothing to pack in %s" % in_dir)
+        raise Xp3PackError(f"nothing to pack in {in_dir}")
 
     entries = []
     with open(out_path, "wb") as out:
@@ -173,8 +174,7 @@ def verify(out_path, files):
         extra = sorted(set(parsed) - set(expected))
         resized = sorted(n for n in set(parsed) & set(expected)
                          if parsed[n] != expected[n])
-        raise Xp3PackError("verify failed: missing=%r extra=%r resized=%r"
-                           % (missing[:5], extra[:5], resized[:5]))
+        raise Xp3PackError(f"verify failed: missing={missing[:5]!r} extra={extra[:5]!r} resized={resized[:5]!r}")
 
     want = {rel: adler32_stream(full) for rel, full in files}
     got = {e["name"]: e.get("adler") for e in entries}
@@ -183,9 +183,8 @@ def verify(out_path, files):
                       if got[n] is not None and got[n] != want[n])
     if no_hash or bad_hash:
         raise Xp3PackError(
-            "verify failed: no 'adlr' sub-chunk for %r, wrong Adler-32 for %r "
-            "(krkrz refuses to load such an archive)"
-            % (no_hash[:5], bad_hash[:5]))
+            f"verify failed: no 'adlr' sub-chunk for {no_hash[:5]!r}, wrong Adler-32 for {bad_hash[:5]!r} "
+            "(krkrz refuses to load such an archive)")
 
     log.info("%s: verified %d entries, %d bytes",
              out_path, len(parsed), sum(parsed.values()))
@@ -218,5 +217,4 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     raise SystemExit(main())

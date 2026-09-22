@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Play-test gate for a converted TyranoScript build.
 
 Drives the running build in a real (headless) browser and asserts the visual
@@ -141,13 +140,14 @@ def judge(snap):
     tb = snap.get("text")
     bb = snap.get("base")
     if tb and bb:
-        for im in snap["imgs"]:
-            if im["z"] > snap["innerZ"] and overlap(im["rect"], tb):
-                notes.append("Z-ORDER: %s(z=%d>%d) covers text" % (im["src"], im["z"], snap["innerZ"]))
+        notes.extend(
+            "Z-ORDER: %s(z=%d>%d) covers text" % (im["src"], im["z"], snap["innerZ"])
+            for im in snap["imgs"]
+            if im["z"] > snap["innerZ"] and overlap(im["rect"], tb))
         for im in snap["imgs"]:
             w, h = im["rect"][2] - im["rect"][0], im["rect"][3] - im["rect"][1]
             if w > (bb[2] - bb[0]) * 1.02 or h > (bb[3] - bb[1]) * 1.02:
-                notes.append("OVERSCALE: %s %sx%s > canvas %sx%s" % (
+                notes.append("OVERSCALE: {} {}x{} > canvas {}x{}".format(
                     im["src"], w, h, bb[2] - bb[0], bb[3] - bb[1]))
         # OFFSCREEN: a character whose actual art is almost entirely outside the
         # canvas (reported as \"the side characters of a multi-character shot are
@@ -165,12 +165,12 @@ def judge(snap):
                 continue  # hidden/zero-size: nothing to judge
             if (wt[0] < wr[0] - 2 or wt[2] > wr[2] + 2
                     or wt[1] < wr[1] - 2 or wt[3] > wr[3] + 2):
-                notes.append("FIT: text %s outside window %s" % (wt, wr))
+                notes.append(f"FIT: text {wt} outside window {wr}")
         for name, cr in snap["ctrl"]:
             if overlap(cr, tb):
-                notes.append("SAFE: text overlaps control %s %s" % (name, cr))
+                notes.append(f"SAFE: text overlaps control {name} {cr}")
     if len(snap.get("fonts") or {}) > 1:
-        notes.append("FONTSIZE: one message mixes sizes %s" % snap["fonts"])
+        notes.append("FONTSIZE: one message mixes sizes {}".format(snap["fonts"]))
     return notes
 
 
@@ -205,8 +205,7 @@ def load_cdp():
     try:
         import cdp_shot
     except ImportError as exc:  # pragma: no cover - environment dependent
-        raise SystemExit("error: cannot import cdp_shot from %s: %s"
-                         % (scripts, exc))
+        raise SystemExit(f"error: cannot import cdp_shot from {scripts}: {exc}") from exc
     return cdp_shot
 
 
@@ -215,13 +214,23 @@ def run(port, states, shots_dir):
     page = c.pick_page(port)
     cdp = c.CDP(page["webSocketDebuggerUrl"])
     cdp.eval_js("location.reload()")
+    # Wait for Tyrano to boot.  A CDP eval fails while the page is still
+    # navigating (the execution context is gone), which is expected on every
+    # poll but on only the first seconds; swallowing every error silently also
+    # hid a broken websocket for the full 60 s, so the last error is reported
+    # when the wait times out.
+    last_error = None
     for _ in range(60):
         time.sleep(1)
         try:
             if cdp.eval_js("!!(window.TYRANO && TYRANO.kag && TYRANO.kag.ftag)") == "true":
+                last_error = None
                 break
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - navigation tears the context down
+            last_error = exc
+    if last_error is not None:
+        log.warning("Tyrano did not report ready after 60s; last CDP error: %s",
+                    last_error)
     width, height = int(cdp.eval_js("innerWidth")), int(cdp.eval_js("innerHeight"))
     # enter the story: click the game's own skip button, then the menu region
     deadline = time.time() + 60

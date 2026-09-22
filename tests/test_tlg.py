@@ -1,9 +1,25 @@
-"""Unit tests for kirikiri/tlg.py (TLG5/TLG6 decoder)."""
+"""Unit tests for kirikiri/tlg.py (TLG5/TLG6 decoder).
+
+The numba-accelerated paths are `slow`: the first call JIT-compiles the
+kernel, which dominates the module's runtime (measured: one test per module
+spends ~16 s in compilation).  They are still run - they are the proof the
+fast path matches the pure-Python decoder - just not on every PR.
+
+The real-file regression compares a decoded fixture against an INDEPENDENT
+reference - GARbro's export, never this decoder's own output, which would
+degrade the check into a change detector.  That reference is stored as
+`<stem>.rgb.z` (the canonical bottom-up RGB stream, zlib level 9) rather than
+as the original `.bmp`: the four BMPs were 12.58 MB (the largest thing in the
+repo) and the same bytes zlib-compressed are 3.26 MB with no lossy step and
+no dependency on PIL, which the fast layer must not require.  Regenerate with
+the provenance recorded in tests/fixtures/MANIFEST.json.
+"""
 
 import os
 import random
 import struct
 import sys
+import zlib
 from pathlib import Path
 
 import pytest
@@ -61,7 +77,7 @@ def make_tlg6_payload(w, h, colors):
     payload += struct.pack("<i", len(body))
     payload += body
     for _ in range(ybc):
-        for c in range(colors):
+        for _c in range(colors):
             # one zero-run block: golomb stream with bit0=0 (zero flag) and
             # unary count covering the block pixel count (8 rows x full width)
             stream = zero_run_stream(8 * w)
@@ -88,7 +104,7 @@ def build_tlg6_blocks(w, h, colors=4):
     payload += struct.pack("<i", len(body))
     payload += body
     for _ in range(ybc):
-        for c in range(colors):
+        for _c in range(colors):
             stream = zero_run_stream(8 * w)
             payload += struct.pack("<i", len(stream) * 8)
             payload += bytes(stream)
@@ -131,10 +147,7 @@ def _golomb_stream(values):
     a = 0
     n = GOLOMB_N - 1
     for val in values:
-        if val <= 128:
-            v = 2 * val - 1
-        else:
-            v = 2 * (256 - val)
+        v = 2 * val - 1 if val <= 128 else 2 * (256 - val)
         k = tlg._GOLOMB_TABLE[a * GOLOMB_N + n]
         bc = v >> k
         extra = v & ((1 << k) - 1)
@@ -365,6 +378,7 @@ class TestRegressionBugs:
             rgba = tlg.decode(data)
             assert len(rgba) == w * 8 * 4
 
+    @pytest.mark.slow
     def test_numba_path_matches_pure_filtered(self):
         if not tlg._USE_NUMBA:
             pytest.skip("numba not available")
@@ -376,13 +390,14 @@ class TestRegressionBugs:
 
 
 class TestGarbroFixture:
-    """Real-file regression against GARbro-decoded BMP fixtures.
+    """Real-file regression against GARbro-decoded references.
 
-    The .tlg/.bmp pairs under tests/fixtures/tlg/ were produced by GARbro
-    (authoritative TLG decoder): tlg = original game file, bmp = GARbro
-    export. GARbro GUI exports alpha-flattened 32bpp BMP (bottom-up rows).
-    decode() returns RGBA, so the BMP's B,G,R,X rows are read in R,G,B order
-    and the planes line up directly.
+    The .tlg/.rgb.z pairs under tests/fixtures/tlg/ were produced by GARbro
+    (authoritative TLG decoder): tlg = original game file, rgb.z = the
+    canonical RGB stream from GARbro's export, zlib-compressed. GARbro
+    exports alpha-flattened 32bpp BMP (bottom-up rows); the reference is that
+    export's pixels in RGB order with the alpha plane dropped, so the planes
+    line up with what decode() returns (RGBA).
     """
 
     FIXTURE = Path(__file__).resolve().parent / "fixtures" / "tlg"
@@ -395,39 +410,24 @@ class TestGarbroFixture:
     def test_fixtures_exist(self):
         assert self._fixtures(), "tests/fixtures/tlg missing"
 
-    def test_each_fixture_matches_garbro_bmp(self):
-        import struct as _struct
-
+    def test_each_fixture_matches_garbro_reference(self):
         for tlg_path in self._fixtures():
             name = tlg_path.stem
-            bmp_path = tlg_path.with_suffix(".bmp")
-            assert bmp_path.exists(), bmp_path
+            ref_path = tlg_path.with_suffix(".rgb.z")
+            assert ref_path.exists(), ref_path
             data = tlg_path.read_bytes()
             ver, w, h, colors, _ = tlg.parse_header(data)
             rgba = tlg.decode(data)
             assert len(rgba) == w * h * 4
-            # decode() returns R,G,B,A - read the planes straight through
-            rows = []
-            for y in range(h):
-                row = rgba[y * w * 4:(y + 1) * w * 4]
-                rows.append([(row[x], row[x + 1], row[x + 2])
-                             for x in range(0, w * 4, 4)])
-            got_rgb = [c for r in rows for c in r]
+            # decode() returns R,G,B,A - drop alpha to match the reference
+            got_rgb = bytearray()
+            for i in range(0, len(rgba), 4):
+                got_rgb += bytes((rgba[i], rgba[i + 1], rgba[i + 2]))
+            ref_rgb = zlib.decompress(ref_path.read_bytes())
+            assert len(ref_rgb) == w * h * 3, (name, len(ref_rgb), w * h * 3)
+            assert bytes(got_rgb) == ref_rgb, f"RGB mismatch: {name}"
 
-            with bmp_path.open("rb") as f:
-                bmp = f.read()
-            off = _struct.unpack_from("<I", bmp, 10)[0]
-            bw, bh = _struct.unpack_from("<ii", bmp, 18)
-            assert (bw, bh) == (w, h), (name, (bw, bh), (w, h))
-            stride = w * 4
-            # BMP rows are bottom-up; unpack BGRX per row
-            ref_rgb = []
-            for y in range(h):
-                row = bmp[off + (h - 1 - y) * stride: off + (h - 1 - y) * stride + stride]
-                for x in range(0, w * 4, 4):
-                    ref_rgb.append((row[x + 2], row[x + 1], row[x]))
-            assert got_rgb == ref_rgb, f"RGB mismatch: {name}"
-
+    @pytest.mark.slow
     def test_fixture_numba_matches_pure(self):
         if not tlg._USE_NUMBA:
             pytest.skip("numba not available")
@@ -440,6 +440,7 @@ class TestGarbroFixture:
 
 
 class TestNumbaPath:
+    @pytest.mark.slow
     def test_fast_path_matches_pure(self):
         data = build_tlg6_blocks(16, 16)
         ver, w, h, colors, off = tlg.parse_header(data)
@@ -449,6 +450,7 @@ class TestNumbaPath:
         pure = tlg._decode_tlg6(data, w, h, colors, off)
         assert fast == pure
 
+    @pytest.mark.slow
     def test_real_fast_matches_pure(self):
         real = _real_tlg_files()
         if not real:
@@ -570,6 +572,7 @@ class TestRandomSampleDecode:
             assert (any(rgba[0::4]) or any(rgba[1::4])
                     or any(rgba[2::4])), (w, h, colors)
 
+    @pytest.mark.slow
     def test_random_numba_matches_pure(self):
         if not tlg._USE_NUMBA:
             pytest.skip("numba not available")

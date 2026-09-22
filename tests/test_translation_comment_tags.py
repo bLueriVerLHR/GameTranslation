@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Comment-command payload translation (`prepare --note-tags` + `bake`).
 
 Some plugins read a menu entry's *displayed* text out of comment commands
@@ -24,7 +23,6 @@ These tests pin the contract:
   * bake rewrites exactly the payload lines and refuses a payload whose line
     count no longer matches the source block.
 """
-import io
 import json
 import os
 
@@ -37,7 +35,7 @@ from translation import rawlib
 
 def _dump(path, payload):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with io.open(path, "w", encoding="utf-8", newline="\n") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(payload, handle, ensure_ascii=False)
 
 
@@ -262,14 +260,14 @@ def test_extract_to_bake_round_trip(game, tmp_path):
     replacements = {"港町アストレア": "港镇", "酒場": "酒馆",
                     "ヘルプの一行目": "帮助第一行", "ヘルプの二行目": "帮助第二行",
                     "酒場の説明": "酒馆的说明"}
-    with io.open(os.path.join(work, rawlib.LIBRARY_NAME), "w",
+    with open(os.path.join(work, rawlib.LIBRARY_NAME), "w",
                  encoding="utf-8", newline="\n") as handle:
         for entry in targets:
             value = entry["ja"]
             for old, new in sorted(replacements.items(),
                                    key=lambda item: -len(item[0])):
                 value = value.replace(old, new)
-            handle.write("@@@%s@@@\n%s\n" % (entry["id"], value))
+            handle.write("@@@{}@@@\n{}\n".format(entry["id"], value))
     rawlib.to_json(work)
     report = bake_mod.bake(game, work, apply_unified_font=False)
     assert report["skipped"] == 0
@@ -277,7 +275,7 @@ def test_extract_to_bake_round_trip(game, tmp_path):
     assert report["applied"] == len(targets)
     assert sorted(report["files"]) == ["data/CommonEvents.json", "data/Map001.json"]
 
-    events = json.load(io.open(os.path.join(game, "data", "CommonEvents.json"),
+    events = json.load(open(os.path.join(game, "data", "CommonEvents.json"),
                                encoding="utf-8"))
     cmds = events[1]["list"]
     assert _text(cmds[0]) == "<Name: 港镇>"
@@ -287,7 +285,7 @@ def test_extract_to_bake_round_trip(game, tmp_path):
     assert _text(cmds[4]) == "</Help Description>"
     # script and message lines keep their Japanese tag text verbatim
     assert _text(events[2]["list"][0]) == "var s = '<Name: スクリプト>';"
-    mapp = json.load(io.open(os.path.join(game, "data", "Map001.json"),
+    mapp = json.load(open(os.path.join(game, "data", "Map001.json"),
                              encoding="utf-8"))
     lst = mapp["events"][0]["pages"][0]["list"]
     assert _text(lst[0]) == "<Name: 酒馆>"
@@ -299,15 +297,15 @@ def test_bake_comment_write_is_idempotent(game, tmp_path):
     work = str(tmp_path / "work")
     mvkeys.extract(game, work, note_tags=["Name"])
     key_id = "data/CommonEvents.json#[1].list[0]#Name[0]"
-    with io.open(os.path.join(work, rawlib.LIBRARY_NAME), "w",
+    with open(os.path.join(work, rawlib.LIBRARY_NAME), "w",
                  encoding="utf-8", newline="\n") as handle:
-        handle.write("@@@%s@@@\n港镇\n" % key_id)
+        handle.write(f"@@@{key_id}@@@\n港镇\n")
     rawlib.to_json(work)
     bake_mod.bake(game, work, apply_unified_font=False)
-    first = json.load(io.open(os.path.join(game, "data", "CommonEvents.json"),
+    first = json.load(open(os.path.join(game, "data", "CommonEvents.json"),
                               encoding="utf-8"))
     bake_mod.bake(game, work, apply_unified_font=False)
-    second = json.load(io.open(os.path.join(game, "data", "CommonEvents.json"),
+    second = json.load(open(os.path.join(game, "data", "CommonEvents.json"),
                                encoding="utf-8"))
     assert first == second
     assert _text(second[1]["list"][0]) == "<Name: 港镇>"

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Translation full-pipeline integration test (review report §3.4 / D):
 build_translation -> gen_translation_shards -> (simulated agent zh.txt) ->
 merge_plain_chunks -> merge_translation -> bake_translation.
@@ -29,8 +28,8 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
 
 import bake_translation as bake  # noqa: E402
 import build_translation as bt  # noqa: E402
+from rpgmaker import japanese as japanese_utils  # noqa: E402
 import gen_translation_shards as gts  # noqa: E402
-import japanese_utils  # noqa: E402
 import merge_plain_chunks as mpc  # noqa: E402
 import merge_translation as mt  # noqa: E402
 import plain_io  # noqa: E402
@@ -158,9 +157,11 @@ def run_full_pipeline(game, work, out, monkeypatch):
     assert os.path.isfile(os.path.join(work, "translated.json"))
 
     # 5. bake_translation.py <game> <out> --trs translated.json
-    #    (fonts no-op so the worktree never resolves machine-local fonts)
-    monkeypatch.setattr(bake.config, "find_cjk_font", lambda: "")
-    monkeypatch.setattr(bake.config, "find_jp_font", lambda: "")
+    #    (fonts no-op so the worktree never resolves machine-local fonts;
+    #    the tool resolves them through rpgmaker.assets, not the retired
+    #    config facade)
+    monkeypatch.setattr(bake.assets, "find_cjk_font", lambda: "")
+    monkeypatch.setattr(bake.assets, "find_jp_font", lambda: "")
     run_tool(bake, ["bake_translation.py", game, out, "--trs",
                     os.path.join(work, "translated.json")])
 
@@ -250,7 +251,7 @@ class TestFullPipeline:
                 # ASCII (functional data) is fine
                 if japanese_utils.KANA.search(s):
                     raise AssertionError(
-                        "kana residue in %s: %r" % (fn, s))
+                        f"kana residue in {fn}: {s!r}")
 
     def test_translation_kv_archived(self, tmp_path, monkeypatch):
         game = str(tmp_path / "game")

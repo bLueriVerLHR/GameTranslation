@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Shared helpers for the scenario-file translation chain builders
 (build_ks_translation.py and build_tyrano_translation.py).
 

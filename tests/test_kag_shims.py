@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for the KAG3 converter split: shim asset loading, the compatibility
 layer, and the packaging declaration that keeps the assets shippable.
 
@@ -12,7 +11,10 @@ converter's byte-identical output gate covers the rest.
 import ast
 import os
 import sys
-import tomllib
+try:
+    import tomllib                 # Python 3.11+
+except ImportError:               # pragma: no cover - exercised on 3.10 ci
+    import tomli as tomllib        # dev extra; see pyproject.toml
 
 import pytest
 
@@ -33,7 +35,7 @@ class TestShimAssets:
     def test_every_shim_asset_is_lf_only(self):
         for name in SHIM_FILES:
             blob = open(os.path.join(JS_DIR, name), "rb").read()
-            assert b"\r" not in blob, "%s must be LF only (no CRLF)" % name
+            assert b"\r" not in blob, f"{name} must be LF only (no CRLF)"
 
     def test_every_shim_asset_ends_with_a_newline_but_no_blank_line(self):
         """One final newline for editors/git, which the loader drops.
@@ -46,7 +48,7 @@ class TestShimAssets:
             blob = open(os.path.join(JS_DIR, name), "rb").read()
             assert blob.endswith(b"\n"), name
             assert not blob.endswith(b"\n\n\n"), \
-                "%s: trailing blank lines would shift the generated output" % name
+                f"{name}: trailing blank lines would shift the generated output"
 
     def test_assets_are_not_empty_and_are_real_text(self):
         for name in SHIM_FILES:
@@ -161,7 +163,7 @@ class TestCompatLayer:
                      "_layer_map", "_find_asset", "_decoder_mtime",
                      "_strip_continuation", "_ASSET_CACHE", "_DROPPED_TAGS",
                      "detect_encoding", "tlg", "tjs2js"):
-            assert hasattr(ck, name), "missing re-export: %s" % name
+            assert hasattr(ck, name), f"missing re-export: {name}"
 
     def test_reexports_are_the_same_objects(self):
         assert ck.convert is kag_cli.convert
@@ -346,7 +348,7 @@ class TestGalleryReplayUX:
         assert "Date.now() + (ms || 300)" not in raw
         # the whole input tail is covered, not just the mouse pair
         for ev in ("pointerup", "touchend", "mouseup", "keyup", "touchstart"):
-            assert "'%s'" % ev in raw
+            assert f"'{ev}'" in raw
         assert "stopImmediatePropagation" in raw
         # jump/call/load arm the barrier and drop inherited weak-stop state
         assert "['jump', 'call', 'load'].forEach" in raw

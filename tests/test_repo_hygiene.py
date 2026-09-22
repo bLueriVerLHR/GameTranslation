@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Repository hygiene gate (public-repo rules from AGENTS.md).
 
 The documented shell scan could never pass: the rule text itself contains the
@@ -12,11 +11,12 @@ version:
   * placeholder forms ARE allowed (`<user>`, `<用户名>`, `<name>`), because
     AGENTS.md prescribes them
   * synthetic test fixtures naming a fake user are allowlisted explicitly
-  * docs/table/** is excluded (gitignored local data, never pushed)
+  * docs/table/** is excluded (legacy local data, never pushed)
 
 It is deliberately narrow: it checks machine-path/username leaks.  Game
 names, adult vocabulary and promotion wording are checked against the local
-keyword table (docs/table/ad_keywords.md), which is not in the repo.
+keyword table, which lives in the local private dictionary directory - see
+docs/reference/local-layout.md.
 """
 import os
 import re
@@ -39,7 +39,8 @@ BANNED_USERNAMES = {"blur"}
 # is a deliberate review decision, not a convenience.
 ALLOWED_FIXTURE_USERS = {"me", "user", "tester", "test", "example", "alice"}
 
-SKIP_DIRS = (".git", ".venv", ".tools", ".tmp", "docs/table")
+SKIP_DIRS = (".git", ".venv", ".tools", ".tmp", "docs/table",
+            ".private", ".asset")
 SKIP_SUFFIXES = (".pyc", ".pyo", ".7z", ".csv", ".png", ".jpg", ".ogg", ".webp")
 # This file necessarily contains the forbidden literals (it is the detector),
 # so it excludes itself from the repo-wide scan; its own patterns are unit
@@ -111,9 +112,10 @@ def test_rule_files_use_placeholders_not_real_names(path):
 
 
 def test_local_tables_are_never_referenced_by_absolute_name():
-    """AGENTS.md referenced docs/table/adult_noun_table.md for months while the
-    local file was named differently.  The rule must describe the file by role
-    (the directory's README names it), not by a name the repo cannot verify."""
+    """AGENTS.md once referenced a local noun table by a filename that did not
+    exist (the real file had a different name).  The rule must describe the
+    table by role - the local private dictionary directory defines it - not by
+    a name the repo cannot verify."""
     text = (REPO / "AGENTS.md").read_text(encoding="utf-8")
     assert "adult_noun_table.md" not in text
 

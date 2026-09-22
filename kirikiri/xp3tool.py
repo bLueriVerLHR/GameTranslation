@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """krkrz XP3 archive tool - list and extract KiriKiri game archives.
 
 Handles the standard krkrz container: zlib-compressed or raw index blocks,
@@ -21,18 +20,12 @@ import logging
 import os
 import re
 import struct
-import sys
 import zlib
 from typing import Annotated
 
 import typer
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-# Repo root, appended (not inserted) so a same-named sibling module in
-# this directory still wins; the toolkit import below only needs the package
-# marker plus stdlib for cliutil/logsetup.
-sys.path.append(os.path.dirname(_HERE))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, platform
 
 log = logging.getLogger("xp3tool")
 
@@ -75,6 +68,19 @@ def _i16(buf, pos):
     return struct.unpack("<h", buf[pos : pos + 2])[0]
 
 
+def _need(buf, pos, size, what):
+    """Bounds check before a fixed-width read inside an index block.
+
+    Index bytes come from a game archive (attacker-controlled), and a declared
+    sub-chunk size can point past the buffer.  Reading there would raise
+    `struct.error`, which tells the caller nothing about the archive; a
+    corrupt index is an `Xp3Error` like every other structural problem.
+    """
+    if pos < 0 or size < 0 or pos + size > len(buf):
+        raise Xp3Error("%s at 0x%x needs %d bytes but the index block is %d"
+                       % (what, pos, size, len(buf)))
+
+
 def resolve_index_offset(f, index_ofs):
     """0x80 blocks are indirect: the first 4 bytes are a marker and the
     real pointer lives at +9."""
@@ -103,20 +109,43 @@ def read_index_block(f, index_ofs):
     if method == INDEX_RAW:
         usize = _i64(f)
         return flag, f.read(usize)
-    raise Xp3Error("index 0x%x: unknown encode method 0x%02x"
-                   % (index_ofs, method))
+    raise Xp3Error(f"index 0x{index_ofs:x}: unknown encode method 0x{method:02x}")
 
 
 def find_chunk(buf, start, size, magic):
-    """Locate a sub-chunk inside an index chunk; returns (data_ofs, size)."""
+    """Locate a sub-chunk inside an index chunk; returns (data_ofs, size).
+
+    Every declared size is validated before it is used as an advance.  The
+    sizes are signed 64-bit and an archive is attacker-controlled input, so a
+    negative value is not hypothetical: a size of exactly -12 makes
+    ``pos += 12 + size`` a no-op, and the loop then spins forever without
+    output or error - a hang is unrecoverable for a batch unpack, because
+    there is nothing for a caller to catch.  A size of 0 is rejected for the
+    same reason (it would advance by the header and make no progress toward
+    the magic).  Sub-chunks smaller than their header describe a corrupt
+    index, so ``Xp3Error`` is the honest answer.
+    """
     pos = start
     end = start + size
-    while pos + 12 <= end:
+    # `size` may itself be a bogus declared value, so the scan is additionally
+    # clamped to the buffer: reading the 12-byte header past the end would
+    # raise struct.error instead of the Xp3Error this function promises.
+    while pos + 12 <= end and pos + 12 <= len(buf):
+        # The size is validated *before* it is used as an advance, and the
+        # same value is returned, so a matched chunk can never hand the caller
+        # a size that fails to move its scan forward.  Returning a negative
+        # size here is how `parse_index` used to spin forever: it advances with
+        # ``pos = file_start + file_size`` and a declared size of exactly -12
+        # leaves `pos` unchanged.
+        chunk_size = _i64_at(buf, pos + 4)
+        if chunk_size <= 0:
+            raise Xp3Error(
+                "chunk header at 0x%x declares size %d (a non-positive size "
+                "cannot advance the scan)" % (pos, chunk_size))
         if buf[pos : pos + 4] == magic:
-            return pos + 12, _i64_at(buf, pos + 4)
-        pos += 12 + _i64_at(buf, pos + 4)
-    raise Xp3Error("chunk %r not found between 0x%x..0x%x"
-                   % (magic, start, end))
+            return pos + 12, chunk_size
+        pos += 12 + chunk_size
+    raise Xp3Error(f"chunk {magic!r} not found between 0x{start:x}..0x{end:x}")
 
 
 def parse_index(buf, block_ofs):
@@ -129,7 +158,12 @@ def parse_index(buf, block_ofs):
     while pos < len(buf):
         file_start, file_size = find_chunk(buf, pos, len(buf) - pos, CH_FILE)
         info_start, _ = find_chunk(buf, file_start, file_size, CH_INFO)
+        _need(buf, info_start + 20, 2, "the info block's name length")
         nlen = _i16(buf, info_start + 20)
+        if nlen < 0:
+            raise Xp3Error("block 0x%x: negative entry name length %d"
+                           % (block_ofs, nlen))
+        _need(buf, info_start + 22, nlen * 2, "the entry name")
         name = buf[info_start + 22 : info_start + 22 + nlen * 2]
         try:
             name = name.decode("utf-16-le").replace("\\", "/")
@@ -139,6 +173,13 @@ def parse_index(buf, block_ofs):
             pos = file_start + file_size
             continue
         segm_start, segm_size = find_chunk(buf, file_start, file_size, CH_SEGM)
+        # No `segm_size < 0` check here on purpose: `find_chunk` rejects a
+        # non-positive declared size before it can be returned, and `_need`
+        # below rejects a negative one anyway, so such a branch is unreachable
+        # by construction.  (It was added defensively in Phase 5 and measured
+        # never to fire; a guard that cannot run is untested code, so it is
+        # gone rather than covered by a fake test.)
+        _need(buf, segm_start, segm_size, "the segment table")
         segments = []
         for i in range(segm_size // 28):
             base = segm_start + i * 28
@@ -152,8 +193,7 @@ def parse_index(buf, block_ofs):
             elif method == SEGM_ZLIB:
                 compressed = True
             else:
-                raise Xp3Error("entry %r: unknown segment method 0x%02x"
-                               % (name, method))
+                raise Xp3Error(f"entry {name!r}: unknown segment method 0x{method:02x}")
             segments.append((start, arc, org, compressed))
 
         # 'adlr' sub-chunk: Adler-32 of the uncompressed entry.  krkrz's
@@ -181,8 +221,7 @@ def open_xp3(path):
     entries = []
     with open(path, "rb") as f:
         if f.read(11) != MAGIC:
-            raise Xp3Error("%s: not a krkrz XP3 archive (bad magic)"
-                           % path)
+            raise Xp3Error(f"{path}: not a krkrz XP3 archive (bad magic)")
         pointer = 11
         block = 0
         while True:
@@ -226,6 +265,11 @@ def extract_segment(f, name, start, arc, org, compressed):
 
 
 def extract_all(path, outdir):
+    # AGENTS.md CRITICAL: this is a WSL-native reader/writer over a Windows
+    # archive or target, which is exactly the historical incident (display
+    # corruption).  Refuse before listing the index, never after writing.
+    own = platform.require_native_paths("extract xp3", archive=path, outdir=outdir)
+    path, outdir = str(own["archive"]), str(own["outdir"])
     entries = open_xp3(path)
     os.makedirs(outdir, exist_ok=True)
     written = 0
@@ -301,8 +345,11 @@ def payload_is_recognizable(data):
         text = head.decode("utf-8")
     except UnicodeDecodeError:
         return False
-    if not text:
-        return False
+    # No `if not text` guard here: `data` is non-empty (checked above), so a
+    # non-empty `head` decodes to a non-empty string.  The invariant it would
+    # have protected is `_TEXT_SNIFF > 0`, which is asserted by
+    # `tests/test_xp3tool.py::TestProtectedVariantDetection`
+    # `::test_a_non_empty_payload_never_decodes_to_empty_text`.
     printable = sum(c.isprintable() or c in "\r\n\t" for c in text)
     ascii_printable = sum(1 for c in text
                           if c.isascii() and (c.isprintable()

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for tools/check_docs.py README-tree vs repo consistency check.
 
 Covers the four mandated scenarios plus edge cases:
@@ -22,11 +21,11 @@ import check_docs
 ROOT = "GameTranslation/"
 
 
-def write_readme(repo, body):
-    """Write README.md into repo containing the given tree block body."""
-    path = os.path.join(repo, "README.md")
+def write_readme(repo, body, path=None):
+    """Write the tree document into repo containing the given tree body."""
+    path = path or os.path.join(repo, "README.md")
     with open(path, "w", encoding="utf-8") as f:
-        f.write("# Sample repo\n\n```\n%s\n```\n" % body)
+        f.write(f"# Sample repo\n\n```\n{body}\n```\n")
     return path
 
 
@@ -219,7 +218,7 @@ class TestTypeMismatch:
 
 def parse_body(body):
     """Wrap a tree body in a fenced code block and parse it."""
-    return check_docs.parse_tree("# sample\n\n```\n%s\n```\n" % body)
+    return check_docs.parse_tree(f"# sample\n\n```\n{body}\n```\n")
 
 
 class TestParseTree:
@@ -317,7 +316,7 @@ class TestIsExcluded:
     def test_documented_exclusions(self):
         for p in ("docs/table/glossary.json", ".venv/bin/python",
                   "work/x", "tmp/y", ".tools/engine.js", ".tmp/s.py",
-                  "tests/fake_tools/7z.py",
+                  "tests/fake_tools/ffmpeg.py",
                   "tests/fixtures/tlg/a.tlg", "x.pyc", "__pycache__/m.pyc",
                   ".pytest_cache/v/cache/nodeids",
                   "AGENTS.md", "LICENSE", "pyproject.toml",
@@ -332,10 +331,15 @@ class TestIsExcluded:
 
 class TestRunCli:
     def test_default_paths_current_dir(self, monkeypatch, tmp_path, capsys):
-        # default --repo is "." and default --readme is <repo>/README.md
+        # default --repo is "." and the default tree lives in
+        # <repo>/docs/reference/repo-layout.md
         monkeypatch.chdir(tmp_path)
-        make_files(str(tmp_path), ["a.py"])
-        write_readme(str(tmp_path), "GameTranslation/\n└── a.py\n")
+        layout = os.path.join(str(tmp_path), "docs", "reference")
+        os.makedirs(layout, exist_ok=True)
+        make_files(str(tmp_path), ["a.py", "docs/reference/repo-layout.md"])
+        write_readme(str(tmp_path), "GameTranslation/\n├── a.py\n"
+                     "└── docs/\n    └── reference/\n        └── repo-layout.md\n",
+                     path=os.path.join(layout, "repo-layout.md"))
         assert check_docs.run([]) == 0
         out = capsys.readouterr().out
         assert "docs tree matches repo" in out

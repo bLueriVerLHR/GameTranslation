@@ -30,14 +30,14 @@ def _inject_font(out, font_path, family, log):
 
     css_path = os.path.join(out, "tyrano", "css", "font.css")
     if os.path.isfile(css_path):
-        with open(css_path, "r", encoding="utf-8") as f:
+        with open(css_path, encoding="utf-8") as f:
             css = f.read()
         face = ('@font-face {\n'
-                '    font-family: "%s";\n'
-                '    src: url("../fonts/%s") format("opentype");\n'
+                f'    font-family: "{family}";\n'
+                f'    src: url("../fonts/{base}") format("opentype");\n'
                 '    font-weight: normal;\n'
                 '    font-style: normal;\n'
-                '}\n') % (family, base)
+                '}\n')
         if face not in css:
             with open(css_path, "a", encoding="utf-8") as f:
                 f.write("\n" + face)
@@ -45,11 +45,11 @@ def _inject_font(out, font_path, family, log):
 
     cfg_path = os.path.join(out, "data", "system", "Config.tjs")
     if os.path.isfile(cfg_path):
-        with open(cfg_path, "r", encoding="utf-8") as f:
+        with open(cfg_path, encoding="utf-8") as f:
             cfg = f.read()
         m = re.search(r'(?m)^;userFace\s*=\s*(.*?);\s*$', cfg)
-        if m and ('"%s"' % family) not in m.group(1):
-            new = ';userFace = "%s", %s;' % (family, m.group(1).strip())
+        if m and (f'"{family}"') not in m.group(1):
+            new = f';userFace = "{family}", {m.group(1).strip()};'
             cfg = cfg[:m.start()] + new + cfg[m.end():]
             with open(cfg_path, "w", encoding="utf-8") as f:
                 f.write(cfg)
@@ -64,7 +64,7 @@ def _inject_portrait(out, log):
     if not os.path.isfile(css_path):
         log.warning("tyrano.css not found; portrait CSS not applied")
         return
-    with open(css_path, "r", encoding="utf-8") as f:
+    with open(css_path, encoding="utf-8") as f:
         css = f.read()
     if "portrait layout (generated" in css:
         return

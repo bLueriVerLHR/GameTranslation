@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """fix_mojibake_names.py - repair CP936-misread Shift-JIS file names.
 
 A repack built on a Chinese-locale machine sometimes extracts an archive whose
@@ -35,12 +34,11 @@ reported and skipped instead of overwriting.
 Usage:
   python fix_mojibake_names.py <root> [--apply] [--json PATH]
 """
-import io
 import json
 import logging
 import os
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rpgmaker import cliutil  # noqa: E402
@@ -133,7 +131,7 @@ def cmd(root: Annotated[str, cliutil.Argument(
             help="game folder to inspect (walked recursively)")],
         apply_: Annotated[bool, cliutil.Option(
             "--apply", help="actually rename (default: dry run)")] = False,
-        json_out: Annotated[Optional[str], cliutil.Option(
+        json_out: Annotated[str | None, cliutil.Option(
             "--json", metavar="PATH",
             help="also write the report as UTF-8 JSON")] = None,
         verbose: cliutil.Verbose = False,
@@ -141,9 +139,12 @@ def cmd(root: Annotated[str, cliutil.Argument(
         log_file: cliutil.LogFile = None) -> int:
     """Repair CP936-misread Shift-JIS names (dry run unless --apply)."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("fix mojibake names", root=root)
     root = os.path.abspath(root)
     if not os.path.isdir(root):
-        return cliutil.fail("not a folder: %s" % root)
+        return cliutil.fail(f"not a folder: {root}")
     found = candidates(root)
     log.info("%d mojibake name(s) found under %s", len(found), root)
     # Log every finding, renamed or not: a skipped one is what a human needs
@@ -154,7 +155,7 @@ def cmd(root: Annotated[str, cliutil.Argument(
     summary["root"] = root
     summary["dry_run"] = not apply_
     if json_out:
-        with io.open(json_out, "w", encoding="utf-8") as fh:
+        with open(json_out, "w", encoding="utf-8") as fh:
             json.dump(summary, fh, ensure_ascii=False, indent=2)
     log.info("%s %d name(s), skipped %d",
              "would rename" if not apply_ else "renamed",

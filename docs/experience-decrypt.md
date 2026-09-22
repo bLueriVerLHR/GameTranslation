@@ -16,8 +16,8 @@
 ## 1. Repacker 惯例
 
 - repack 的 `.rar` 压缩包常**带密码**；解压用 `7z x -p<pass>`
-  （见 `docs/workflow.md` §8 坑）。常见密码放在本地
-  `docs/table/passwords.md`（gitignored）— 绝不入库。
+  （见 `docs/workflow.md` §8 坑）。常见密码放在本地密码表（gitignored，
+  位置见 `docs/reference/local-layout.md`）— 绝不入库。
 - 布局：根目录 NW.js 运行时 + `www/`（MV）或根网页部署（MZ）。
   `detect.py` 自动找网页根。
 - **根部署 + 无 `data/` ≠ 不可转换（2026-09 更正，推翻 2026-08 的结论）：**

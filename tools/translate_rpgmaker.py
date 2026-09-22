@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 translate_rpgmaker.py - Reusable tool for RPG Maker MZ games.
 
@@ -33,14 +32,14 @@ import os
 import re
 import shutil
 import sys
-from typing import Annotated, Optional
+from typing import Annotated
 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import rpgmaker_common  # noqa: E402
 import rpgmaker_constants  # noqa: E402
-from rpgmaker import cliutil, config  # noqa: E402
+from rpgmaker import assets, cliutil  # noqa: E402
 
 RPGMV_HEADER = bytes.fromhex("5250474d560000000003010000000000")
 SPLIT = re.compile(r"(\\\.|\n)")
@@ -137,7 +136,7 @@ def _translate_ctrl_token(token, D, index):
     name, rest = m.group(1), m.group(2)
     if not name or "\\" in name or "[" in name:
         return token
-    return ":name[%s%s]" % (_translate_plain(name, D, index), rest)
+    return f":name[{_translate_plain(name, D, index)}{rest}]"
 
 
 def _translate_plain(s, D, index):
@@ -170,7 +169,7 @@ def decrypt_dir(root):
         except (OSError, ValueError) as e:
             # OSError: file I/O; ValueError: JSONDecodeError/UnicodeDecodeError
             # on a custom-encrypted System.json -> warn and skip decryption.
-            log("WARN: could not read encryptionKey: %s" % e)
+            log(f"WARN: could not read encryptionKey: {e}")
 
     key_bytes = None
     if enc_key:
@@ -233,36 +232,51 @@ def clear_encryption_flags(root):
 # ----------------------------------------------------------------------------
 # Translation baking
 # ----------------------------------------------------------------------------
+def _bake_choice(params, D, index):
+    """Code 102: translate every choice caption in place."""
+    if not (params and isinstance(params[0], list)):
+        return
+    params[0] = [translate_text(x, D, index) if isinstance(x, str) else x
+                 for x in params[0]]
+
+
+def _bake_event_text(code, params, D, index):
+    """Codes in EVENT_TEXT_IDX: translate the display-text operands."""
+    for idx in EVENT_TEXT_IDX[code]:
+        if idx < len(params) and isinstance(params[idx], str) and params[idx]:
+            params[idx] = translate_text(params[idx], D, index)
+
+
+def _bake_script_operand(params, D, index):
+    """Code 122: script operands, skipping JS code (operandType == 4)."""
+    if len(params) > 3 and params[3] == 4:
+        return
+    for idx in (3, 4):
+        if idx < len(params) and isinstance(params[idx], str) and params[idx]:
+            params[idx] = translate_text(params[idx], D, index)
+
+
+def _bake_comment(params, D, index):
+    """Code 408: a comment line shown by choice-help plugins."""
+    if params and isinstance(params[0], str) and params[0] \
+            and not DIRECTIVE_RE.match(params[0]):
+        params[0] = translate_text(params[0], D, index)
+
+
 def process_commands(cmds, D, index):
     for cmd in cmds:
         code = cmd.get("code")
         params = cmd.get("parameters")
         if not isinstance(params, list):
             continue
-        if code == 102 and params and isinstance(params[0], list):
-            params[0] = [
-                translate_text(x, D, index) if isinstance(x, str) else x
-                for x in params[0]
-            ]
+        if code == 102:
+            _bake_choice(params, D, index)
         elif code in EVENT_TEXT_IDX:
-            for idx in EVENT_TEXT_IDX[code]:
-                if idx < len(params) and isinstance(params[idx], str) and params[idx]:
-                    params[idx] = translate_text(params[idx], D, index)
+            _bake_event_text(code, params, D, index)
         elif code == 122:
-            # skip script operands (operandType == 4): params[4] is JS code,
-            # never display text
-            if len(params) > 3 and params[3] == 4:
-                pass
-            else:
-                for idx in (3, 4):
-                    if idx < len(params) and isinstance(params[idx], str) and params[idx]:
-                        params[idx] = translate_text(params[idx], D, index)
+            _bake_script_operand(params, D, index)
         elif code == 408:
-            # Comments are usually invisible, but choice-help plugins display
-            # them as menu help text; translate unless directive-like.
-            if (params and isinstance(params[0], str) and params[0]
-                    and not DIRECTIVE_RE.match(params[0])):
-                params[0] = translate_text(params[0], D, index)
+            _bake_comment(params, D, index)
 
 
 def process_db(obj, D, index):
@@ -406,8 +420,8 @@ def _patch_plugins(root, D):
             continue
         if re.fullmatch(r"[A-Za-z0-9_ ]+", k):
             continue  # skip symbol-like keys
-        text = text.replace('"%s"' % k, '"%s"' % v)
-        text = text.replace("'%s'" % k, "'%s'" % v)
+        text = text.replace(f'"{k}"', f'"{v}"')
+        text = text.replace(f"'{k}'", f"'{v}'")
     with open(plugins_path, "w", encoding="utf-8") as f:
         f.write(text)
     log("patched js/plugins.js")
@@ -573,27 +587,26 @@ def add_mv_cjk_font(root, cjk_font_src, jp_font_src=None):
     if "unicode-range" in css and not jp_name:
         log("fonts/gamefont.css already has unicode-range split; font bundled")
         return
-    kana_src = 'url("%s")' % jp_name if jp_name else orig_src
+    kana_src = f'url("{jp_name}")' if jp_name else orig_src
     split = (
         "@font-face {\n"
-        "    font-family: %s;\n"
-        "    src: %s;\n"
+        f"    font-family: {family};\n"
+        f"    src: {kana_src};\n"
         "    unicode-range: U+3000-30FF, U+FF00-FFEF;\n"
         "}\n"
         "@font-face {\n"
-        "    font-family: %s;\n"
-        '    src: url("%s");\n'
+        f"    font-family: {family};\n"
+        f'    src: url("{cjk_name}");\n'
         "    unicode-range: U+0000-00FF, U+2000-206F, U+4E00-9FFF,"
         " U+F900-FAFF, U+20000-2FA1F;\n"
         "}\n"
-    ) % (family, kana_src, family, cjk_name)
+    )
     css = re.sub(
         r"@font-face\s*\{[^}]*font-family\s*:\s*[^;}]+;[^}]*src:\s*url\([^)]+\);\s*\}",
         split, css, count=1, flags=re.S)
     with open(css_path, "w", encoding="utf-8") as f:
         f.write(css)
-    log("bundled %s%s and split fonts/gamefont.css by unicode-range"
-        % (cjk_name, " + %s" % jp_name if jp_name else ""))
+    log("bundled {}{} and split fonts/gamefont.css by unicode-range".format(cjk_name, f" + {jp_name}" if jp_name else ""))
 
 
 def _strip_managed_font_rules(css):
@@ -609,9 +622,8 @@ def _strip_managed_font_rules(css):
         "", css, flags=re.S)
     css = re.sub(r"#gameCanvas\s*,\s*\.GameFont\s*\{[^}]*\}", "", css,
                  flags=re.S)
-    css = re.sub(r"/\*\s*CJK font fallback \(added by translate_rpgmaker\.py\)\s*\*/\s*",
+    return re.sub(r"/\*\s*CJK font fallback \(added by translate_rpgmaker\.py\)\s*\*/\s*",
                  "", css, flags=re.S)
-    return css
 
 
 def _existing_policy_orig_font(css):
@@ -637,14 +649,14 @@ def _mz_font_blocks(cjk_name, kana_src):
         blocks += [
             "@font-face {",
             "    font-family: rmmz-mainfont;",
-            "    src: %s;" % kana_src,
+            f"    src: {kana_src};",
             "    unicode-range: U+3000-30FF, U+FF00-FFEF;",
             "}",
         ]
     blocks += [
         "@font-face {",
         "    font-family: rmmz-mainfont;",
-        '    src: url("../fonts/%s");' % cjk_name,
+        f'    src: url("../fonts/{cjk_name}");',
         "    unicode-range: U+0000-00FF, U+2000-206F, U+4E00-9FFF, U+F900-FAFF;",
         "}",
         "#gameCanvas, .GameFont {",
@@ -687,16 +699,15 @@ def _apply_mz_font_policy(root, cjk_font_src, jp_font_src=None):
     kana_src = None
     kana_label = "none"
     if jp_name:
-        kana_src = 'url("../fonts/%s")' % jp_name
+        kana_src = f'url("../fonts/{jp_name}")'
         kana_label = jp_name
     elif orig_name and os.path.exists(os.path.join(root, "fonts", orig_name)):
-        kana_src = 'url("../fonts/%s")' % orig_name
+        kana_src = f'url("../fonts/{orig_name}")'
         kana_label = orig_name
     blocks = _mz_font_blocks(cjk_name, kana_src)
     with open(css_path, "w", encoding="utf-8") as f:
         f.write(css + "\n" + "\n".join(blocks) + "\n")
-    log("MZ font policy: bundled CJK font + Japanese fallback (%s)"
-        % kana_label)
+    log(f"MZ font policy: bundled CJK font + Japanese fallback ({kana_label})")
 
 
 def apply_font_policy(root, cjk_font_src, jp_font_src=None):
@@ -724,7 +735,7 @@ def apply_font_policy(root, cjk_font_src, jp_font_src=None):
 def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
         out_dir: Annotated[str, cliutil.Argument(
             help="output folder (will be created)")],
-        trs: Annotated[Optional[str], cliutil.Option(
+        trs: Annotated[str | None, cliutil.Option(
             "--trs", help="translation kv JSON file")] = None,
         skip_translate: Annotated[bool, cliutil.Option(
             "--skip-translate",
@@ -736,13 +747,13 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
             "--cjk-font",
             help="CJK ttf to bundle (MV: fonts/gamefont.css split; "
                  "MZ: swap the main @font-face src). Default: "
-                 "resolved via CJK_FONT_PATH / "
-                 "docs/table/local_font_path.txt / auto-discovery "
-                 "of docs/table/fonts/")] = "",
+                 "resolved via CJK_FONT_PATH, then the local "
+                 "font-paths file, then the registered font "
+                 "directory")] = "",
         jp_font: Annotated[str, cliutil.Option(
             "--jp-font",
             help="Japanese fallback font for kana/JP punctuation "
-                 "(second line of docs/table/local_font_path.txt "
+                 "(second line of the local font-paths file "
                  "or JP_FONT_PATH; default: the game's original "
                  "font)")] = "",
         verbose: cliutil.Verbose = False,
@@ -750,16 +761,19 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
         log_file: cliutil.LogFile = None) -> int:
     """Copy + decrypt + bake a translation into an RPG Maker tree."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("translate rpg maker game", game_dir=game_dir, out_dir=out_dir, trs=trs)
 
     if not cjk_font:
-        cjk_font = config.find_cjk_font() or ""
+        cjk_font = assets.find_cjk_font() or ""
     if not jp_font:
-        jp_font = config.find_jp_font() or ""
+        jp_font = assets.find_jp_font() or ""
 
     game_dir = os.path.abspath(game_dir)
     out_dir = os.path.abspath(out_dir)
     if not os.path.isdir(game_dir):
-        return cliutil.fail("game_dir not found: %s" % game_dir)
+        return cliutil.fail(f"game_dir not found: {game_dir}")
     if os.path.abspath(out_dir) == game_dir:
         return cliutil.fail("out_dir must differ from game_dir")
 
@@ -774,13 +788,13 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
     elif not trs_path:
         trs_path = detect_trs(game_dir)
         if trs_path:
-            log("auto-detected translation file: %s" % trs_path)
+            log(f"auto-detected translation file: {trs_path}")
         else:
             log("no translation file detected in game root; translating skipped")
     if trs_path and not os.path.exists(trs_path):
-        return cliutil.fail("translation file not found: %s" % trs_path)
+        return cliutil.fail(f"translation file not found: {trs_path}")
 
-    log("copying %s -> %s" % (game_dir, out_dir))
+    log(f"copying {game_dir} -> {out_dir}")
     shutil.copytree(game_dir, out_dir, dirs_exist_ok=True)
 
     decrypt_dir(out_dir)
@@ -796,7 +810,7 @@ def cmd(game_dir: Annotated[str, cliutil.Argument(help="source game folder")],
     else:
         log("translation skipped")
 
-    log("done -> %s" % out_dir)
+    log(f"done -> {out_dir}")
     return 0
 
 

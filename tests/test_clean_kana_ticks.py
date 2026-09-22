@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for tools/clean_kana_ticks.py - the final tick/mouth-sound cleanup.
 
 Rule tables are only applied to text that mixes kana with something else; a
@@ -61,7 +60,7 @@ class TestIsAuthorish:
 
     def test_no_names_are_hardcoded(self):
         """Game-specific names must arrive via --exempt, never from source."""
-        assert ckt.AUTHOR_NAMES == set()
+        assert set() == ckt.AUTHOR_NAMES
 
     def test_empty_value_is_not_authorish(self):
         assert ckt.is_authorish("k", "") is False

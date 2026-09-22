@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for tools/ctrl_codes.py - the single source of control-code helpers.
 
 The point of the module is that extraction, chunk QC and merging agree on
@@ -69,9 +68,9 @@ class TestStripCtrl:
         assert ctrl_codes.strip_ctrl("C:\\tmp\\x") == "C:\\tmp\\x"
 
     def test_strip_exposes_residual_kana(self):
-        import japanese_utils
+        from rpgmaker import japanese
 
-        assert japanese_utils.KANA.search(
+        assert japanese.KANA.search(
             ctrl_codes.strip_ctrl("\\N[1]の\\C[2]です")) is not None
 
 

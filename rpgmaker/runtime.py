@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Environment-aware resource tuning for the toolkit.
 
 Every step that runs parallel work asks `resolve_workers(kind, explicit)` for
@@ -72,7 +71,14 @@ def _physical_windows():
     group lists the SMT threads belonging to them.
     """
     try:
-        kernel32 = ctypes.windll.kernel32
+        # getattr, not ``ctypes.windll``: the attribute is typed only on
+        # Windows, so spelling it directly makes the recorded error budget
+        # platform-dependent (measured: 189 errors on Linux CI against 188 on
+        # Windows for the same tree, the difference being this one line).
+        windll = getattr(ctypes, "windll", None)
+        if windll is None:
+            return None
+        kernel32 = windll.kernel32
         length = wintypes.DWORD(0)
         kernel32.GetLogicalProcessorInformationEx(0, None, ctypes.byref(length))
         if not length.value:
@@ -244,7 +250,7 @@ def disk_is_rotational(path):
         st = os.stat(path)
         major, minor = os.major(st.st_dev), os.minor(st.st_dev)
         dev = os.path.basename(os.readlink("/sys/dev/block/%d:%d" % (major, minor)))
-        with open("/sys/block/%s/queue/rotational" % dev, encoding="ascii") as f:
+        with open(f"/sys/block/{dev}/queue/rotational", encoding="ascii") as f:
             return f.read().strip() == "1"
     except OSError:
         return None
@@ -256,7 +262,7 @@ def _clamp(n, lo=1, hi=MAX_WORKERS):
 
 def _env_override(kind):
     """Env override (global GT_WORKERS, then per-kind). Returns None if unset."""
-    for name in ("GT_WORKERS_%s" % kind.upper(), "GT_WORKERS"):
+    for name in (f"GT_WORKERS_{kind.upper()}", "GT_WORKERS"):
         raw = os.environ.get(name)
         if raw:
             try:

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for rpgmaker.evb (recovering data/ packed inside <Game>.exe)."""
 import json
 import struct

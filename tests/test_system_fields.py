@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """The System.json field tables must agree across layers.
 
 ``translation.mvkeys`` decides what is extracted (and is the authority for
@@ -23,8 +22,7 @@ def test_mz_mv_lists_cover_exactly_the_extracted_system_keys():
     baked = set(constants.SYSTEM_TEXT_FIELDS + constants.SYSTEM_TEXT_ARRAYS)
     extracted = set(mvkeys._SYSTEM_KEYS) | {"terms"}
     assert baked == extracted, (
-        "bake-only: %s / extract-only: %s"
-        % (sorted(baked - extracted), sorted(extracted - baked)))
+        f"bake-only: {sorted(baked - extracted)} / extract-only: {sorted(extracted - baked)}")
 
 
 def test_no_vx_ace_field_names_leak_into_the_mz_mv_list():

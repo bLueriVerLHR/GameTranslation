@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Platform-bridge tests for rpgmaker/deliver.py (review report §3.4 / D).
 
 The deliver write-back must respect the AGENTS.md CRITICAL cross-system
 rule: a Windows-side (/mnt/*) file is only ever touched by the Windows-side
 tools, routed through powershell.exe (Windows 7z.exe / Remove-Item); a
-WSL-side file uses the local 7zz.  `config.is_windows_side` is monkeypatched
+WSL-side file uses the local 7zz.  `platform.is_windows_side` is monkeypatched
 both ways and every external process is replaced with a recorder at the
 shared runner seam (`rpgmaker.proctools`), so the branch selection is
 verified without executing anything.
@@ -17,10 +16,10 @@ import os
 
 import pytest
 
-from rpgmaker import config, deliver, proctools
+from rpgmaker import deliver, proctools, deliverables, platform, tool_registry
 
 # Resolved Windows-side PowerShell path, as returned by the shared resolver
-# inside config.run_powershell().  Tests pin it so the assertion is hermetic
+# inside tool_registry.run_powershell().  Tests pin it so the assertion is hermetic
 # regardless of the machine's PATH.
 _POWERSHELL_EXE = ("/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/"
                    "powershell.exe")
@@ -80,7 +79,7 @@ class TestWslSide:
 
     def test_wsl_side_extracts_with_py7zr(self, tmp_path, monkeypatch):
         archive, dest = _make_real_archive(tmp_path)
-        monkeypatch.setattr(config, "is_windows_side", lambda p: False)
+        monkeypatch.setattr(platform, "is_windows_side", lambda p: False)
         calls = []
         _recorder(monkeypatch, calls)
 
@@ -92,23 +91,30 @@ class TestWslSide:
         assert calls == []
 
     def test_wsl_side_does_not_need_a_7z_binary(self, tmp_path, monkeypatch):
+        # There is no native-7z resolver to disable any more: py7zr owns the
+        # WSL side in-process, so the property this test guards is now
+        # structural.  Assert the absence explicitly so re-adding a 7z
+        # resolver has to come with a caller and a test.
+        assert not hasattr(tool_registry, "find_7z")
         archive, dest = _make_real_archive(tmp_path)
-        monkeypatch.setattr(config, "find_7z", lambda: None)
-        monkeypatch.setattr(config, "is_windows_side", lambda p: False)
+        monkeypatch.setattr(platform, "is_windows_side", lambda p: False)
         out = deliver._extract_wsl_side(archive, dest, "game")
         assert os.path.isfile(os.path.join(out, "index.html"))
 
     def test_wsl_side_absent_entry_raises(self, tmp_path, monkeypatch):
         archive, dest = _make_real_archive(tmp_path)
-        monkeypatch.setattr(config, "is_windows_side", lambda p: False)
+        monkeypatch.setattr(platform, "is_windows_side", lambda p: False)
         with pytest.raises(RuntimeError) as ei:
             deliver._extract_wsl_side(archive, dest, "other")
         assert "no other/ entry" in str(ei.value)
 
     def test_wsl_side_corrupt_archive_raises(self, tmp_path, monkeypatch):
+        import py7zr
         archive, dest = _make_archive_and_dest(tmp_path)   # b"FAKE" body
-        monkeypatch.setattr(config, "is_windows_side", lambda p: False)
-        with pytest.raises(Exception):
+        monkeypatch.setattr(platform, "is_windows_side", lambda p: False)
+        # The archive layer must let the container library's own error out
+        # rather than swallowing it; Bad7zFile is py7zr's "not a 7z file".
+        with pytest.raises(py7zr.exceptions.Bad7zFile):
             deliver._extract_wsl_side(archive, dest, "game")
 
 
@@ -120,9 +126,9 @@ class TestWindowsSide:
                          win7z="C:/Tools/7z.exe"):
         archive, dest = _make_archive_and_dest(tmp_path)
         _patch_powershell(monkeypatch)
-        monkeypatch.setattr(config, "win_7z", lambda: win7z)
-        monkeypatch.setattr(config, "is_windows_side", lambda p: True)
-        monkeypatch.setattr(config, "to_windows_path", lambda p: "D:" + p)
+        monkeypatch.setattr(tool_registry, "win_7z", lambda: win7z)
+        monkeypatch.setattr(platform, "is_windows_side", lambda p: True)
+        monkeypatch.setattr(platform, "to_windows_path", lambda p: "D:" + p)
         _recorder(monkeypatch, calls)
         return archive, dest
 
@@ -145,8 +151,8 @@ class TestWindowsSide:
 
     def test_windows_side_missing_win7z_refuses(self, tmp_path, monkeypatch):
         archive, dest = _make_archive_and_dest(tmp_path)
-        monkeypatch.setattr(config, "win_7z", lambda: None)
-        monkeypatch.setattr(config, "is_windows_side", lambda p: True)
+        monkeypatch.setattr(tool_registry, "win_7z", lambda: None)
+        monkeypatch.setattr(platform, "is_windows_side", lambda p: True)
         calls = []
         _recorder(monkeypatch, calls)
         with pytest.raises(RuntimeError) as ei:
@@ -157,8 +163,8 @@ class TestWindowsSide:
 
     def test_remove_windows_side_uses_powershell(self, tmp_path, monkeypatch):
         _patch_powershell(monkeypatch)
-        monkeypatch.setattr(config, "is_windows_side", lambda p: True)
-        monkeypatch.setattr(config, "to_windows_path",
+        monkeypatch.setattr(platform, "is_windows_side", lambda p: True)
+        monkeypatch.setattr(platform, "to_windows_path",
                             lambda p: "D:" + p)
         calls = []
         _recorder(monkeypatch, calls)
@@ -173,7 +179,7 @@ class TestWindowsSide:
 
     def test_powershell_failure_raises(self, tmp_path, monkeypatch):
         _patch_powershell(monkeypatch)
-        monkeypatch.setattr(config, "is_windows_side", lambda p: True)
+        monkeypatch.setattr(platform, "is_windows_side", lambda p: True)
         calls = []
         _recorder(monkeypatch, calls, returncode=1)
         with pytest.raises(RuntimeError) as ei:
@@ -200,8 +206,8 @@ class TestExtractDispatch:
             with open(archive, "wb") as f:
                 f.write(b"FAKE")
         _patch_powershell(monkeypatch)
-        monkeypatch.setattr(config, "win_7z", lambda: "C:/7z.exe")
-        monkeypatch.setattr(config, "is_windows_side",
+        monkeypatch.setattr(tool_registry, "win_7z", lambda: "C:/7z.exe")
+        monkeypatch.setattr(platform, "is_windows_side",
                             lambda p: archive_win if p == archive else dest_win)
         _recorder(monkeypatch, calls)
         return archive, dest
@@ -243,7 +249,11 @@ class TestDeliverBranchSelection:
         # so the branch logic is what is under test.
         root = str(tmp_path / "src")
         os.makedirs(os.path.join(root, "data"))
-        with open(os.path.join(root, "index.html"), "w") as f:
+        # encoding="utf-8" everywhere: without it this file is written with
+        # the host locale codec, which raises UnicodeEncodeError for CJK under
+        # Windows' cp1252 default.
+        with open(os.path.join(root, "index.html"), "w",
+                  encoding="utf-8") as f:
             f.write("<!DOCTYPE html>\n")
         games = str(tmp_path / "games")
         archives = str(tmp_path / "archives")
@@ -251,12 +261,12 @@ class TestDeliverBranchSelection:
         calls = []
         monkeypatch.setattr(proctools.subprocess, "run",
                             lambda cmd, **kw: calls.append(cmd))
-        monkeypatch.setattr(config, "is_windows_side", lambda p: False)
-        monkeypatch.setattr(config, "temp_dir", lambda: str(tmp_path))
+        monkeypatch.setattr(platform, "is_windows_side", lambda p: False)
+        monkeypatch.setattr(deliverables, "temp_dir", lambda: str(tmp_path))
 
         out = str(tmp_path / "build")
         os.makedirs(os.path.join(out, "data"))
-        with open(os.path.join(out, "index.html"), "w") as f:
+        with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
             f.write("<!DOCTYPE html>\n")
 
         arch = deliver.deliver(out, games=games, archives=archives)

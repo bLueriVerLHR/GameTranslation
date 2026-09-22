@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for rpgmaker/plugincompat.py.
 
 The fixtures reproduce the real-world failure shape (the exact line forms, the

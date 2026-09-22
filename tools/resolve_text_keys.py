@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """resolve_text_keys.py - inline runtime text keys (``\\T[id]``) into a build.
 
 Some MZ repacks do not carry display text in ``data/*.json`` at all: every
@@ -51,12 +50,13 @@ import json
 import logging
 import os
 import sys
-from typing import Annotated, List, Optional
+from typing import Annotated
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from rpgmaker import cliutil  # noqa: E402
-from tools import plugins_io, qc_build_kana  # noqa: E402
+from rpgmaker import plugins_io  # noqa: E402
+from tools import qc_build_kana  # noqa: E402
 from translation import codes as tcodes, mvkeys, prefill  # noqa: E402
 
 log = logging.getLogger("resolve_text_keys")
@@ -96,8 +96,8 @@ def read_text_table(path):
         if not row or not row[0].strip():
             continue
         cells = list(row) + [""] * len(header)
-        table[row[0].strip()] = dict(
-            (header[i], cells[i].strip()) for i in range(len(header)))
+        table[row[0].strip()] = {
+            header[i]: cells[i].strip() for i in range(len(header))}
     return table
 
 
@@ -275,7 +275,7 @@ def rewrite_document(document, file_name, resolver, stats, classify=True):
         if isinstance(node, dict):
             for key in list(node):
                 item = node[key]
-                path = "%s.%s" % (trail, key) if trail else key
+                path = f"{trail}.{key}" if trail else key
                 if key == "list" and isinstance(item, list):
                     for index, command in enumerate(item):
                         command_code = mvkeys.command_code(command)
@@ -417,7 +417,7 @@ def resolve_build(build_dir, csv_paths=None, dict_path="", lang=DEFAULT_LANG,
                   write=True):
     """Inline the text keys of a built game; returns the stats structure."""
     if not os.path.isdir(os.path.join(build_dir, "data")):
-        raise FileNotFoundError("not an MZ/MV build (no data/): %s" % build_dir)
+        raise FileNotFoundError(f"not an MZ/MV build (no data/): {build_dir}")
     stats = new_stats()
 
     tables = []
@@ -474,14 +474,13 @@ def format_report(stats, limit=12):
         for text_id, count in stats["unresolved"].most_common(limit):
             lines.append("    %-16s x%d" % (text_id, count))
     if stats["changed_files"]:
-        lines.append("  rewritten: %s%s"
-                     % (", ".join(stats["changed_files"][:limit]),
+        lines.append("  rewritten: {}{}".format(", ".join(stats["changed_files"][:limit]),
                         " ..." if len(stats["changed_files"]) > limit else ""))
     return lines
 
 
 def cmd(build_dir: Annotated[str, cliutil.Argument(help="built game directory")],
-        csv_path: Annotated[Optional[List[str]], cliutil.Option(
+        csv_path: Annotated[list[str] | None, cliutil.Option(
             "--csv", help="game text table(s) with an id column "
             "(default: every csv/*.csv in the build)")] = None,
         dict_path: Annotated[str, cliutil.Option(
@@ -500,6 +499,9 @@ def cmd(build_dir: Annotated[str, cliutil.Argument(help="built game directory")]
         log_file: cliutil.LogFile = None) -> int:
     """Inline runtime text keys (``\\T[id]``) into a built web root."""
     cliutil.setup_logging(verbose, quiet, log_file)
+    # Single gate for every path this command touches, before the
+    # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
+    cliutil.own_paths("resolve text keys", build_dir=build_dir, csv_path=csv_path)
     build_dir = os.path.abspath(build_dir)
     try:
         stats = resolve_build(build_dir, csv_path, dict_path, lang,

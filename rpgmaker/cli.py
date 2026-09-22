@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """cli.py - the toolkit's command line, built with Typer.
 
 One definition per command, two apps:
@@ -34,8 +33,8 @@ import typer
 from rpgmaker import audio as audio_mod
 from rpgmaker import build as build_mod
 from rpgmaker import clean as clean_mod
-from rpgmaker import compress as compress_mod
-from rpgmaker import decrypt, deliver, detect, doctor, evb, logsetup, plugincompat
+from rpgmaker import cliutil, compress as compress_mod
+from rpgmaker import decrypt, deliver, detect, doctor, evb, plugincompat
 from rpgmaker import serve as serve_mod
 from rpgmaker import verify as verify_mod
 
@@ -46,21 +45,11 @@ app = typer.Typer(add_completion=False, no_args_is_help=True,
 tyrano = typer.Typer(add_completion=False, no_args_is_help=True,
                      help="TyranoScript / TyranoBuilder -> JoiPlay conversion.")
 
-VERBOSE = typer.Option(False, "-v", "--verbose",
-                       help="DEBUG diagnostics (per-file detail)")
+# One definition of -v/-q/--log-file for both apps (rpgmaker/cliutil.py).
+cliutil.app_options(app)
+cliutil.app_options(tyrano)
+
 WORKERS_HELP = "parallel workers (default: auto-tuned to this machine)"
-
-
-@app.callback()
-def _app_options(verbose: bool = VERBOSE):
-    """Configure logging for this run (never at import time)."""
-    logsetup.setup(verbose=verbose)
-
-
-@tyrano.callback()
-def _tyrano_options(verbose: bool = VERBOSE):
-    """Configure logging for this run (never at import time)."""
-    logsetup.setup(verbose=verbose)
 
 
 def resolve_web_root(game_dir: str) -> str:
@@ -68,14 +57,34 @@ def resolve_web_root(game_dir: str) -> str:
     web_root = detect.find_web_root(game_dir)
     if not web_root:
         raise typer.BadParameter(
-            "no web root found under %s (need index.html + js/ + data/, or "
+            f"no web root found under {game_dir} (need index.html + js/ + data/, or "
             "www/ with the same layout). A launcher repack keeps the database "
             "packed inside <Game>.exe (Enigma Virtual Box: PE sections "
             ".enigma1/.enigma2) - extract data/ from the exe first, then "
-            "build." % game_dir)
+            "build.")
     log.info("engine: %s, web root: %s",
              "MZ" if detect.is_mz(web_root) else "MV", web_root)
     return web_root
+
+
+def _own(what: str, **paths) -> None:
+    """Declare the storage side of every path a command touches.
+
+    `cliutil.own_paths` is the shared gate (AGENTS.md CRITICAL cross-system
+    rule); here it is wrapped so a refusal reaches the operator as one logged
+    line + exit 1 instead of a traceback.  These commands are invoked through
+    Typer's `standalone_mode`, which does not translate the error the way
+    `cliutil.run()` does for the `tools/` commands.
+
+    Placed before `resolve_web_root()`, `find_web_root()` and the first
+    `open`/`makedirs` in each command body: the point of the rule is to refuse
+    *before* touching the other side, and a detection walk is already a read.
+    """
+    try:
+        cliutil.own_paths(what, **paths)
+    except cliutil.CrossSideError as exc:
+        log.error("%s", exc)
+        raise typer.Exit(1) from None
 
 
 def _test_archive(archive: str) -> None:
@@ -97,12 +106,15 @@ def cmd_unpack_data(
     Such a folder plays fine but has no data/ on disk, so `build` refuses it.
     Run this first, then the normal pipeline.
     """
+    _own("unpack data from the exe", game=game, out=out)
     target = out or os.path.join(game, "data")
     try:
         summary = evb.unpack(game, target, dry_run=dry_run)
     except evb.EvbError as exc:
         log.error("unpack-data: %s", exc)
-        raise typer.Exit(1)
+        # The message is already logged with its own detail; `from None` keeps
+        # the CLI refusal to one readable line instead of a chained traceback.
+        raise typer.Exit(1) from None
     if summary["skipped"]:
         log.warning("unpack-data: %d non-JSON payload item(s) skipped (repacker leftovers)",
                     len(summary["skipped"]))
@@ -117,6 +129,7 @@ def cmd_build(
     workers: int = typer.Option(None, help="parallel copy workers (default: auto-tuned to the machine)"),
 ):
     """Copy web files into a JoiPlay folder (strip the NW.js runtime)."""
+    _own("build the JoiPlay folder", game=game, out=out)
     build_mod.build_joiplay(resolve_web_root(game), out, workers=workers)
 
 
@@ -128,6 +141,7 @@ def cmd_decrypt(
     workers: int = typer.Option(None, help="parallel decrypt workers (default: auto-tuned)"),
 ):
     """Decrypt .png_/.ogg_ assets and clear the System.json encryption flags."""
+    _own("decrypt the build", game=game)
     decrypt.decrypt_and_clear(resolve_web_root(game),
                               key=bytes.fromhex(key) if key else None,
                               workers=workers)
@@ -142,6 +156,7 @@ def cmd_audio(
     workers: int = typer.Option(None, help="parallel ffmpeg workers (default: auto-tuned)"),
 ):
     """Probe + re-encode Vorbis audio (the biggest size win)."""
+    _own("re-encode the build's audio", game=game, report=report)
     web = resolve_web_root(game)
     infos = audio_mod.probe_all(web, sample=sample or None, workers=workers)
     if report:
@@ -160,6 +175,7 @@ def cmd_compat(
                                                         "NW.js reference is left unhandled"),
 ):
     """Guard known NW.js-only plugin checks (load-time crash in browser/JoiPlay)."""
+    _own("check plugin compatibility", game=game)
     report = plugincompat.run(resolve_web_root(game), dry_run=dry_run, strict=strict)
     if strict and report.findings:
         raise typer.Exit(1)
@@ -171,6 +187,9 @@ def cmd_clean(
     dry_run: bool = typer.Option(False, "--dry-run", help="report only, don't delete"),
 ):
     """Remove junk files, unused fonts and unused tilesets."""
+    # Gated even for --dry-run: resolve_web_root() walks the game tree, and a
+    # walk over the other storage side is already the read the rule forbids.
+    _own("clean the build", game=game)
     clean_mod.cleanup_all(resolve_web_root(game), dry_run=dry_run)
 
 
@@ -184,6 +203,7 @@ def cmd_verify(
     workers: int = typer.Option(None, help="parallel PNG/decode workers (default: auto-tuned)"),
 ):
     """Verify build integrity (PNG/JSON/flags/audio refs/decode)."""
+    _own("verify the build", game=game, source=source)
     issues = verify_mod.verify_all(resolve_web_root(game), decode=decode,
                                    sample=sample or None, source_dir=source,
                                    workers=workers)
@@ -197,6 +217,10 @@ def cmd_doctor(
                                                        "(resolved app paths + their source)"),
 ):
     """Environment self-check (applications, config, deliverable dirs)."""
+    # Deliberately ungated: this command takes no path argument, so there is
+    # no cross-side input to inspect.  doctor.run() resolves the *tool* and
+    # *config* locations itself and reports them; refusing here would only
+    # hide the very diagnostic the operator ran the command for.
     raise typer.Exit(doctor.run(["--json"] if as_json else []))
 
 
@@ -209,6 +233,7 @@ def cmd_serve(
     test: bool = typer.Option(False, "--test", help="run the smoke test, then exit"),
 ):
     """HTTP server + smoke test (run this for a play-test, not on the phone)."""
+    _own("serve the build", game=game)
     _serve(resolve_web_root(game), port, host, test)
 
 
@@ -219,6 +244,7 @@ def cmd_compress(
     level: int = typer.Option(15, help="zstd compression level"),
 ):
     """Package the build as a 7z-zstd archive (integrity-tested)."""
+    _own("compress the build", game=game, out=out)
     web = resolve_web_root(game)
     _test_archive(compress_mod.compress(web, out or (web + ".7z"), level=level))
 
@@ -231,6 +257,9 @@ def cmd_deliver(
     level: int = typer.Option(15, help="zstd compression level"),
 ):
     """Write back to storage: compress, copy the archive, extract into games."""
+    # deliver.deliver() gates these roles itself; declaring them here too is
+    # what makes "every command body states its paths" checkable statically.
+    _own("deliver the build", game=game)
     deliver.deliver(game, name=name, level=level)
 
 
@@ -243,6 +272,7 @@ def cmd_tyrano_build(
     asar: str = typer.Option(None, help="path to app.asar (absolute, or relative to game)"),
 ):
     """Unpack app.asar, strip the Electron runtime, fix the save backend."""
+    _own("unpack the tyrano game", game=game, out=out, asar=asar)
     from tyrano import build as tyrano_build
     tyrano_build.build(game, out, asar_path=asar)
 
@@ -255,6 +285,7 @@ def cmd_tyrano_audio(
     sample: int = typer.Option(None, help="convert at most N files (trial run)"),
 ):
     """mp3 -> Ogg Vorbis, rewriting the scenario .ks references in lockstep."""
+    _own("convert the tyrano build's audio", out=out)
     from tyrano import audio as tyrano_audio
     # convert(), not convert_all(): the conversion deletes the mp3 files, so
     # the scenario refs must be rewritten first (a convert_all-only wiring
@@ -270,6 +301,7 @@ def cmd_tyrano_clean(
     dry_run: bool = typer.Option(False, "--dry-run"),
 ):
     """Remove MTool residues and desktop leftovers."""
+    _own("clean the tyrano build", out=out)
     from tyrano import clean as tyrano_clean
     tyrano_clean.cleanup_all(out, dry_run=dry_run)
 
@@ -277,6 +309,7 @@ def cmd_tyrano_clean(
 @tyrano.command("fix-autoplay")
 def cmd_fix_autoplay(out: str = typer.Argument(..., help="built game folder")):
     """Patch [bgmovie] play() for the browser autoplay policy (idempotent)."""
+    _own("patch the tyrano autoplay behaviour", out=out)
     from tyrano import autoplay
     autoplay.patch_autoplay(out)
 
@@ -299,6 +332,7 @@ def cmd_tyrano_localize_ui(
     """
     import json
     from tyrano import ui_lang
+    _own("localize the tyrano engine UI", out=out, mapping=mapping, dump=dump)
     lang = ui_lang.find_lang_file(out)
     if not lang:
         log.error("no tyrano/lang.js under %s", out)
@@ -333,6 +367,7 @@ def cmd_tyrano_verify(
     png: bool = typer.Option(True, "--png/--no-png", help="also check PNG limits"),
 ):
     """Check layout, save backend, audio refs and PNG limits."""
+    _own("verify the tyrano build", out=out, source=source)
     from tyrano import verify as tyrano_verify
     problems = tyrano_verify.verify(out, source=source, check_png=png)
     for problem in problems:
@@ -350,6 +385,7 @@ def cmd_tyrano_serve(
     test: bool = typer.Option(False, "--test", help="smoke test then exit"),
 ):
     """HTTP server + smoke test (shared with the RPG Maker pipeline)."""
+    _own("serve the tyrano build", out=out)
     _serve(out, port, host, test)
 
 
@@ -360,6 +396,7 @@ def cmd_tyrano_compress(
     level: int = typer.Option(15),
 ):
     """Package the build as a 7z-zstd archive (integrity-tested)."""
+    _own("compress the tyrano build", out=out, archive=archive)
     _test_archive(compress_mod.compress(out, archive or (out + ".7z"),
                                         level=level))
 
@@ -377,6 +414,7 @@ def cmd_tyrano_deliver(
              "like .../out/"),
 ):
     """Write back to the storage side (compress, copy, extract)."""
+    _own("deliver the tyrano build", out=out)
     deliver.deliver(out, archive=archive, name=name)
 
 

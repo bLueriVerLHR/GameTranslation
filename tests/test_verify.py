@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for rpgmaker/verify.py build integrity checks."""
 import glob
 import json
@@ -9,7 +8,7 @@ import random
 
 from conftest import make_game
 
-from rpgmaker import config, verify
+from rpgmaker import verify, tool_registry
 
 
 class TestPngSignatures:
@@ -191,7 +190,7 @@ class TestVerifyAll:
     def test_decode_works_without_ffmpeg(self, game_dir, monkeypatch):
         """Decoding is in-process (PyAV): no ffmpeg binary is needed."""
         _root, web = game_dir
-        monkeypatch.setattr(config, "find_ffmpeg", lambda: None)
+        monkeypatch.setattr(tool_registry, "find_ffmpeg", lambda: None)
         verify.verify_all(web, decode=True, workers=1)   # must not raise
 
 

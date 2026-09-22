@@ -29,7 +29,7 @@ from rpgmaker import build, cliutil, verify
 SCHEMA_VERSION = 1
 DEFAULT_FILES = 80
 DEFAULT_REPEATS = 3
-DEFAULT_WORKERS = 1
+BENCHMARK_WORKERS = 1
 DEFAULT_SEED = 20260922
 DEFAULT_MAX_REGRESSION = 0.25
 
@@ -98,7 +98,7 @@ def _measure_once(source: Path, destination: Path, workers: int) -> dict[str, fl
 
 
 def run_benchmark(files: int = DEFAULT_FILES, repeats: int = DEFAULT_REPEATS,
-                  workers: int = DEFAULT_WORKERS, seed: int = DEFAULT_SEED) -> dict:
+                  workers: int = BENCHMARK_WORKERS, seed: int = DEFAULT_SEED) -> dict:
     """Run the benchmark in a temporary workspace and return its JSON report."""
     if files < 1 or repeats < 1 or workers < 1:
         raise ValueError("files, repeats and workers must be positive")
@@ -177,7 +177,7 @@ def cmd_run(
     repeats: Annotated[int, cliutil.Option("--repeats", help="sample count")]
         = DEFAULT_REPEATS,
     workers: Annotated[int, cliutil.Option("--workers", help="build workers")]
-        = DEFAULT_WORKERS,
+        = BENCHMARK_WORKERS,
     seed: Annotated[int, cliutil.Option("--seed", help="synthetic corpus seed")]
         = DEFAULT_SEED,
 ) -> int:

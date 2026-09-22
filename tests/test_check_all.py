@@ -22,6 +22,7 @@ renamed tool or a dropped flag has to fail here.
 """
 
 import os
+import subprocess
 import sys
 
 import pytest
@@ -187,6 +188,25 @@ class TestRunGates:
         outcomes = ca.run_gates([gate], REPO_ROOT)
         assert outcomes[0].status == "failed"
         assert "Error" in outcomes[0].detail or "error" in outcomes[0].detail
+
+    @pytest.mark.parametrize("error", [subprocess.TimeoutExpired("gate", 1),
+                                      RuntimeError("gate failed")])
+    def test_expected_process_failures_are_results(self, monkeypatch, error):
+        def fail(*args, **kwargs):
+            raise error
+
+        monkeypatch.setattr(ca.proctools, "run", fail)
+        outcome = ca._run_one(_gate("broken"), REPO_ROOT)
+        assert outcome.status == "failed"
+        assert type(error).__name__ in outcome.detail
+
+    def test_programming_errors_are_not_hidden(self, monkeypatch):
+        def fail(*args, **kwargs):
+            raise TypeError("bad gate invocation")
+
+        monkeypatch.setattr(ca.proctools, "run", fail)
+        with pytest.raises(TypeError, match="bad gate invocation"):
+            ca._run_one(_gate("broken"), REPO_ROOT)
 
 
 # ---------------------------------------------------------------------------

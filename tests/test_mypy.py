@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import subprocess
 import sys
 
 import pytest
@@ -85,6 +86,27 @@ class TestTheBudgetsComeFromPyproject:
         assert config["platform"] == "linux", (
             "CI runs the gate on both runners; the pinned platform must be the "
             "one the recorded budget was measured on")
+
+
+@pytest.mark.parametrize("error", [OSError("launch failed"),
+                                  subprocess.TimeoutExpired("mypy", 1)])
+def test_run_reports_process_failures(monkeypatch, error):
+    def fail(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(mypy_check.proctools, "run", fail)
+    code, count, message = mypy_check.run_mypy()
+    assert (code, count) == (mypy_check.COULD_NOT_RUN, 0)
+    assert str(error) in message
+
+
+def test_run_does_not_hide_programming_errors(monkeypatch):
+    def fail(*args, **kwargs):
+        raise TypeError("broken invocation")
+
+    monkeypatch.setattr(mypy_check.proctools, "run", fail)
+    with pytest.raises(TypeError, match="broken invocation"):
+        mypy_check.run_mypy()
 
 
 class TestParseErrors:

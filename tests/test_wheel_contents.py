@@ -67,6 +67,7 @@ REQUIRED_MEMBERS = (
     "translation/__init__.py",
     "translation/cli.py",                # python -m translation.cli
     "tools/__init__.py",
+    "tools/benchmark.py",              # python -m tools.benchmark
     "tools/plugins_io.py",               # deprecated re-export shim
     "tools/japanese_utils.py",           # deprecated re-export shim
     "kirikiri/__init__.py",
@@ -82,7 +83,7 @@ REQUIRED_MEMBERS = (
 IMPORT_PROBE = (
     "import rpgmaker, rpgmaker.cli, rpgmaker.plugincompat",
     "import rpgmaker.japanese, rpgmaker.plugins_io",
-    "import tools.plugins_io, tools.japanese_utils, tools.plain_io",
+    "import tools.benchmark, tools.plugins_io, tools.japanese_utils, tools.plain_io",
     "import translation.cli",
     "import kirikiri.pipeline, kirikiri.ks_extract",
     "import tyrano.pipeline, tyrano.tyrano_extract",
@@ -362,6 +363,7 @@ class TestInstalledWheelIsUsable:
         _cli_probe(installed, ["rpgmaker.cli"])
         _cli_probe(installed, ["translation.cli"])
         _cli_probe(installed, ["tyrano.pipeline"])
+        _cli_probe(installed, ["tools.benchmark"])
 
     def test_console_scripts_run(self, installed):
         """The declared scripts must be executable, not just present.

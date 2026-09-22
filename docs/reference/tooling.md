@@ -20,7 +20,7 @@
 | 外部程序查找 | `rpgmaker/tool_registry.py::TOOLS` + `resolve_tool()` | 标准库 `shutil.which`/`glob`（**全仓唯一一处**） |
 | HTTP 服务（试玩） | `rpgmaker/serve.py` | 标准库 `http.server` |
 | 测试 | `tests/` | `pytest` + `pytest-xdist`（默认 `-n auto`）+ `pytest-cov` + `ruff` |
-| 性能基准与趋势 | `python -m tools.benchmark` | 标准库计时 + 固定合成语料；JSON 记录 cold-ish/warm-ish 样本，仅比较同一操作系统 |
+| 性能基准与趋势 | `python -m tools.benchmark` | 标准库计时 + 固定合成语料；JSON 记录 cold-ish/warm-ish 样本，仅比较相同系统、架构、Python、语料、worker 与缓存策略 |
 
 ## 仍然存在的例外（已在代码注释里写明原因）
 

@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import math
 import platform
 import random
 import statistics
@@ -122,7 +123,8 @@ def run_benchmark(files: int = DEFAULT_FILES, repeats: int = DEFAULT_REPEATS,
         "kind": "gametranslation-synthetic-benchmark",
         "platform": {"system": platform.system().lower(),
                      "machine": platform.machine().lower()},
-        "python": platform.python_version(),
+        "python": {"implementation": platform.python_implementation().lower(),
+                   "version": ".".join(platform.python_version_tuple()[:2])},
         "seed": seed,
         "corpus": {**corpus, "map_files": files, "repeats": repeats,
                    "workers": workers},
@@ -138,24 +140,56 @@ def run_benchmark(files: int = DEFAULT_FILES, repeats: int = DEFAULT_REPEATS,
     }
 
 
-def compare_reports(baseline: dict, current: dict,
+def _report_errors(report: object, label: str) -> list[str]:
+    """Return structural/value errors without letting malformed JSON crash."""
+    if not isinstance(report, dict):
+        return [f"{label}: report must be a JSON object"]
+    errors = []
+    if report.get("schema") != SCHEMA_VERSION:
+        errors.append(f"{label}: unsupported benchmark schema")
+    if report.get("kind") != "gametranslation-synthetic-benchmark":
+        errors.append(f"{label}: unexpected benchmark kind")
+    errors.extend(
+        f"{label}: {key} must be an object"
+        for key in ("platform", "python", "corpus", "summary")
+        if not isinstance(report.get(key), dict)
+    )
+    summary = report.get("summary")
+    if isinstance(summary, dict):
+        for name in ("build_seconds", "verify_seconds"):
+            value = summary.get(name)
+            if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                    or not math.isfinite(value) or value <= 0):
+                errors.append(f"{label}: {name} must be finite and positive")
+    return errors
+
+
+def compare_reports(baseline: object, current: object,
                     max_regression: float = DEFAULT_MAX_REGRESSION) -> list[str]:
-    """Return trend failures; absolute times are compared only on one OS."""
-    if baseline.get("schema") != SCHEMA_VERSION or current.get("schema") != SCHEMA_VERSION:
-        return ["unsupported benchmark schema"]
-    if baseline.get("platform", {}).get("system") != current.get("platform", {}).get("system"):
-        return ["refusing to compare absolute times across operating systems"]
-    if baseline.get("corpus") != current.get("corpus"):
-        return ["corpus configuration differs from the baseline"]
-    if max_regression < 0:
-        return ["max_regression must not be negative"]
-    failures = []
+    """Return validation and trend failures for comparable environments."""
+    failures = (_report_errors(baseline, "baseline")
+                + _report_errors(current, "current"))
+    if (not isinstance(max_regression, (int, float))
+            or isinstance(max_regression, bool)
+            or not math.isfinite(max_regression) or max_regression < 0):
+        failures.append("max_regression must be finite and non-negative")
+    if failures:
+        return failures
+    assert isinstance(baseline, dict) and isinstance(current, dict)
+    for field, message in (
+        ("platform", "platform differs from the baseline"),
+        ("python", "Python runtime differs from the baseline"),
+        ("seed", "corpus seed differs from the baseline"),
+        ("corpus", "corpus configuration differs from the baseline"),
+        ("cache_policy", "cache policy differs from the baseline"),
+    ):
+        if baseline.get(field) != current.get(field):
+            failures.append(message)
+    if failures:
+        return failures
     for name in ("build_seconds", "verify_seconds"):
         before = float(baseline["summary"][name])
         after = float(current["summary"][name])
-        if before <= 0:
-            failures.append(f"{name}: baseline is not positive")
-            continue
         ratio = (after - before) / before
         if ratio > max_regression:
             failures.append(

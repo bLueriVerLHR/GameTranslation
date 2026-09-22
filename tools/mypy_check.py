@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 from typing import Annotated
 
@@ -94,7 +95,7 @@ def run_mypy(targets=TARGETS, extra=()) -> tuple[int, int, str]:
     argv = [sys.executable, "-m", "mypy", *extra, *targets]
     try:
         proc = proctools.run(argv, cwd=_ROOT, check=False)
-    except Exception as exc:                       # noqa: BLE001 - reported
+    except (OSError, subprocess.TimeoutExpired) as exc:
         return COULD_NOT_RUN, 0, f"could not start mypy: {exc}"
     output = (proc.stdout or "") + (proc.stderr or "")
     return proc.returncode, parse_errors(output), output

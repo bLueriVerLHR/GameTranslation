@@ -36,6 +36,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import os
+import subprocess
 import sys
 import time
 from collections.abc import Callable, Iterable, Sequence
@@ -187,7 +188,7 @@ def _run_one(gate: Gate, root: str) -> Outcome:
     try:
         proc = proctools.run(argv, cwd=root, check=False,
                              timeout=TIMEOUTS.get(gate.name))
-    except Exception as exc:            # noqa: BLE001 - any failure is a result
+    except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
         return Outcome(gate, "failed", time.perf_counter() - started,
                        detail=f"{type(exc).__name__}: {exc}")
     elapsed = time.perf_counter() - started

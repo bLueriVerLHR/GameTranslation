@@ -21,10 +21,10 @@ mechanical instead of aspirational.
 Usage
 -----
     # Record / raise the baseline from a fresh measurement.
-    python tools/check_coverage.py coverage.json --update
+    python -m tools.check_coverage coverage.json --update
 
     # Gate (exit 1 on any regression).
-    python tools/check_coverage.py coverage.json
+    python -m tools.check_coverage coverage.json
 
 `coverage.json` is produced by `python -m coverage json -o coverage.json`
 (or `pytest --cov --cov-report=json:coverage.json`); the reader also accepts a
@@ -39,11 +39,9 @@ import os
 import sys
 from typing import Annotated
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import typer
 
-import typer  # noqa: E402
-
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
 
 log = logging.getLogger("check_coverage")
 

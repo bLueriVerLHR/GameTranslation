@@ -92,7 +92,7 @@ repack 游戏常带一个运行时替换字典如 `<title>.json`（1 万+ 条目
 ### 第 1 步 — 提取与合并（`tools/build_translation.py`）
 
 ```
-python tools\build_translation.py <game_dir> <work_dir>
+python -m tools.build_translation <game_dir> <work_dir>
 ```
 
 遍历 `data/*.json`，在 `<work_dir>` 产出工作包：
@@ -153,9 +153,9 @@ C++/LaTeX 替换引用** — agent 要"理解成角色 X 的名字"，但绝不�
 ### 第 3 步 — 分块（`tools/gen_translation_shards.py`）
 
 ```
-python tools\gen_translation_shards.py <work_dir>                 # 默认 auto 选档
-python tools\gen_translation_shards.py <work_dir> --target-chunks 55
-python tools\gen_translation_shards.py <work_dir> --max-chars 11000 --window 1
+python -m tools.gen_translation_shards <work_dir>                 # 默认 auto 选档
+python -m tools.gen_translation_shards <work_dir> --target-chunks 55
+python -m tools.gen_translation_shards <work_dir> --max-chars 11000 --window 1
 ```
 
 **双文件块布局**（2026-08 定案）：
@@ -222,7 +222,7 @@ v1 的「每轮 10 个并行 subagent」教条已删除：翻译走本文上半�
 失败后恢复 / 重分：
 
 ```
-python tools\gen_translation_shards.py <work_dir> --resume --start 30
+python -m tools.gen_translation_shards <work_dir> --resume --start 30
 ```
 
 （已被任意 `chunks/*.zh.txt` 覆盖的键跳过；剩余键重新分块，从 `--start`
@@ -260,8 +260,8 @@ python tools\gen_translation_shards.py <work_dir> --resume --start 30
 ### 第 6 步 — QC、修复、合并
 
 ```
-python tools\merge_plain_chunks.py <work_dir> [--strict]
-python tools\merge_translation.py  <work_dir> --chunks chunks_translated.json
+python -m tools.merge_plain_chunks <work_dir> [--strict]
+python -m tools.merge_translation  <work_dir> --chunks chunks_translated.json
                                    [--prefilled prefilled.json] [--sweep sweep.json]
 ```
 
@@ -282,7 +282,7 @@ python tools\merge_translation.py  <work_dir> --chunks chunks_translated.json
 ### 第 7 步 — 烘焙（`tools/bake_translation.py`）
 
 ```
-python tools\bake_translation.py <built_joiplay> <out_dir> --trs translated.json --glossary glossary.json
+python -m tools.bake_translation <built_joiplay> <out_dir> --trs translated.json --glossary glossary.json
 ```
 
 - 拷贝已构建（已解密、已压缩）的 JoiPlay 目录，无需重跑
@@ -346,11 +346,11 @@ python tools\bake_translation.py <built_joiplay> <out_dir> --trs translated.json
 脚本（通用，游戏无关）：
 
 ```
-python tools\extract_remaining_text.py <built_joiplay> <work_dir>
-python tools\gen_completion_shards.py <work_dir> [--max-chars 11000] [--dict <title>.json]
-python tools\merge_plain_chunks.py <work_dir> --strict
-python tools\merge_translation.py <work_dir> --chunks chunks_translated.json
-python tools\bake_translation.py <built_joiplay> <out_dir> --trs <work_dir>\translated.json
+python -m tools.extract_remaining_text <built_joiplay> <work_dir>
+python -m tools.gen_completion_shards <work_dir> [--max-chars 11000] [--dict <title>.json]
+python -m tools.merge_plain_chunks <work_dir> --strict
+python -m tools.merge_translation <work_dir> --chunks chunks_translated.json
+python -m tools.bake_translation <built_joiplay> <out_dir> --trs <work_dir>\translated.json
 ```
 
 `extract_remaining_text.py` 遍历 `data/*.json`，保留仍含假名的**逐行/逐字段

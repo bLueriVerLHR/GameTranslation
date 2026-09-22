@@ -110,7 +110,7 @@ JSON**，而且可能套两层（`["{\\"label\\":\\"戦う\\"}"]`，写回时
 （二者确实排除它们）；库门禁更严，以库门禁为准。
 
 **“gates 全绿”只证明已提取子集译完，不等于游戏里没有日文**：完工前必须在
-**最终构建**上跑假名残留扫描：`python tools/qc_build_kana.py <build>
+**最终构建**上跑假名残留扫描：`python -m tools.qc_build_kana <build>
 [--source <日文原版>] [--work <工作区>]`——扫 `data/*.json` 的每个字符串，
 它同时会报**残留运行期文本键**（`\T[键]`，见 `docs/experience-translation.md`
 §11）——构建里残留一个就判失败，因为网页运行环境没有人解析它。

@@ -37,13 +37,13 @@ matters, and which test is responsible for noticing it.
 Usage
 -----
     # Show the table without running anything.
-    python tools/mutation_check.py --list
+    python -m tools.mutation_check --list
 
     # Prove every mutation in the table is detected (the gate).
-    python tools/mutation_check.py
+    python -m tools.mutation_check
 
     # One entry, for iterating on a table edit.
-    python tools/mutation_check.py --only coverage-gate
+    python -m tools.mutation_check --only coverage-gate
 
 Exit code is 0 only when every mutation was killed by a test that passes on the
 unmutated copy.  That "passes on the unmutated copy" half matters: a selector
@@ -64,11 +64,10 @@ import time
 from typing import Annotated, NamedTuple
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(REPO_ROOT)
 
-import typer  # noqa: E402
+import typer
 
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
 
 log = logging.getLogger("mutation_check")
 

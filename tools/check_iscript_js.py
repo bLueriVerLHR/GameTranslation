@@ -36,12 +36,10 @@ import glob
 import json
 import logging
 import os
-import sys
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from kirikiri.ks_extract import load_ks  # noqa: E402
-from rpgmaker import cliutil, jssyntax  # noqa: E402
+from kirikiri.ks_extract import load_ks
+from rpgmaker import cliutil, jssyntax
 
 log = logging.getLogger("check_iscript_js")
 

@@ -25,17 +25,12 @@ import concurrent.futures
 import logging
 import os
 import shutil
-import sys
 import tempfile
 import time
 from typing import Annotated
 
-
-_HERE = os.path.dirname(os.path.abspath(__file__))
-# Repo root for the packages, tools dir for the sibling helpers.
-sys.path.append(os.path.dirname(_HERE))
-from kirikiri.xp3tool import extract_segment, open_xp3  # noqa: E402
-from rpgmaker import cliutil, media, runtime  # noqa: E402
+from kirikiri.xp3tool import extract_segment, open_xp3
+from rpgmaker import cliutil, media, runtime
 
 log = logging.getLogger("transcode_video")
 

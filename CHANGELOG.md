@@ -64,7 +64,6 @@
 以下工具已被取代，保留一个宽限期的唯一理由是「万一还在引用」；新流程一律
 用括号里的替代入口。删除时机见 `docs/reference/deprecation-policy.md`。
 
-- **`tools/extract_text.py`** → `translation.cli prepare`。已**零导入者**。
 - **`tools/plain_to_translated.py`** → `translation.cli bake`（旧 `===KEY===`
   纯文本格式，v1 流程遗留）。
 - **`tools/translate_rpgmaker.py`** → `translation.cli prepare`（v1 翻译链）。
@@ -72,6 +71,7 @@
 
 ### 删除
 
+- **`tools/extract_text.py`** 已删除，替代入口为 `translation.cli prepare`；删除前已确认零导入者、inventory 记录和替代入口测试均已同步。
 - **`superseded/` 归档目录整体移除**（窗口截图工具 + WSL 包装 + 其单测）。
   删除理由不是「换了工具」而是**政策禁止**：`AGENTS.md` 明写需要验证画面时
   使用浏览器自动化能力、**不自建窗口截图工具**，无法自动化的步骤停下请

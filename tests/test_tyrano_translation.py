@@ -199,18 +199,18 @@ class TestApplyWorkPackage:
         root = str(tmp_path / "g")
         make_scenario(root, {"first.ks": FIRST})
         work = str(tmp_path / "w")
-        r = subprocess.run([sys.executable, os.path.join(REPO, "tools",
-                                                         "build_tyrano_translation.py"),
-                            root, work], capture_output=True, text=True,
+        r = subprocess.run([sys.executable, "-m",
+                            "tools.build_tyrano_translation", root, work],
+                           cwd=REPO, capture_output=True, text=True,
                            encoding="utf-8", errors="replace")
         assert r.returncode == 0, r.stderr
         tpl = json.load(open(os.path.join(work, "template.json"), encoding="utf-8"))
         trans = {k: "CLI译%d" % i for i, k in enumerate(tpl)}
         json.dump(trans, open(os.path.join(work, "translated.json"), "w",
                               encoding="utf-8"), ensure_ascii=False)
-        r = subprocess.run([sys.executable, os.path.join(REPO, "tools",
-                                                         "apply_tyrano_translation.py"),
-                            work], capture_output=True, text=True,
+        r = subprocess.run([sys.executable, "-m",
+                            "tools.apply_tyrano_translation", work],
+                           cwd=REPO, capture_output=True, text=True,
                            encoding="utf-8", errors="replace")
         assert r.returncode == 0, r.stderr
         assert "CLI译" in open(os.path.join(work, "patch", "first.ks"),

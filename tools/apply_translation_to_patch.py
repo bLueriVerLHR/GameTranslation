@@ -15,17 +15,14 @@ and END STRING.  Original lines stay untouched (rewolf-trans uses the
 context location for matching, not the original text).
 
 Usage:
-    python tools/apply_translation_to_patch.py <patch_dir> <translated.json>
+    python -m tools.apply_translation_to_patch <patch_dir> <translated.json>
 """
 import glob
 import json
 import os
-import sys
 from typing import Annotated
 
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
 
 BEGIN = "> BEGIN STRING"
 END = "> END STRING"

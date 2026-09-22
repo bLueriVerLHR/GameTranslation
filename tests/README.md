@@ -57,7 +57,7 @@ PLAN Phase 5 task 1 写的是「按 unit / contract / integration / e2e 重组�
 - 新增 `importorskip` 的包名必须在 `OPTIONAL_IMPORTS` 里，否则失败。
 
 预算数字只说明“少了几块能力”，**说不了少的是哪块**——所以 CI 还跑
-`python tools/skip_report.py --verbose`，把每个 skip 归到具体能力（`node` /
+`python -m tools.skip_report --verbose`，把每个 skip 归到具体能力（`node` /
 `media` / `guard` / `optional-import` / …），**归不了类的直接失败**
 （`tests/test_test_layers.py::test_ci_prints_the_skip_inventory` 钉住 CI 真的在跑它）。
 
@@ -65,8 +65,8 @@ PLAN Phase 5 task 1 写的是「按 unit / contract / integration / e2e 重组�
 
 ```bash
 python -m pytest tests -q -n 0 --cov --cov-branch --cov-report=json:coverage.json
-python tools/check_coverage.py coverage.json          # 门禁
-python tools/check_coverage.py coverage.json --update # 抬高/记录基线
+python -m tools.check_coverage coverage.json          # 门禁
+python -m tools.check_coverage coverage.json --update # 抬高/记录基线
 ```
 
 基线 `tests/coverage_floor.json` 分三层粒度，避免一个全局高数字掩盖薄弱模块：
@@ -137,9 +137,9 @@ python tools/check_coverage.py coverage.json --update # 抬高/记录基线
 ## 4. mutation testing（定向）
 
 ```bash
-python tools/mutation_check.py --list     # 看表
-python tools/mutation_check.py            # 跑门禁（slow）
-python tools/mutation_check.py --only coverage-gate
+python -m tools.mutation_check --list     # 看表
+python -m tools.mutation_check            # 跑门禁（slow）
+python -m tools.mutation_check --only coverage-gate
 ```
 
 `tools/mutation_check.py` 手工维护一张**小而准**的表：每条记录「去掉哪个守卫」

@@ -33,19 +33,15 @@ Usage:
 
 import logging
 import os
-import sys
 from collections import deque
 from typing import Annotated
 
 import typer
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rpgmaker import cliutil
+from tools import scenario_common
 from tyrano.tyrano_extract import (display_text, load_ks,
-                                   scenario_storage_refs, translatable)  # noqa: E402
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import scenario_common  # noqa: E402
-
-from rpgmaker import cliutil  # noqa: E402
+                                   scenario_storage_refs, translatable)
 
 log = logging.getLogger("build_tyrano_translation")
 

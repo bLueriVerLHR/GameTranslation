@@ -7,17 +7,12 @@ Usage: python3 tools/batch_decode_tlg.py <in_dir> <out_dir> [--jobs N]
 import glob
 import logging
 import os
-import sys
 import time
 from multiprocessing import Pool
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from kirikiri import tlg
-
-from rpgmaker import cliutil  # noqa: E402
-from rpgmaker import runtime  # noqa: E402
+from rpgmaker import cliutil, runtime
 
 log = logging.getLogger("batch_tlg")
 

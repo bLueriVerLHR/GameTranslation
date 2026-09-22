@@ -19,11 +19,9 @@ a game's tone is never hardcoded in a tool (AGENTS.md, 工具禁止硬编码游�
 import glob
 import json
 import os
-import sys
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
 
 CSV_MD = """# Translation chunk {num} - ExternMessage.csv bodies (part {part})
 

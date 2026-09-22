@@ -37,19 +37,14 @@ appear in multiple contexts (dialogue shared between a CommonEvent and a
 map) get all locations.
 
 Usage:
-    python tools/build_wolf_translation.py <patch_dir> <work_dir> [--no-danger] [--no-extra]
+    python -m tools.build_wolf_translation <patch_dir> <work_dir> [--no-danger] [--no-extra]
 """
 import os
 import re
-import sys
 from typing import Annotated
 
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import plain_io  # noqa: E402
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
+from tools import plain_io
 
 JA = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
 

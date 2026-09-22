@@ -30,15 +30,10 @@ import json
 import logging
 import os
 import re
-import sys
 from typing import Annotated
 
-
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
-sys.path.insert(0, _HERE)                   # sibling tools
-import ctrl_codes  # noqa: E402
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
+from tools import ctrl_codes
 
 log = logging.getLogger("harvest")
 

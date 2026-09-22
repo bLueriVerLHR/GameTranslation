@@ -181,7 +181,7 @@ GameTranslation/
 │   ├── check_coverage.py        # 覆盖率下限门禁（区域/高风险模块/总量，只平只升）
 │   ├── mypy_check.py            # 类型门禁：全仓错误数只降不升 + strict 模块层零错误
 │   ├── mutation_check.py        # 变异表：翻译门禁/归档校验/同侧拒绝/解密标志必须被检出
-│   └── ...（旧版：translate_rpgmaker、extract_text、plain_to_translated、
+│   └── ...（旧版：translate_rpgmaker、plain_to_translated、
 │           qc_translation_chunks、CSV 流程工具 — 旧块格式）
 ├── tests/                # 单元 + 集成测试（pytest，fake 工具，全流程无外部依赖）
 │   ├── README.md         #   分层契约：marker 语义、各层运行命令与环境要求

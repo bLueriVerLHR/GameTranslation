@@ -4,16 +4,14 @@ text ("original line + translated line", e.g. V = K + "\\n" + translation).
 Strips the leading key from every affected value in a chunks dir.
 
 Usage:
-    python tools\\fix_key_prefix.py <work_dir> [--chunks chunks]
+    python -m tools.fix_key_prefix <work_dir> [--chunks chunks]
 """
 import glob
 import json
 import os
-import sys
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
 
 
 def cmd(work_dir: Annotated[str, cliutil.Argument(

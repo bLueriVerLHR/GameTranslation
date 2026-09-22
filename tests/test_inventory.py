@@ -188,7 +188,7 @@ class TestStatusIsMeaningful:
                 if not os.path.exists(os.path.join(REPO_ROOT, looked_for)):
                     unresolved.append("%s -> %s (%s)"
                                       % (record.module, candidate, looked_for))
-        assert checked >= 4, (
+        assert checked >= 3, (
             "only %d replacement target(s) were resolved - the parser is too "
             "narrow and this gate has stopped checking anything" % checked)
         assert not unresolved, (
@@ -334,7 +334,7 @@ class TestLookupHelpers:
 
     def test_status_of_returns_the_declared_status(self):
         assert inventory.status_of("rpgmaker.config") == "active"
-        assert inventory.status_of("tools.extract_text") == "superseded"
+        assert inventory.status_of("tools.extract_text") is None
 
     def test_wheel_modules_is_a_stable_tuple(self):
         assert isinstance(inventory.WHEEL_MODULES, tuple)

@@ -32,20 +32,16 @@ Usage:
 
 import logging
 import os
-import sys
 from collections import deque
 from typing import Annotated
 
 import typer
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kirikiri.ks_extract import (display_text, iter_candidate_lines, load_ks,
                                  scenario_storage_refs, split_line,
-                                 translatable_segments)  # noqa: E402
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import scenario_common  # noqa: E402
-
-from rpgmaker import cliutil  # noqa: E402
+                                 translatable_segments)
+from rpgmaker import cliutil
+from tools import scenario_common
 
 log = logging.getLogger("build_ks_translation")
 

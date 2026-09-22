@@ -21,18 +21,11 @@ import glob
 import json
 import os
 import re
-import sys
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import ctrl_codes  # noqa: E402
-from rpgmaker import japanese as japanese_utils  # noqa: E402
-import plain_io  # noqa: E402
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
-from rpgmaker import runtime  # noqa: E402
+from rpgmaker import cliutil, japanese as japanese_utils, runtime
+from tools import ctrl_codes, plain_io
 
 KANA = japanese_utils.KANA
 UNCERTAIN = re.compile(r"【[^】]*\?[^】]*】")

@@ -58,15 +58,11 @@ import glob
 import json
 import os
 import re
-import sys
 import types
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import plain_io  # noqa: E402
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
+from tools import plain_io
 
 GLOBAL_KINDS = {"db-name", "db-description", "db-message1", "db-message2",
                 "db-message3", "db-message4", "system", "note", "help",

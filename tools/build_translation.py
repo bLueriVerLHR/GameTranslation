@@ -37,19 +37,10 @@ import collections
 import json
 import os
 import re
-import sys
 from typing import Annotated
 
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import ctrl_codes  # noqa: E402
-import plain_io  # noqa: E402
-from rpgmaker import plugins_io  # noqa: E402
-import rpgmaker_common  # noqa: E402
-import rpgmaker_constants  # noqa: E402
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, plugins_io
+from tools import ctrl_codes, plain_io, rpgmaker_common, rpgmaker_constants
 
 SPLIT = re.compile(r"\n")
 JA = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")

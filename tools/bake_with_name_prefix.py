@@ -22,15 +22,10 @@ import json
 import logging
 import os
 import re
-import sys
 from typing import Annotated
 
-
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
-sys.path.insert(0, _HERE)                   # sibling tools
-import bake_translation as B  # noqa: E402
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
+from tools import bake_translation as B
 
 log = logging.getLogger("bake-prefix")
 

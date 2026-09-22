@@ -15,22 +15,15 @@ itself: a second copy of the tables would be the thing that drifts.
 Exit codes: 0 = every skip attributed; 1 = at least one is not.
 """
 import collections
-import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import typer
 
-import typer  # noqa: E402
-
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
 
 # The gate owns the tables and the AST scanner; importing it keeps one
-# definition.  It needs `tests/` importable, exactly as pytest has it.
-_TESTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                      "tests")
-sys.path.insert(0, _TESTS)
-
-import test_test_layers as layers  # noqa: E402
+# definition.  It is a namespace package from the repository root, exactly as
+# pytest sees it.
+from tests import test_test_layers as layers
 
 #: A skip that names a capability gets the layer that supplies it; these are
 #: the honest non-layer classifications (see the gate's GUARD_SKIP_REASONS).

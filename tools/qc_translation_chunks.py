@@ -15,15 +15,10 @@ QC + repair + merge for subagent-translated chunks.
 import json
 import os
 import re
-import sys
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import ctrl_codes  # noqa: E402
-from rpgmaker import japanese as japanese_utils  # noqa: E402
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, japanese as japanese_utils
+from tools import ctrl_codes
 
 # The canonical KANA (search pattern) is the value check; KANA_BLOCKS_HW was
 # the older block-range variant and is no longer used.

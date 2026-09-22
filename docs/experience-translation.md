@@ -55,7 +55,7 @@
 
 一款 repack 正常 — 数据已翻译；另一款不是：repack 在游戏根带 MTool
 字典、*数据文件仍是日文*；你必须自己烘焙：
-`python tools\translate_rpgmaker.py <built> <out> --trs "<title>.json"`
+`python -m tools.translate_rpgmaker <built> <out> --trs "<title>.json"`
 （那次 7742 条）。它还向 `css/game.css` 追加 CJK 字体回退。之后重
 verify + serve --test。别假设"repack = 已烘焙"。
 

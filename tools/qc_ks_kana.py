@@ -21,15 +21,11 @@ import glob
 import json
 import logging
 import os
-import sys
 from typing import Annotated
 
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from kirikiri.ks_extract import (KANA, display_text, iter_display_lines,  # noqa: E402
+from kirikiri.ks_extract import (KANA, display_text, iter_display_lines,
                                 load_ks, translatable)
-
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
 
 log = logging.getLogger("qc_ks_kana")
 

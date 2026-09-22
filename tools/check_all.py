@@ -20,11 +20,11 @@ It is deliberately a thin runner, not a re-implementation: every gate shells
 out to the exact command the documentation names, so there is one definition of
 each check and the tool cannot pass while the documented command fails.
 
-    python tools/check_all.py                 # the five mandatory gates
-    python tools/check_all.py --coverage      # + serial coverage + floor gate
-    python tools/check_all.py --fast          # skip the full test suite
-    python tools/check_all.py --only lint --only docs
-    python tools/check_all.py --list
+    python -m tools.check_all                 # the five mandatory gates
+    python -m tools.check_all --coverage      # + serial coverage + floor gate
+    python -m tools.check_all --fast          # skip the full test suite
+    python -m tools.check_all --only lint --only docs
+    python -m tools.check_all --list
 
 CI remains the final authority: the runner proves a change is ready to push,
 not that the remote matrix passed.  Nothing here replaces
@@ -42,11 +42,9 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Annotated
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import typer
 
-import typer  # noqa: E402
-
-from rpgmaker import cliutil, proctools  # noqa: E402
+from rpgmaker import cliutil, proctools
 
 log = logging.getLogger("check_all")
 
@@ -110,7 +108,7 @@ GATES: tuple = (
     Gate(
         "docs",
         "docs tree matches the repo + documentation gates",
-        lambda root: [sys.executable, os.path.join("tools", "check_docs.py")],
+        lambda root: [sys.executable, "-m", "tools.check_docs"],
     ),
     Gate(
         "tests",
@@ -130,14 +128,14 @@ GATES: tuple = (
     Gate(
         "floors",
         "coverage floors hold (tools/check_coverage.py)",
-        lambda root: [sys.executable, os.path.join("tools", "check_coverage.py"),
+        lambda root: [sys.executable, "-m", "tools.check_coverage",
                       _report(root)],
         coverage_only=True,
     ),
     Gate(
         "types",
         "mypy budgets: error count flat or falling, strict modules at zero",
-        lambda root: [sys.executable, os.path.join("tools", "mypy_check.py")],
+        lambda root: [sys.executable, "-m", "tools.mypy_check"],
         needs=("mypy",),
     ),
     Gate(
@@ -151,8 +149,7 @@ GATES: tuple = (
     Gate(
         "skips",
         "every test skip is attributed to a capability",
-        lambda root: [sys.executable, os.path.join("tools", "skip_report.py"),
-                      "--verbose"],
+        lambda root: [sys.executable, "-m", "tools.skip_report", "--verbose"],
     ),
 )
 

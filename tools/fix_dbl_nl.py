@@ -4,16 +4,14 @@ has a real newline: convert literal \\n back to real newlines. Opposite of
 fix_literal_nl.py. (Agent wrote "\\n" escape text for actual line breaks.)
 
 Usage:
-    python tools\\fix_dbl_nl.py <work_dir> [--chunks chunks]
+    python -m tools.fix_dbl_nl <work_dir> [--chunks chunks]
 """
 import glob
 import json
 import os
-import sys
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
 
 
 def cmd(work_dir: Annotated[str, cliutil.Argument(

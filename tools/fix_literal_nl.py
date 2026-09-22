@@ -7,16 +7,14 @@ fix_dbl_nl.py (sister tool) does the opposite: converts literal \\n back to
 real newlines when the KEY has a real newline.
 
 Usage:
-    python tools\\fix_literal_nl.py <work_dir> [--chunks chunks]
+    python -m tools.fix_literal_nl <work_dir> [--chunks chunks]
 """
 import glob
 import json
 import os
-import sys
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
 
 
 def cmd(work_dir: Annotated[str, cliutil.Argument(

@@ -31,15 +31,11 @@ import json
 import os
 import re
 import shutil
-import sys
 from typing import Annotated
 
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import rpgmaker_common  # noqa: E402
-import rpgmaker_constants  # noqa: E402
-from rpgmaker import assets, cliutil  # noqa: E402
+from rpgmaker import assets, cliutil
+from tools import rpgmaker_common, rpgmaker_constants
 
 RPGMV_HEADER = bytes.fromhex("5250474d560000000003010000000000")
 SPLIT = re.compile(r"(\\\.|\n)")

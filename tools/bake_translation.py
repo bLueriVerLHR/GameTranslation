@@ -39,25 +39,16 @@ import logging
 import os
 import re
 import shutil
-import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
 
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import japanese as japanese_utils  # noqa: E402
-import plain_io  # noqa: E402
-from rpgmaker import plugins_io  # noqa: E402
-import resolve_text_keys  # noqa: E402
-import rpgmaker_common  # noqa: E402
-import rpgmaker_constants  # noqa: E402
-from rpgmaker import assets, cliutil  # noqa: E402
-from translation import mvkeys  # noqa: E402
-from translate_rpgmaker import (  # noqa: E402
+from rpgmaker import assets, cliutil, japanese as japanese_utils, plugins_io
+from tools import plain_io, resolve_text_keys, rpgmaker_common, rpgmaker_constants
+from tools.translate_rpgmaker import (
     apply_font_policy, clear_encryption_flags, decrypt_dir,
 )
+from translation import mvkeys
 
 log = logging.getLogger("bake")
 

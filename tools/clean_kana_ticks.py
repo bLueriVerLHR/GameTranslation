@@ -4,19 +4,15 @@ mouth-sounds OUTSIDE \\RB[] codes to Chinese/romaji so the shipped build has
 author/plugin/name values are exempt (see the local word table, docs/translation.md §6).
 
 Usage:
-    python tools\\clean_kana_ticks.py <merged.json> [--exempt <file>]
+    python -m tools.clean_kana_ticks <merged.json> [--exempt <file>]
 """
 import json
 import os
 import re
-import sys
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rpgmaker import japanese as japanese_utils  # noqa: E402
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
+from rpgmaker import japanese as japanese_utils
 
 KANA_ALL = japanese_utils.KANA_PURE_WORD
 KANA = japanese_utils.KANA

@@ -63,10 +63,10 @@ jobs:
         # One checker only - mypy, never mypy *and* pyright (plan section 7).
         # tools/mypy_check.py distinguishes "mypy could not run" from "errors
         # found", which a bare `mypy` invocation cannot.
-        run: python tools/mypy_check.py
+        run: python -m tools.mypy_check
 
       - name: Documentation tree is in sync with the repo
-        run: python tools/check_docs.py
+        run: python -m tools.check_docs
 
       - name: Public-repo hygiene
         run: python -m pytest tests/test_repo_hygiene.py -q -n 0
@@ -74,7 +74,7 @@ jobs:
       - name: Skip inventory
         # PLAN Phase 5 task 9: a green suite still hides WHAT is missing, so
         # every skip must name a capability.  Fails on an unexplained one.
-        run: python tools/skip_report.py --verbose
+        run: python -m tools.skip_report --verbose
 
       - name: Unit and contract tests (PR layer)
         # The markers are the layer taxonomy.  slow / media / node /
@@ -130,7 +130,7 @@ jobs:
         # PLAN Phase 5 task 4: a coverage NUMBER that nobody compares against a
         # floor is decoration.  The floors live in tests/coverage_floor.json and
         # may only hold or rise; a regression fails here.
-        run: python tools/check_coverage.py coverage.json
+        run: python -m tools.check_coverage coverage.json
 
       - name: Upload coverage
         if: always()

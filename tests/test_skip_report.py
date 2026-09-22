@@ -24,16 +24,13 @@ import subprocess
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TOOL = os.path.join(REPO_ROOT, "tools", "skip_report.py")
-if os.path.join(REPO_ROOT, "tools") not in sys.path:
-    sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
 
-import skip_report as sr  # noqa: E402
+from tools import skip_report as sr
 
 
 def _run(*argv):
     return subprocess.run(
-        [sys.executable, TOOL, *argv],
+        [sys.executable, "-m", "tools.skip_report", *argv],
         cwd=REPO_ROOT, capture_output=True, text=True,
         encoding="utf-8", errors="replace")
 

@@ -154,7 +154,7 @@ commit**；提交前自查扫描时排除本地私有目录（见上节）。
      `UP031`/`UP030`/`SIM115` 选中但 ignore、由计数预算
      `[tool.gametranslation.lint-burndown]` 封顶，只能降不能升；
      `tests/test_lint.py` 会把同一命令当门禁跑，未装 ruff 则跳过）；
-  4. 文档一致性：`python tools/check_docs.py`（目录树与仓库文件同步，
+  4. 文档一致性：`python -m tools.check_docs`（目录树与仓库文件同步，
      解析 `docs/reference/repo-layout.md`）、文档语言为中文；
   5. **单元测试（mandatory，2026-08 定案）**：新功能/新工具必须写单元
      测试（`tests/`，pytest），**正例、反例、边缘情况都要覆盖**，提交前

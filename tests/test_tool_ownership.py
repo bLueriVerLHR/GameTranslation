@@ -55,7 +55,6 @@ GATED_TOOLS = [
     "tools/downscale_images.py",
     "tools/extract_remaining_text.py",
     "tools/extract_rvdata2.py",
-    "tools/extract_text.py",
     "tools/fit_texture_4096.py",
     "tools/fix_mojibake_names.py",
     "tools/plugin_json_leaves.py",
@@ -340,7 +339,6 @@ class TestTheGateRefusesAtRuntime:
             errors="replace", timeout=120, env=env)
 
     @pytest.mark.parametrize("module,args", [
-        ("tools.extract_text", ["/mnt/c/game"]),
         ("tools.downscale_images", ["/mnt/c/game"]),
         ("tools.unlock_gallery", ["/mnt/c/game"]),
         ("tools.batch_decode_tlg", ["/mnt/c/game", "/mnt/c/out"]),
@@ -373,35 +371,6 @@ class TestTheGateRefusesAtRuntime:
         combined = proc.stdout + proc.stderr
         assert "cross-system" in combined, (
             f"{module} failed for the wrong reason:\n{combined[-1500:]}")
-
-    def test_the_same_call_succeeds_on_the_native_side(self, tmp_path):
-        """The gate must not refuse a same-side path (negative control).
-
-        Without this, a gate that refuses *everything* would pass the checks
-        above.  The tool is expected to fail later for a missing input; what
-        must not happen is a cross-system refusal.
-
-        ``--output`` is redirected into ``tmp_path`` because the tool's
-        default is ``translations.json`` relative to the CWD: leaving it
-        default would write a stray file into the checkout.
-        """
-        game = tmp_path / "game"
-        game.mkdir()
-        out = tmp_path / "out.json"
-        code = (
-            "import sys;"
-            "import runpy;"
-            f"sys.argv = ['tools.extract_text', {str(game)!r},"
-            f" '--output', {str(out)!r}];"
-            "runpy.run_module('tools.extract_text', run_name='__main__')"
-        )
-        proc = subprocess.run(
-            [sys.executable, "-c", code], cwd=REPO_ROOT, capture_output=True,
-            text=True, encoding="utf-8", errors="replace", timeout=120)
-        combined = proc.stdout + proc.stderr
-        assert "cross-system" not in combined, (
-            f"a native path was refused:\n{combined[-1500:]}")
-
 
 class TestOwnPathsHelper:
     """`cliutil.own_paths` is the shared declaration point for tool paths."""

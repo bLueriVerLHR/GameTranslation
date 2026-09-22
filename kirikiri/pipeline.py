@@ -44,18 +44,15 @@ import glob
 import json
 import logging
 import os
+import contextlib
 import re
-import sys
 from typing import Annotated
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.dirname(_HERE)
-sys.path.append(REPO_ROOT)
+from kirikiri import xp3tool
+from kirikiri.ks_extract import load_ks
+from rpgmaker import cliutil, platform, settings
 
-from kirikiri import xp3tool  # noqa: E402
-from kirikiri.ks_extract import load_ks  # noqa: E402
-from rpgmaker import cliutil, platform, settings  # noqa: E402
-import contextlib
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 log = logging.getLogger("kirikiri.pipeline")
 

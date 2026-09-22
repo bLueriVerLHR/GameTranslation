@@ -383,9 +383,9 @@ ImageManager.loadBitmapFromUrlAsync = function(url) {
 `tools/unlock_gallery.py` 自动处理常见"全 CG 标志"情形：
 
 ```
-python tools\unlock_gallery.py <built>          # 检测 + 应用
-python tools\unlock_gallery.py <built> --dry-run   # 只报告
-python tools\unlock_gallery.py <built> --switches 45,1   # 覆盖检测
+python -m tools.unlock_gallery <built>          # 检测 + 应用
+python -m tools.unlock_gallery <built> --dry-run   # 只报告
+python -m tools.unlock_gallery <built> --switches 45,1   # 覆盖检测
 ```
 
 原理：按名字找画廊地图（回想/ギャラリー/回忆/画廊/album/…），扫该地图

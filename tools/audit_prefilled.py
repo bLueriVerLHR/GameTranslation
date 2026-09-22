@@ -7,19 +7,13 @@ polluting the bake.
 Consolidated from the long-run session audit_prefilled.py (docs/translation.md).
 
 Usage:
-    python tools\\audit_prefilled.py <prefilled.json> [--out <fixed.json>]
+    python -m tools.audit_prefilled <prefilled.json> [--out <fixed.json>]
 """
 import json
-import os
-import sys
 from typing import Annotated
 
-
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
-sys.path.insert(0, _HERE)                   # sibling tools
-from rpgmaker import japanese as japanese_utils  # noqa: E402
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
+from rpgmaker import japanese as japanese_utils
 
 KANA = japanese_utils.KANA
 

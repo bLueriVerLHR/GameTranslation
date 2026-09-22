@@ -57,12 +57,9 @@ import re
 import sys
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
-from tools import plugin_json_leaves  # noqa: E402
-from translation import mvkeys  # noqa: E402
-from translation import codes as tcodes  # noqa: E402
-from translation import rawlib  # noqa: E402
+from rpgmaker import cliutil
+from tools import plugin_json_leaves
+from translation import codes as tcodes, mvkeys, rawlib
 
 log = logging.getLogger("qc_build_kana")
 

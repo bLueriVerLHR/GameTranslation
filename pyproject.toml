@@ -1,10 +1,11 @@
 # GameTranslation project metadata and packaging config.
 #
 # The library-level packages (rpgmaker/kirikiri/tyrano/wolfrpg/unity) are
-# importable without installation because every script inserts the repo root
-# on sys.path; the `dependencies` below are what those packages import.  No
-# `pip install -e .` is required to run a checklist, but installing the
-# declared dependencies (or the extras) is what makes the pipeline work.
+# importable from the repository root through `python -m` entry points or an
+# editable install; production modules do not mutate sys.path.  The
+# `dependencies` below are what those packages import.  No `pip install -e .`
+# is required to run a checklist, but installing the declared dependencies
+# (or the extras) is what makes the pipeline work.
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -72,9 +73,9 @@ dev = ["pytest>=8", "pytest-xdist>=3", "pytest-cov>=5", "ruff>=0.5", "mypy>=1.11
 # tests/test_wheel_contents.py now pins this, so the list cannot silently
 # regress again.
 #
-# The sys.path convention inside tools/ (`import plain_io`) keeps working in an
-# installed wheel because those modules compute the sibling path from their own
-# __file__ and it resolves to <site-packages>/tools.
+# Tools are installed as a package so their documented `python -m tools.*`
+# entry points resolve package imports identically from a checkout and from
+# <site-packages>.
 packages = [
     "rpgmaker",
     "kirikiri",

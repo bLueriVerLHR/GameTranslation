@@ -11,21 +11,15 @@ Checks (each printed with a count + samples):
   control-code token diff key-vs-value.
 
 Usage:
-    python tools\\final_qc.py <merged.json> [--exempt kana_whitelist.txt]
+    python -m tools.final_qc <merged.json> [--exempt kana_whitelist.txt]
 """
 import json
-import os
 import re
 import sys
 from typing import Annotated
 
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import ctrl_codes  # noqa: E402
-from rpgmaker import japanese as japanese_utils  # noqa: E402
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, japanese as japanese_utils
+from tools import ctrl_codes
 
 KANA = japanese_utils.KANA
 CODE = re.compile(r"\\[A-Za-z]+(?:\[[^\]]*\])?")

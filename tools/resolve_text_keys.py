@@ -49,15 +49,11 @@ import glob
 import json
 import logging
 import os
-import sys
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from rpgmaker import cliutil  # noqa: E402
-from rpgmaker import plugins_io  # noqa: E402
-from tools import qc_build_kana  # noqa: E402
-from translation import codes as tcodes, mvkeys, prefill  # noqa: E402
+from rpgmaker import cliutil, plugins_io
+from tools import qc_build_kana
+from translation import codes as tcodes, mvkeys, prefill
 
 log = logging.getLogger("resolve_text_keys")
 

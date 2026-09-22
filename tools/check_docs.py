@@ -82,10 +82,8 @@ import sys
 from collections import namedtuple
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
-from rpgmaker import proctools  # noqa: E402
-from rpgmaker.tool_registry import find_git  # noqa: E402
+from rpgmaker import cliutil, proctools
+from rpgmaker.tool_registry import find_git
 
 # --- documentation gates -------------------------------------------------
 

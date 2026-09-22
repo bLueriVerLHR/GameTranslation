@@ -16,7 +16,7 @@ invariants that kept regressing between automated checks and play-testing:
   SAFE       text must stay clear of the engine's bottom-right control bar
 
 Usage:
-    python tools/check_tyrano_build.py --port 9390 --states 30 [--json]
+    python -m tools.check_tyrano_build --port 9390 --states 30 [--json]
 Start the build first (`tyrano/pipeline.py serve <dir> --port ...`) and launch a
 browser with a remote-debugging port.  The CDP client (cdp_shot.py) is an
 optional dependency: it is looked up in $VISUAL_CHECK_SCRIPTS first, then in
@@ -25,17 +25,14 @@ missing helper is reported instead of failing obscurely.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
 import os
-import sys
 import time
 from typing import Annotated
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
-sys.path.insert(0, _HERE)                   # sibling tools
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
 
 log = logging.getLogger("check_tyrano_build")
 
@@ -200,10 +197,14 @@ def load_cdp():
             "(the scripts dir of whatever provides it), or drop it in "
             "tools/cdp/ - this gate needs it to read the page over CDP."
             % (scripts or "<none>"))
-    if scripts not in sys.path:
-        sys.path.insert(0, scripts)
+    module_path = os.path.join(scripts, "cdp_shot.py")
+    spec = importlib.util.spec_from_file_location(
+        "gametranslation_external_cdp_shot", module_path)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"error: cannot load cdp_shot from {module_path}")
+    cdp_shot = importlib.util.module_from_spec(spec)
     try:
-        import cdp_shot
+        spec.loader.exec_module(cdp_shot)
     except ImportError as exc:  # pragma: no cover - environment dependent
         raise SystemExit(f"error: cannot import cdp_shot from {scripts}: {exc}") from exc
     return cdp_shot

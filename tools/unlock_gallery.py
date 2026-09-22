@@ -28,11 +28,8 @@ import re
 import sys
 from typing import Annotated
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
-sys.path.insert(0, _HERE)                   # sibling tools: plain_io
-import plain_io  # noqa: E402
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
+from tools import plain_io
 
 log = logging.getLogger("unlock_gallery")
 

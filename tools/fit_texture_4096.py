@@ -35,16 +35,13 @@ import json
 import logging
 import math
 import os
-import sys
 from typing import Annotated
 
 from PIL import Image
 
 import typer
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
-from rpgmaker import constants  # noqa: E402
+from rpgmaker import cliutil, constants
 
 log = logging.getLogger("fit_texture_4096")
 

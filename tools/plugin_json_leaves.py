@@ -43,17 +43,10 @@ game-specific: per-game exemptions belong in the --exempt file.
 import json
 import os
 import re
-import sys
 from typing import Annotated
 
-
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
-sys.path.insert(0, _HERE)                   # sibling tools
-from rpgmaker import japanese as japanese_utils  # noqa: E402
-from rpgmaker import plugins_io  # noqa: E402
-import plain_io  # noqa: E402
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, japanese as japanese_utils, plugins_io
+from tools import plain_io
 
 KANA = japanese_utils.KANA
 CJK = re.compile(r"[\u4e00-\u9fff]")

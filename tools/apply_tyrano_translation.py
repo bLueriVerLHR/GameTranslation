@@ -15,18 +15,13 @@ Usage:
 
 import logging
 import os
-import sys
 from typing import Annotated
 
 import typer
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/, tyrano/
-sys.path.insert(0, _HERE)                   # sibling tools: plain_io
-import plain_io  # noqa: E402
-from tyrano.tyrano_extract import load_ks  # noqa: E402
-
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
+from tools import plain_io
+from tyrano.tyrano_extract import load_ks
 
 log = logging.getLogger("apply_tyrano_translation")
 

@@ -15,7 +15,7 @@ RELATIVE TO work_dir, so the whole merge stays inside the work package no
 matter what the current directory is.
 
 Usage:
-    python tools\\merge_translation.py <work_dir> --chunks chunks_translated.json \\
+    python -m tools.merge_translation <work_dir> --chunks chunks_translated.json \\
         --prefilled <prefilled.json> [--sweep <sweep_rules.json>] [--out translated.json]
 
   --chunks    the merge_plain_chunks.py output (agent chunks).  Omitted for
@@ -24,14 +24,10 @@ Usage:
 import glob
 import json
 import os
-import sys
 from typing import Annotated
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import plain_io  # noqa: E402
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
+from tools import plain_io
 
 
 def load_sweeps(path):

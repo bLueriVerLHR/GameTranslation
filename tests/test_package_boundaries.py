@@ -46,21 +46,11 @@ ENGINE_PACKAGES = ("rpgmaker", "tyrano", "kirikiri", "wolfrpg", "unity")
 #: direction and not a cross-engine dependency.
 FOREIGN_ENGINE_PACKAGES = ("tyrano", "kirikiri", "wolfrpg", "unity")
 
-#: Modules that are still launched as *scripts* by hand rather than through
-#: their package.  Each declares `python -m <package>.<module>` as its
-#: inventory entry, but the package root is not importable in that form yet
-#: (`kirikiri/` and `unity/rmunite/` have no installed parent on `sys.path`
-#: when the script is run from inside the directory).  Removing their
-#: preamble needs the entry to change with it, which is a later phase; the
-#: exemption is listed here so it stays visible instead of being ignored.
-SCRIPT_FORM_ENTRIES = {
-    "kirikiri.merge_font": "kirikiri/merge_font.py",
-    "kirikiri.pipeline": "kirikiri/pipeline.py",
-    "tyrano.pipeline": "tyrano/pipeline.py",
-    "unity.rmunite.extract_game": "unity/rmunite/extract_game.py",
-    "unity.rmunite.prefill": "unity/rmunite/prefill.py",
-    "wolfrpg.dxarchive": "wolfrpg/dxarchive.py",
-}
+#: No package entry point is currently allowed to mutate `sys.path`.
+#: Former script-form entries were migrated to `python -m` invocation in the
+#: package cleanup.  Keep this explicit empty set as a guard against silently
+#: reintroducing a bootstrap exception.
+SCRIPT_FORM_ENTRIES = {}
 
 #: `from tools import <name>` edges that are legitimate: the engine libraries
 #: that really are shared (inventoried `shared-lib`) plus `tools/` importing
@@ -318,18 +308,13 @@ class TestNoReverseImportsOfTyrano:
         `rpgmaker.japanese` directly, and this test is what stops the pattern
         returning.
 
-        Only the packages are checked: the `tools/` maintenance scripts still
-        carry their own preambles so they can run from their directory, and
-        normalising those is a later phase.
+        All production packages and `tools/` maintenance modules are checked.
+        Maintenance status does not justify a hidden import bootstrap: module
+        entry points must be launched through `python -m` or an installed CLI.
         """
         checked = 0
         problems = []
         for rel, _module in _production_modules():
-            top = rel.split("/")[0]
-            if top == "tools":
-                continue        # deferred; see the docstring
-            if rel in SCRIPT_FORM_ENTRIES.values():
-                continue        # declared script-form entries, see the set
             checked += 1
             with open(os.path.join(REPO_ROOT, rel), encoding="utf-8") as fh:
                 tree = ast.parse(fh.read(), filename=rel)
@@ -364,15 +349,12 @@ class TestNoReverseImportsOfTyrano:
     def test_every_sys_path_mutator_is_either_fixed_or_declared(self):
         """No production module may mutate `sys.path` unnoticed.
 
-        The two legitimate groups are the `tools/` maintenance scripts
-        (deferred) and `SCRIPT_FORM_ENTRIES`.  Anything else means a new
-        preamble appeared without being reasoned about.
+        Package entry points and maintenance modules must not add a bootstrap
+        preamble; any path mutation means an import dependency was not modeled
+        as a package.
         """
         offenders = []
         for rel, _module in _production_modules():
-            top = rel.split("/")[0]
-            if top == "tools" or rel in SCRIPT_FORM_ENTRIES.values():
-                continue
             with open(os.path.join(REPO_ROOT, rel), encoding="utf-8") as fh:
                 tree = ast.parse(fh.read(), filename=rel)
             if _mutates_sys_path(tree):

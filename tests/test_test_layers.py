@@ -649,7 +649,8 @@ def test_ci_enforces_the_recorded_coverage_floors():
                       if job == "coverage"]
     assert coverage_steps, "ci.yml has no coverage job"
     joined = "\n".join(coverage_steps)
-    assert "tools/check_coverage.py" in joined, (
+    assert ("tools.check_coverage" in joined
+            or "tools/check_coverage.py" in joined), (
         "the coverage job never runs the floor checker")
     assert "coverage.json" in joined, (
         "the floor checker needs a JSON report (`--cov-report=json:...`)")
@@ -684,7 +685,9 @@ def test_ci_prints_the_skip_inventory():
     workflow - a tool nobody runs answers nothing.
     """
     workflow = _workflow()
-    assert "tools/skip_report.py" in workflow, (
+    marker = ("tools.skip_report" if "tools.skip_report" in workflow
+              else "tools/skip_report.py")
+    assert marker in workflow, (
         "CI does not report the skip inventory; add the step to the test job")
-    assert "--verbose" in workflow.split("tools/skip_report.py", 1)[1][:200], (
+    assert "--verbose" in workflow.split(marker, 1)[1][:200], (
         "the skip report must list each site, not only the totals")

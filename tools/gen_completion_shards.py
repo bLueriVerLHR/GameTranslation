@@ -20,18 +20,14 @@ import json
 import logging
 import os
 import re
-import sys
 from typing import Annotated
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
-sys.path.insert(0, _HERE)                   # sibling tools
-import plain_io  # noqa: E402
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
+from tools import plain_io
 # Single source for the game-owner tone policy (NEUTRAL_TONE + <work>/tone.md):
 # the full-flow and completion shard generators must never drift apart, and a
 # game's tone must never be hardcoded in a tool (docs/translation.md §3).
-from gen_translation_shards import load_tone  # noqa: E402
+from tools.gen_translation_shards import load_tone
 
 log = logging.getLogger("gen_completion_shards")
 

@@ -31,18 +31,12 @@ Usage:
 """
 
 import os
-import sys
 from typing import Annotated
 
 import typer
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(_HERE))  # repo root: rpgmaker/
-sys.path.insert(0, _HERE)                   # sibling tools
-import bake_translation  # noqa: E402
-from rpgmaker import japanese as japanese_utils  # noqa: E402
-import plain_io  # noqa: E402
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, japanese as japanese_utils
+from tools import bake_translation, plain_io
 
 # ADV text-resource detection uses the coarser hiragana+katakana block range
 # (U+3040-30FF, no half-width) - keep it distinct from the canonical KANA so

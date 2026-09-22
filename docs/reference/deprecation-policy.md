@@ -66,13 +66,12 @@
 
 | 对象 | 替代入口 | 状态 | 可删除条件 |
 |---|---|---|---|
-| `tools/extract_text.py` | `translation.cli prepare` | `superseded`，**零导入者** | 满足全部条件即可删 |
 | `tools/plain_to_translated.py` | `translation.cli bake` | `superseded` | 需确认非 MZ 引擎链不再引用旧 `===KEY===` 纯文本格式 |
 | `tools/translate_rpgmaker.py` | `translation.cli prepare` | `superseded` | 注意：仍被 `tools/bake_translation.py` 导入，删除前必须先迁移该调用 |
 | `tools/gen_csv_shards.py` | `translation.cli slice` | `superseded` | 需确认 CSV 分片链（非 MZ 引擎）已全部走 v2 |
 
-`superseded/` 归档目录已于本阶段删除（不在此表：它是归档目录本身而非工具），
-理由与过程见 `CHANGELOG.md` 的「删除」一节。
+`superseded/` 归档目录与 `tools/extract_text.py` 已删除；理由与过程见
+`CHANGELOG.md` 的「删除」一节。
 
 ## 什么**不算**弃用
 

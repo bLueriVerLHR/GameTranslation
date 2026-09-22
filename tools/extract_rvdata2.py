@@ -28,19 +28,11 @@ import collections
 import json
 import os
 import re
-import sys
 from typing import Annotated
 
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import ctrl_codes  # noqa: E402
-from rpgmaker import japanese as japanese_utils  # noqa: E402
-import rpgmaker_common  # noqa: E402
-import rpgmaker_constants  # noqa: E402
-from rvdata2_io import load_rvdata2  # noqa: E402
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil, japanese as japanese_utils
+from tools import ctrl_codes, rpgmaker_common, rpgmaker_constants
+from tools.rvdata2_io import load_rvdata2
 
 JA = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
 KANA = japanese_utils.KANA

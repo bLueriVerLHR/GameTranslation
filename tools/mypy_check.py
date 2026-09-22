@@ -41,14 +41,11 @@ import re
 import sys
 from typing import Annotated
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_ROOT = os.path.dirname(_HERE)
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
+import typer
 
-import typer  # noqa: E402
+from rpgmaker import cliutil, proctools
 
-from rpgmaker import cliutil, proctools  # noqa: E402
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Every package a documented entry point imports.  The same list the other
 # gates compile, so a module cannot be "checked" by one and skipped by another.

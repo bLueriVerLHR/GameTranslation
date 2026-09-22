@@ -16,14 +16,9 @@ Usage:
 """
 
 import os
-import sys
 from typing import Annotated
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-# Repo root, appended (not inserted) so a same-named sibling module in
-# this directory still wins.
-sys.path.append(os.path.dirname(_HERE))
-from rpgmaker import cliutil, platform  # noqa: E402
+from rpgmaker import cliutil, platform
 
 try:
     from fontTools.ttLib import TTFont, TTCollection

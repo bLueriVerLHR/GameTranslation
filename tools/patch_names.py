@@ -18,13 +18,9 @@ Writes a new JSON; the original dict is not modified.  Without rules.json the
 script is a no-op (reports 0 changes).
 """
 import json
-import os
-import sys
 from typing import Annotated
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from rpgmaker import cliutil  # noqa: E402
+from rpgmaker import cliutil
 
 
 def cmd(in_dict: Annotated[str, cliutil.Argument(

@@ -45,7 +45,8 @@ import os
 import re
 from typing import Annotated
 
-from rpgmaker import cliutil, japanese as japanese_utils, plugins_io
+from rpgmaker import cliutil, plugins_io
+from rpgmaker import japanese as japanese_utils
 from tools import plain_io
 
 KANA = japanese_utils.KANA
@@ -426,7 +427,7 @@ def cmd_apply(game_dir: Annotated[str, cliutil.Argument(
     # Single gate for every path this command touches, before the
     # first stat/open/mkdir (AGENTS.md CRITICAL cross-system rule).
     cliutil.own_paths("read plugin json leaves", game_dir=game_dir, work_dir=work_dir)
-    from translation import bake as bake_mod          # single plugins.js I/O
+    from translation import bake as bake_mod  # single plugins.js I/O
 
     pairs_path = pairs if os.path.isabs(pairs) else os.path.join(work_dir, pairs)
     if not os.path.isfile(pairs_path):

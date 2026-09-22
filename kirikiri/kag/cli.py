@@ -64,16 +64,29 @@ from typing import Annotated
 import typer
 
 from kirikiri import tjs2js
-from kirikiri.kag.assets import (_ASSET_CACHE, _convert_assets, _convert_videos,
-                                 _runtime_asset_maps, _video_map_from_output)
+from kirikiri.kag.assets import (
+    _ASSET_CACHE,
+    _convert_assets,
+    _convert_videos,
+    _runtime_asset_maps,
+    _video_map_from_output,
+)
 from kirikiri.kag.fonts import _inject_font, _inject_portrait
-from kirikiri.kag.project import (_collect_macros, _copy_tree,
-                                  _load_state_overrides, _state_overrides_js,
-                                  write_intents)
+from kirikiri.kag.project import (
+    _collect_macros,
+    _copy_tree,
+    _load_state_overrides,
+    _state_overrides_js,
+    write_intents,
+)
 from kirikiri.kag.scenario import convert_scenario_file
 from kirikiri.kag.shims import FAST_SKIP_SHIM_JS, RUNTIME_SHIM_IIFE, _shim_js
-from kirikiri.kag.tags import (_DROPPED_TAGS, SYSTEM_ISCRIPT_DROP,
-                               collect_scene_tags, collect_tag_usage)
+from kirikiri.kag.tags import (
+    _DROPPED_TAGS,
+    SYSTEM_ISCRIPT_DROP,
+    collect_scene_tags,
+    collect_tag_usage,
+)
 from rpgmaker import cliutil, platform
 
 log = logging.getLogger(__name__)

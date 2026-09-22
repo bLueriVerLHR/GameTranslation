@@ -43,10 +43,13 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
 
-from rpgmaker import assets, cliutil, japanese as japanese_utils, plugins_io
+from rpgmaker import assets, cliutil, plugins_io
+from rpgmaker import japanese as japanese_utils
 from tools import plain_io, resolve_text_keys, rpgmaker_common, rpgmaker_constants
 from tools.translate_rpgmaker import (
-    apply_font_policy, clear_encryption_flags, decrypt_dir,
+    apply_font_policy,
+    clear_encryption_flags,
+    decrypt_dir,
 )
 from translation import mvkeys
 

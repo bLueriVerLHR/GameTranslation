@@ -34,8 +34,8 @@ def _get_parser():
     global _parser
     if _parser is None:
         try:
-            from tree_sitter import Language, Parser
             import tree_sitter_javascript
+            from tree_sitter import Language, Parser
         except ImportError as exc:                 # pragma: no cover
             raise ImportError(
                 "the 'tree-sitter' and 'tree-sitter-javascript' packages are "

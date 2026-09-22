@@ -16,8 +16,7 @@ breakage documented in `docs/kirikiri-tyrano.md` §4.4.
 import logging
 from importlib import resources
 
-from kirikiri.kag.tags import (SHIM_TAG_NAMES, VIDEO_TAGS, engine_tag_names,
-                               tag_intent)
+from kirikiri.kag.tags import SHIM_TAG_NAMES, VIDEO_TAGS, engine_tag_names, tag_intent
 
 log = logging.getLogger(__name__)
 

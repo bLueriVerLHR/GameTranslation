@@ -62,8 +62,7 @@ from typing import Annotated
 
 import typer
 
-from . import logsetup
-from . import platform
+from . import logsetup, platform
 from .platform import CrossSideError
 
 __all__ = ["app", "command_app", "run", "setup_logging", "fail",

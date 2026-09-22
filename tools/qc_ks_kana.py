@@ -23,8 +23,13 @@ import logging
 import os
 from typing import Annotated
 
-from kirikiri.ks_extract import (KANA, display_text, iter_display_lines,
-                                load_ks, translatable)
+from kirikiri.ks_extract import (
+    KANA,
+    display_text,
+    iter_display_lines,
+    load_ks,
+    translatable,
+)
 from rpgmaker import cliutil
 
 log = logging.getLogger("qc_ks_kana")

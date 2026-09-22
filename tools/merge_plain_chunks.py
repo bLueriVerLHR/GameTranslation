@@ -24,7 +24,8 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
 
-from rpgmaker import cliutil, japanese as japanese_utils, runtime
+from rpgmaker import cliutil, runtime
+from rpgmaker import japanese as japanese_utils
 from tools import ctrl_codes, plain_io
 
 KANA = japanese_utils.KANA

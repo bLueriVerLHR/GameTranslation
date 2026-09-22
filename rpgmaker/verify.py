@@ -7,9 +7,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 from . import audio as audio_mod
-from . import media
-from . import plugincompat
-from . import runtime
+from . import media, plugincompat, runtime
 
 log = logging.getLogger("rpgmaker.verify")
 

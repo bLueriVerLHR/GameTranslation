@@ -40,11 +40,11 @@ then anything else by name.  Each archive is extracted **over** the previous
 ones into one tree, which is what the engine does at runtime.
 """
 
+import contextlib
 import glob
 import json
 import logging
 import os
-import contextlib
 import re
 from typing import Annotated
 
@@ -304,7 +304,7 @@ def _tree_size(root):
 
 def convert_game(profile, scenario_only=False):
     """Run the KAG3 -> Tyrano converter with the profile's options."""
-    from kirikiri.kag import convert       # lazy: keeps probing import-free
+    from kirikiri.kag import convert  # lazy: keeps probing import-free
 
     conv = profile["_convert"]
     fonts = conv.get("fonts") or default_fonts()

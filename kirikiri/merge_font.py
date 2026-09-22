@@ -21,7 +21,7 @@ from typing import Annotated
 from rpgmaker import cliutil, platform
 
 try:
-    from fontTools.ttLib import TTFont, TTCollection
+    from fontTools.ttLib import TTCollection, TTFont
 except ImportError as exc:                     # pragma: no cover - hint path
     raise ImportError(
         "fontTools is required to merge the Chinese and Japanese fonts - "

@@ -35,7 +35,8 @@ from typing import Annotated
 
 import typer
 
-from rpgmaker import cliutil, japanese as japanese_utils
+from rpgmaker import cliutil
+from rpgmaker import japanese as japanese_utils
 from tools import bake_translation, plain_io
 
 # ADV text-resource detection uses the coarser hiragana+katakana block range

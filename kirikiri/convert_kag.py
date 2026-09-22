@@ -14,32 +14,10 @@ as the historical import path and as the runnable entry point:
 """
 
 # ruff: noqa: F401  -- re-exporting is this module's entire job
-from kirikiri.kag.tags import (
-    KAG3_TAG_INTENT,
-    SHIM_TAG_NAMES,
-    SYSTEM_ISCRIPT_DROP,
-    TAG_MAP,
-    VIDEO_TAGS,
-    _DROPPED_TAGS,
-    _strip_js_comments,
-    collect_scene_tags,
-    collect_tag_usage,
-    engine_tag_names,
-    tag_intent,
-)
-from kirikiri.kag.shims import (
-    FAST_SKIP_SHIM_JS,
-    MAP_ENGINE_JS,
-    NOOP_PLUS_REAL_JS,
-    PORTRAIT_CSS,
-    RUNTIME_SHIM_IIFE,
-    VIDEO_SHIM_JS,
-    WAITSKIP_SHIM_JS,
-    _shim_js,
-)
+from kirikiri import tjs2js, tlg
 from kirikiri.kag.assets import (
-    IMAGE_EXTS,
     _ASSET_CACHE,
+    IMAGE_EXTS,
     _asset_map,
     _asset_map_from_output,
     _asset_map_full,
@@ -57,6 +35,18 @@ from kirikiri.kag.assets import (
     _runtime_asset_maps,
     _up_to_date,
     _video_map_from_output,
+)
+from kirikiri.kag.cli import convert, log, main
+from kirikiri.kag.fonts import (
+    _inject_font,
+    _inject_portrait,
+)
+from kirikiri.kag.project import (
+    _collect_macros,
+    _copy_tree,
+    _load_state_overrides,
+    _state_overrides_js,
+    write_intents,
 )
 from kirikiri.kag.scenario import (
     GRAPHIC_ATTR_RE,
@@ -76,20 +66,30 @@ from kirikiri.kag.scenario import (
     convert_ks_line,
     convert_scenario_file,
 )
-from kirikiri.kag.fonts import (
-    _inject_font,
-    _inject_portrait,
+from kirikiri.kag.shims import (
+    FAST_SKIP_SHIM_JS,
+    MAP_ENGINE_JS,
+    NOOP_PLUS_REAL_JS,
+    PORTRAIT_CSS,
+    RUNTIME_SHIM_IIFE,
+    VIDEO_SHIM_JS,
+    WAITSKIP_SHIM_JS,
+    _shim_js,
 )
-from kirikiri.kag.project import (
-    _collect_macros,
-    _copy_tree,
-    _load_state_overrides,
-    _state_overrides_js,
-    write_intents,
+from kirikiri.kag.tags import (
+    _DROPPED_TAGS,
+    KAG3_TAG_INTENT,
+    SHIM_TAG_NAMES,
+    SYSTEM_ISCRIPT_DROP,
+    TAG_MAP,
+    VIDEO_TAGS,
+    _strip_js_comments,
+    collect_scene_tags,
+    collect_tag_usage,
+    engine_tag_names,
+    tag_intent,
 )
-from kirikiri.kag.cli import convert, log, main
 from kirikiri.ks_extract import detect_encoding
-from kirikiri import tlg, tjs2js
 
 if __name__ == "__main__":
     raise SystemExit(main())

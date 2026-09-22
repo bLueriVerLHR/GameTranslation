@@ -17,7 +17,8 @@ import os
 import re
 from typing import Annotated
 
-from rpgmaker import cliutil, japanese as japanese_utils
+from rpgmaker import cliutil
+from rpgmaker import japanese as japanese_utils
 from tools import ctrl_codes
 
 # The canonical KANA (search pattern) is the value check; KANA_BLOCKS_HW was

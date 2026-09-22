@@ -16,7 +16,6 @@ import re
 import shutil
 from typing import Annotated
 
-
 from rpgmaker import cliutil, platform
 
 from . import asar as asar_mod

@@ -12,6 +12,7 @@ import re
 
 from rpgmaker import japanese, textencoding
 from rpgmaker.textencoding import decode_text, detect_encoding  # noqa: F401
+
 # re-exported: tools and the KAG passes import these two names from here, and
 # moving the implementation to core must not break their call sites.
 

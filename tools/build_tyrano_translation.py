@@ -40,8 +40,12 @@ import typer
 
 from rpgmaker import cliutil
 from tools import scenario_common
-from tyrano.tyrano_extract import (display_text, load_ks,
-                                   scenario_storage_refs, translatable)
+from tyrano.tyrano_extract import (
+    display_text,
+    load_ks,
+    scenario_storage_refs,
+    translatable,
+)
 
 log = logging.getLogger("build_tyrano_translation")
 

@@ -31,9 +31,15 @@ import re
 from collections import OrderedDict
 
 from . import mvkeys
-from .codes import (KANA_LETTERS_RE, bracket_pair, has_text_parameter,
-                    parameter_of, parse_codes, parse_code_sequence,
-                    split_keep_codes)
+from .codes import (
+    KANA_LETTERS_RE,
+    bracket_pair,
+    has_text_parameter,
+    parameter_of,
+    parse_code_sequence,
+    parse_codes,
+    split_keep_codes,
+)
 
 __all__ = ["HEADER_RE", "read_library", "write_library", "append_block",
            "read_jsonl", "read_jsonl_report", "append_jsonl", "apply_rewrites",

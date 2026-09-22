@@ -18,6 +18,7 @@ import re
 
 from rpgmaker import japanese, textencoding
 from rpgmaker.textencoding import decode_text, detect_encoding  # noqa: F401
+
 # Kept as re-exports: `tyrano.tyrano_extract.detect_encoding` is used by the
 # Tyrano passes and by tests, and the implementation is shared with KiriKiri
 # through core because both engines read .ks files from other people's builds.

@@ -15,10 +15,10 @@ import re
 import struct
 from typing import Annotated
 
-from rpgmaker import constants as rpg_constants
-from .tyrano_extract import load_ks
-
 from rpgmaker import cliutil, platform
+from rpgmaker import constants as rpg_constants
+
+from .tyrano_extract import load_ks
 
 log = logging.getLogger("tyrano.verify")
 

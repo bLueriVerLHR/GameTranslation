@@ -30,7 +30,8 @@ from typing import Annotated
 from rpgmaker import cliutil
 
 from . import bake as bake_mod
-from . import codes, mvkeys, prefill as prefill_mod, rawlib, workspace
+from . import codes, mvkeys, rawlib, workspace
+from . import prefill as prefill_mod
 
 log = logging.getLogger(__name__)
 

@@ -15,12 +15,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Annotated
 
 from rpgmaker import audio as rpg_audio
+from rpgmaker import cliutil, platform
 from rpgmaker import runtime as rpg_runtime
-from rpgmaker import platform
 from rpgmaker import tool_registry as rpg_tools
-from .tyrano_extract import load_ks
 
-from rpgmaker import cliutil
+from .tyrano_extract import load_ks
 
 log = logging.getLogger("tyrano.audio")
 

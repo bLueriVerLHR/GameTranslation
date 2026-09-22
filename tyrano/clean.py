@@ -11,7 +11,6 @@ import logging
 import os
 from typing import Annotated
 
-
 from rpgmaker import cliutil, platform
 
 log = logging.getLogger("tyrano.clean")

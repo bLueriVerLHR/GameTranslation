@@ -37,9 +37,14 @@ from typing import Annotated
 
 import typer
 
-from kirikiri.ks_extract import (display_text, iter_candidate_lines, load_ks,
-                                 scenario_storage_refs, split_line,
-                                 translatable_segments)
+from kirikiri.ks_extract import (
+    display_text,
+    iter_candidate_lines,
+    load_ks,
+    scenario_storage_refs,
+    split_line,
+    translatable_segments,
+)
 from rpgmaker import cliutil
 from tools import scenario_common
 

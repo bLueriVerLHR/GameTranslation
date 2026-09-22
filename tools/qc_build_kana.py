@@ -59,7 +59,8 @@ from typing import Annotated
 
 from rpgmaker import cliutil
 from tools import plugin_json_leaves
-from translation import codes as tcodes, mvkeys, rawlib
+from translation import codes as tcodes
+from translation import mvkeys, rawlib
 
 log = logging.getLogger("qc_build_kana")
 

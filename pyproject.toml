@@ -155,12 +155,13 @@ skip_covered = true
 #   UP  - pyupgrade: legacy syntax with a modern equivalent
 #   SIM - flake8-simplify: an equivalent but shorter control-flow shape
 #   PERF - perflint: a loop that rebuilds something the builtin already builds
+#   I    - import sorting for production packages and tools
 #
 # Deliberately NOT selected (they would fail on the repo's own conventions
-# rather than on defects): E402 and the rest of the E4/E7 groups (the
-# sys.path-import convention is already covered by the explicit `# noqa: E402`
-# markers), E501 line length, and `I` (import sorting), which has to wait for
-# the `sys.path` cleanup.
+# rather than on defects): E402 and the rest of the E4/E7 groups, and E501 line
+# length.  Tests retain a narrow I exemption because several subprocess and
+# source-check fixtures intentionally construct an isolated import path; the
+# production code has no such exemption.
 #
 # `UP031`/`UP030`/`SIM115` are selected but ignored, gated by a COUNT in
 # `[tool.gametranslation.lint-burndown]` instead: they are pure modernisation
@@ -283,7 +284,8 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-select = ["F", "E9", "B", "C4", "PIE", "RET", "UP", "SIM", "PERF"]
+select = ["F", "E9", "B", "C4", "PIE", "RET", "UP", "SIM", "PERF", "I"]
+per-file-ignores = {"tests/**/*.py" = ["I"]}
 ignore = [
     # Counted by the burn-down budget above, not waived: still selected so the
     # count can be measured, ignored so they do not fail the clean run.

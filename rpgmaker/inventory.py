@@ -255,6 +255,8 @@ _TOOLS_MAINTENANCE = [
            "python -m tools.bake_with_name_prefix"),
     Module("tools.batch_decode_tlg", "active", "maintenance", ("kirikiri",),
            False, "python -m tools.batch_decode_tlg"),
+    Module("tools.benchmark", "active", "maintenance", (), False,
+           "python -m tools.benchmark"),
     Module("tools.build_csv_template", "active", "maintenance", (), False,
            "python -m tools.build_csv_template"),
     Module("tools.build_ks_translation", "active", "maintenance", ("kirikiri",),

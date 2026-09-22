@@ -36,6 +36,8 @@
   **报出缺哪个包**（`SKIPPED` 不再与「通过」看起来一样）。
 - **跨系统路径归属门禁**：档案、各引擎读写入口、全部命令行工具都已接入
   `require_native_paths`，跨侧操作在打开后端之前就被拒绝并给出一行原因。
+- **可重复性能基准**：`python -m tools.benchmark run` 生成固定合成语料的
+  build/verify JSON 样本，`compare` 只在同一操作系统内比较趋势并拒绝明显回退。
 - **新增文档**：`docs/reference/deprecation-policy.md`（弃用政策）。
 - **贡献模板**：`docs/CONTRIBUTING.md` 新增五条标准步骤（新增引擎 / 命令 /
   测试 / 文档 / ADR），每条点名必须先改哪个文件（inventory 登记、

@@ -63,11 +63,15 @@ from .platform import (  # noqa: F401
     is_wsl,
     localize,
     platform_key,
-    posix as _posix,
     side_of,
     to_windows_path,
     to_wsl_path,
-    view as _view,
+)
+from .platform import (
+    posix as _posix,  # noqa: F401
+)
+from .platform import (
+    view as _view,  # noqa: F401
 )
 from .settings import (  # noqa: F401
     CONFIG_SCHEMA_VERSION,

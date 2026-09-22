@@ -37,9 +37,8 @@ import math
 import os
 from typing import Annotated
 
-from PIL import Image
-
 import typer
+from PIL import Image
 
 from rpgmaker import cliutil, constants
 

@@ -28,8 +28,7 @@ relative, and the probe bases supply the machine-specific part.
 import logging
 import os
 
-from . import workspace
-from . import platform
+from . import platform, workspace
 from .platform import view  # pure helpers, no platform branching
 from .settings import expand_env, load_machine_config, pick
 

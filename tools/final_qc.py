@@ -18,7 +18,8 @@ import re
 import sys
 from typing import Annotated
 
-from rpgmaker import cliutil, japanese as japanese_utils
+from rpgmaker import cliutil
+from rpgmaker import japanese as japanese_utils
 from tools import ctrl_codes
 
 KANA = japanese_utils.KANA

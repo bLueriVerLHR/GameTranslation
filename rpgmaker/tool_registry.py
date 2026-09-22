@@ -28,9 +28,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import PureWindowsPath
 
-from . import proctools
-from . import platform
-from . import settings
+from . import platform, proctools, settings
 from .platform import posix, view  # pure helpers, no platform branching
 
 __all__ = [

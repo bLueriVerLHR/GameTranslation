@@ -21,8 +21,8 @@ Agents keep the same escape structure in zh.txt: the same NUMBER of `\\n`
 escapes as the key line (message-window line count) and control codes with
 the `\\\\` prefix.
 """
-import os
 import json
+import os
 
 
 def load_json(path):

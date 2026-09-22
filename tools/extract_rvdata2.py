@@ -30,7 +30,8 @@ import os
 import re
 from typing import Annotated
 
-from rpgmaker import cliutil, japanese as japanese_utils
+from rpgmaker import cliutil
+from rpgmaker import japanese as japanese_utils
 from tools import ctrl_codes, rpgmaker_common, rpgmaker_constants
 from tools.rvdata2_io import load_rvdata2
 

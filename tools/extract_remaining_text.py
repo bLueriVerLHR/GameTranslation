@@ -28,7 +28,8 @@ import os
 import re
 from typing import Annotated
 
-from rpgmaker import cliutil, japanese as japanese_utils, plugins_io
+from rpgmaker import cliutil, plugins_io
+from rpgmaker import japanese as japanese_utils
 from tools import ctrl_codes, plain_io, rpgmaker_common, rpgmaker_constants
 
 # A line that is ONLY control codes (e.g. \M[お], \V[5], \C[27]) is a lookup

@@ -9,17 +9,16 @@ the runtime maps the shim resolves against) and the media conversion itself
 `_decoder_mtime()` is deliberately part of the image cache key -- see its
 docstring: a decoder fix must invalidate the images it produced.
 """
+import contextlib
 import logging
 import os
 import re
 import shutil
-from concurrent.futures import (ProcessPoolExecutor, ThreadPoolExecutor,
-                                as_completed)
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
 from kirikiri import tlg
 from kirikiri.ks_extract import decode_text, detect_encoding
 from rpgmaker import platform, runtime
-import contextlib
 
 log = logging.getLogger(__name__)
 

@@ -33,8 +33,8 @@ import typer
 from rpgmaker import audio as audio_mod
 from rpgmaker import build as build_mod
 from rpgmaker import clean as clean_mod
-from rpgmaker import cliutil, compress as compress_mod
-from rpgmaker import decrypt, deliver, detect, doctor, evb, plugincompat
+from rpgmaker import cliutil, decrypt, deliver, detect, doctor, evb, plugincompat
+from rpgmaker import compress as compress_mod
 from rpgmaker import serve as serve_mod
 from rpgmaker import verify as verify_mod
 
@@ -331,6 +331,7 @@ def cmd_tyrano_localize_ui(
     reported and something that fails the mechanical gate is refused.
     """
     import json
+
     from tyrano import ui_lang
     _own("localize the tyrano engine UI", out=out, mapping=mapping, dump=dump)
     lang = ui_lang.find_lang_file(out)

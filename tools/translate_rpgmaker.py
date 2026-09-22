@@ -33,7 +33,6 @@ import re
 import shutil
 from typing import Annotated
 
-
 from rpgmaker import assets, cliutil
 from tools import rpgmaker_common, rpgmaker_constants
 

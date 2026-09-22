@@ -53,7 +53,8 @@ from typing import Annotated
 
 from rpgmaker import cliutil, plugins_io
 from tools import qc_build_kana
-from translation import codes as tcodes, mvkeys, prefill
+from translation import codes as tcodes
+from translation import mvkeys, prefill
 
 log = logging.getLogger("resolve_text_keys")
 

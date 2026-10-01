@@ -46,12 +46,6 @@ ENGINE_PACKAGES = ("rpgmaker", "tyrano", "kirikiri", "wolfrpg", "unity")
 #: direction and not a cross-engine dependency.
 FOREIGN_ENGINE_PACKAGES = ("tyrano", "kirikiri", "wolfrpg", "unity")
 
-#: No package entry point is currently allowed to mutate `sys.path`.
-#: Former script-form entries were migrated to `python -m` invocation in the
-#: package cleanup.  Keep this explicit empty set as a guard against silently
-#: reintroducing a bootstrap exception.
-SCRIPT_FORM_ENTRIES = {}
-
 #: `from tools import <name>` edges that are legitimate: the engine libraries
 #: that really are shared (inventoried `shared-lib`) plus `tools/` importing
 #: its own siblings.  Anything else is the violation rule 1 prevents.
@@ -325,26 +319,6 @@ class TestNoReverseImportsOfTyrano:
         assert not problems, (
             "production packages must import their siblings normally:\n  "
             + "\n  ".join(problems))
-
-
-    @pytest.mark.parametrize("module", sorted(SCRIPT_FORM_ENTRIES))
-    def test_script_form_exemptions_are_real_script_entries(self, module):
-        """The sys.path exemption must correspond to a real `-m` entry.
-
-        Exempting a module whose package is already importable would hide a
-        violation, so require two things: the module exists in the inventory
-        as a live entry, and the file still really carries the preamble.
-        """
-        rel = SCRIPT_FORM_ENTRIES[module]
-        record = inventory.BY_MODULE.get(module)
-        assert record is not None, f"{module} is not inventoried"
-        assert record.status in ("active", "maintenance"), (
-            f"{module} is {record.status}; dead code does not need a sys.path exemption")
-        assert os.path.exists(os.path.join(REPO_ROOT, rel)), rel
-        with open(os.path.join(REPO_ROOT, rel), encoding="utf-8") as fh:
-            source = fh.read()
-        assert "sys.path.append" in source or "sys.path.insert" in source, (
-            f"{rel} no longer mutates sys.path; drop it from SCRIPT_FORM_ENTRIES")
 
     def test_every_sys_path_mutator_is_either_fixed_or_declared(self):
         """No production module may mutate `sys.path` unnoticed.

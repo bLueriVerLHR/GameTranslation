@@ -87,8 +87,11 @@ v1 的「切块 → 每块一个 subagent → 按行合并」已退役
 
 ## 环境要求
 
-- **Python 3.10+**。建本地虚拟环境 `.venv/`（gitignored）：
-  `pip install -e ".[images,unity,fonts,dev]"`。
+- **Python 3.14+**（不再支持 3.10 / 3.12）。开发环境按锁文件安装：
+  `python -m pip install uv`，然后
+  `uv sync --locked --python 3.14 --extra images --extra unity --extra fonts --extra dev`。
+  `.venv/` 不入库；原 Python 被移除或升级跨版本时，应备份后重建，不能仅改
+  `pyvenv.cfg`。普通使用者仍可 `pip install -e ".[images,unity,fonts]"`。
 - 外部程序只有**两个**必需：`ffmpeg`（仅 Vorbis 音频编码 —— PyAV 的 wheel
   不含 libvorbis）与 Windows 侧 `7z.exe`（仅跨系统桥接）。其余能力已在进程内
   实现（7z→py7zr、媒体→PyAV、asar→`asar`、JS 语法→tree-sitter），

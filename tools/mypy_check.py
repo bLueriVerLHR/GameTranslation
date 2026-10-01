@@ -26,12 +26,9 @@ Why a wrapper instead of a bare ``mypy`` invocation:
    cannot be burndown-managed; parsing the count is what lets the budget fall
    monotonically.
 
-The ``no_site_packages`` setting in ``[tool.mypy]`` is load-bearing for the
-same reason: this repo targets 3.10 while the dev venv runs 3.12, and numpy's
-bundled stub uses ``type`` statements (3.12-only syntax).  Following it into
-site-packages made mypy abort with ``Type statement is only supported in Python
-3.12 and greater`` - checking nothing, exit non-zero.  Third-party packages are
-typed ``Any`` here on purpose.
+The ``no_site_packages`` setting keeps the repository's error budget
+independent of third-party stub changes. Third-party packages are typed
+``Any`` deliberately. Runtime, lint and type checks share Python 3.14.
 """
 
 from __future__ import annotations
@@ -112,10 +109,7 @@ def error_budget() -> int:
 
 
 def _config() -> dict:
-    try:
-        import tomllib  # 3.11+
-    except ImportError:  # pragma: no cover - exercised on 3.10 ci
-        import tomli as tomllib
+    import tomllib
     with open(os.path.join(_ROOT, "pyproject.toml"), "rb") as handle:
         return tomllib.load(handle)
 

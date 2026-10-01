@@ -75,7 +75,7 @@ MEANINGFUL = "\\[]\n\r<>"
 #: ``TestBareCarriageReturn``; an interior **bare** CR is real data and now
 #: round-trips.  Surrogates are excluded - see ``_has_surrogate``.
 def _has_surrogate(text):
-    """True when `text` holds a lone surrogate code point.
+    r"""True when `text` holds a lone surrogate code point.
 
     Hypothesis' ``st.characters()`` can emit one (`\ud800`).  A Python ``str``
     may hold it, but no text file can: ``TextIOWrapper`` encodes with UTF-8,

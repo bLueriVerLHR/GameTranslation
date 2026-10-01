@@ -11,7 +11,7 @@
 
 ## 1. 环境要求
 
-- **Python 3.10+** 与运行时包 `typer` / `py7zr` / `av` / `asar` /
+- **Python 3.14+** 与运行时包 `typer` / `py7zr` / `av` / `asar` /
   `tree-sitter` / `tree-sitter-javascript`（图像步骤另需 `Pillow`，字体合并需
   `fonttools`；`pip install -e ".[images,dev]"` 一次装齐）。
 - ffmpeg（含 libvorbis）仅用于**音频编码**；探测/解码检查已改为 PyAV，

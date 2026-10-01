@@ -8,6 +8,7 @@ that reads it, so each test now patches the module that owns the name.
 """
 
 import ast
+import re
 import shutil
 
 import json
@@ -51,6 +52,16 @@ class TestRegistry:
         assert tool.cfg == "7z"
         assert tool.path_form == "windows"
         assert tool.resolver == "win_7z"
+
+
+@pytest.mark.parametrize("error", [OSError("unreadable directory"),
+                                  re.error("invalid pattern")])
+def test_glob_probe_failures_are_recoverable(monkeypatch, error):
+    def fail_glob(pattern):
+        raise error
+
+    monkeypatch.setattr(tool_registry.glob, "glob", fail_glob)
+    assert tool_registry._glob_hits("<install-root>/*/tool") == []
 
 
 class TestToolResolution:

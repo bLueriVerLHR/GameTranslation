@@ -32,10 +32,7 @@ import os
 import re
 import subprocess
 
-try:
-    import tomllib                 # Python 3.11+
-except ImportError:               # pragma: no cover - exercised on 3.10 ci
-    import tomli as tomllib        # dev extra; see pyproject.toml
+import tomllib
 
 import pytest
 

@@ -25,7 +25,7 @@ import os
 import re
 import shutil
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import PureWindowsPath
 
 from . import platform, proctools, settings
@@ -53,7 +53,7 @@ log = logging.getLogger("rpgmaker.tool_registry")
 POWERSHELL_TIMEOUT = 3600
 
 
-class ToolStatus(str, Enum):
+class ToolStatus(StrEnum):
     """What role a tool plays, so a missing one can be reported honestly.
 
     ``REQUIRED``          - a build cannot be completed without it.

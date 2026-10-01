@@ -62,13 +62,15 @@ class TestTheBudgetsComeFromPyproject:
                         "translation", "tools"):
             assert package in mypy_check.TARGETS
 
-    def test_the_config_targets_python_310(self):
-        """The repo supports 3.10, so the checker must judge 3.10."""
-        config = mypy_check._config()["tool"]["mypy"]
-        assert config["python_version"] == "3.10"
+    def test_the_config_targets_the_supported_python(self):
+        """Runtime and type checking must share the supported baseline."""
+        document = mypy_check._config()
+        config = document["tool"]["mypy"]
+        assert config["python_version"] == "3.14"
+        assert document["project"]["requires-python"] == ">=3.14"
 
     def test_the_config_ignores_site_packages(self):
-        """Load-bearing: numpy's 3.12-only stubs make mypy abort on 3.10."""
+        """Third-party stubs must not change the repository error budget."""
         config = mypy_check._config()["tool"]["mypy"]
         assert config["no_site_packages"] is True
 

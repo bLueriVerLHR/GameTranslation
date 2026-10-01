@@ -164,7 +164,7 @@ TyranoScript 的 `storage=` 是**按标签目录**解析的（`[bg]` 找 `bgimag
 
 | 软件 | 用途 | 现状 |
 | --- | --- | --- |
-| Python 3.10+（项目 `.venv`） | 转换器主体、脚本转换 | ✅ 已装（3.14） |
+| Python 3.14+（项目 `.venv`） | 转换器主体、脚本转换 | ✅ 已装（3.14） |
 | Pillow | 图片缩放/重采样（`tools/downscale_images.py`） | ✅ 已装（12.3） |
 | ffmpeg/ffprobe（libvorbis） | mp3/wav→ogg 重编码（`tyrano/audio.py`） | ✅ 已装 |
 | Node.js + npx（`@electron/asar`） | TyranoScript 构建（解包 asar） | ✅ 已装（v24） |

@@ -45,13 +45,9 @@ FIELDS = ("duration", "size", "codec", "channels", "sample_rate",
 # write them at container level.
 LOOP_TAGS = ("LOOPSTART", "LOOPLENGTH")
 
-# PyAV container-open options.  `metadata_errors="replace"` matters on real
-# doujin games: some Japanese tools write Vorbis comments in Shift-JIS, which
-# makes PyAV raise UnicodeDecodeError while decoding the tag values - a
-# perfectly valid audio file looked broken (the probe returned an error and
-# `verify --decode` reported it as corrupt).  Tags are only read for
-# LOOPSTART/LOOPLENGTH (ASCII), so replacing undecodable tag bytes is safe.
-OPEN_OPTS = {"metadata_errors": "replace"}
+# PyAV 19 tolerates non-UTF-8 metadata natively and removed metadata_errors.
+# The malformed Vorbis comment regression tests protect this behavior without
+# requiring a particular replacement representation from the library.
 
 
 def _av():
@@ -107,7 +103,7 @@ def probe(path):
     except OSError as exc:
         return {"error": f"cannot stat {path}: {exc}"}
     try:
-        with av.open(path, **OPEN_OPTS) as container:
+        with av.open(path) as container:
             stream = next((s for s in container.streams
                            if s.type == "audio"), None)
             if stream is None:
@@ -147,7 +143,7 @@ def probe_video(path):
     except OSError as exc:
         return {"error": f"cannot stat {path}: {exc}"}
     try:
-        with av.open(path, **OPEN_OPTS) as container:
+        with av.open(path) as container:
             stream = next((s for s in container.streams
                            if s.type == "video"), None)
             if stream is None:
@@ -169,7 +165,7 @@ def decode_ok(path):
     """
     av = _av()
     try:
-        with av.open(path, **OPEN_OPTS) as container:
+        with av.open(path) as container:
             stream = next((s for s in container.streams
                            if s.type in ("audio", "video")), None)
             if stream is None:
@@ -212,7 +208,7 @@ def transcode_to_webm(src_path, dst_path, crf=32, cpu_used=4,
     `crf` when size matters more than encoding time.
     """
     av = _av()
-    with av.open(str(src_path), **OPEN_OPTS) as src, \
+    with av.open(str(src_path)) as src, \
             av.open(str(dst_path), "w", format="webm") as dst:
         vsrc = next((s for s in src.streams if s.type == "video"), None)
         if vsrc is None:

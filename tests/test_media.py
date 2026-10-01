@@ -17,6 +17,7 @@ import struct
 import sys
 import wave
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -110,6 +111,36 @@ def ogg_with_bad_utf8_tags(src, dst):
     return str(dst)
 
 
+class TestDurationFallback:
+    def test_stream_duration_is_used_without_container_duration(self):
+        container = SimpleNamespace(duration=None)
+        stream = SimpleNamespace(duration=30, time_base=0.1)
+        assert media._duration_seconds(container, stream, "sample.ogg") == 3.0
+
+    @pytest.mark.parametrize("rate, samples, expected", [
+        (10, [10, 20], 3.0),
+        (10, [], 0.0),
+        (0, [10], None),
+    ])
+    def test_decode_fallback_handles_samples_empty_stream_and_unknown_rate(
+            self, rate, samples, expected):
+        stream = SimpleNamespace(duration=None, time_base=None,
+                                 codec_context=SimpleNamespace(sample_rate=rate))
+        frames = [SimpleNamespace(samples=n) for n in samples]
+        container = SimpleNamespace(duration=None, decode=lambda selected: iter(frames))
+        assert media._duration_seconds(container, stream, "sample.ogg") == expected
+
+    def test_broken_decode_returns_unknown_duration(self, caplog):
+        def fail_decode(stream):
+            raise ValueError("truncated packet")
+
+        container = SimpleNamespace(duration=None, decode=fail_decode)
+        stream = SimpleNamespace(duration=None, time_base=None)
+        with caplog.at_level("DEBUG", logger="rpgmaker.media"):
+            assert media._duration_seconds(container, stream, "broken.ogg") is None
+        assert "broken.ogg: duration decode failed: truncated packet" in caplog.text
+
+
 class TestProbeAudio:
     def test_non_utf8_vorbis_tags_do_not_break_probe(self, tmp_path):
         """Shift-JIS Vorbis comments must not make valid audio look broken.
@@ -119,14 +150,13 @@ class TestProbeAudio:
         probe fail and `verify --decode` report the file as corrupt.
         """
         src = ogg_with_bad_utf8_tags(REAL_OGG, tmp_path / "sjis.ogg")
-        import av
-
-        with pytest.raises(UnicodeDecodeError):
-            av.open(src)  # documents what the toolkit has to tolerate
+        assert b"\x82\xa0" in Path(src).read_bytes()
         info = media.probe(src)
         assert "error" not in info, info
         assert info["codec"] == "vorbis"
         assert 1.9 < info["duration"] < 2.1
+        assert info["loopstart"] == "22050"
+        assert info["looplength"] == "22050"
 
     def test_non_utf8_vorbis_tags_do_not_break_decode_check(self, tmp_path):
         src = ogg_with_bad_utf8_tags(REAL_OGG, tmp_path / "sjis.ogg")

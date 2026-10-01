@@ -9,7 +9,7 @@
 | 能力 | 唯一入口 | 用的包 |
 |---|---|---|
 | 7z 打包/校验/解包（同侧） | `rpgmaker/archive.py` | `py7zr`（zstd；实测比 `7z.exe -mmt` 快 1.7x、体积相同、互读通过） |
-| 媒体探测/解码检查 | `rpgmaker/media.py` | `av`（PyAV）——**不再需要 ffprobe** |
+| 媒体探测/解码检查 | `rpgmaker/media.py` | `av`（PyAV 19）——**不再需要 ffprobe** |
 | 视频转码（VP9+Opus WebM） | `rpgmaker/media.py::transcode_to_webm` | `av`（libvpx-vp9 + libopus，**不再需要 ffmpeg CLI**；实测帧数/时间戳/音频采样数与 CLI 完全一致、PSNR 差 ±0.3 dB，视频码流大约 6%） |
 | Electron app.asar 解包 | `tyrano/asar.py` | `asar`（纯 Python；**不再需要 Node.js/npx**；用官方 node 工具打的包（含 unpacked 条目）双向提取字节一致） |
 | JS 语法检查 | `rpgmaker/jssyntax.py` | `tree-sitter` + `tree-sitter-javascript`（**不再需要 `node --check`**；58 个真实 JS 文件 × 4 种变体共 225 例判定与 node 完全一致） |
@@ -45,7 +45,7 @@
 
 | 依赖 | 必要性 | 用途 |
 |---|---|---|
-| Python 3.10+ | 必需 | 全部工具 |
+| Python 3.14+ | 必需 | 全部工具；运行时、lint、类型检查与 CI 使用同一基线 |
 | `typer` `py7zr` `av` `asar` `tree-sitter` `tree-sitter-javascript` | 必需 | 见上表 |
 | `Pillow` / `numpy` | 可选（`.[images]`） | 图像步骤 |
 | `fonttools` | 可选（`.[fonts]`） | 字体合并 |

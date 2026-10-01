@@ -510,8 +510,8 @@ def create_key_file_string(
     name_table: bytes,
     file_table: bytes,
     dir_table: bytes,
-    directory: "DxaDirectory",
-    file_head: "DxaFileHead",
+    directory: DxaDirectory,
+    file_head: DxaFileHead,
     char_code_format: int,
 ) -> bytes:
     """Build the per-file key string: key + file name + directory chain."""
@@ -571,7 +571,7 @@ class DxaFileHead:
         self.huff_press_size = huff_press_size
 
     @classmethod
-    def from_bytes(cls, table: bytes, offset: int) -> "DxaFileHead":
+    def from_bytes(cls, table: bytes, offset: int) -> DxaFileHead:
         return cls(*cls._STRUCT.unpack_from(table, offset))
 
     @property
@@ -598,7 +598,7 @@ class DxaDirectory:
         self.file_head_addr = file_head_addr
 
     @classmethod
-    def from_bytes(cls, table: bytes, offset: int) -> "DxaDirectory":
+    def from_bytes(cls, table: bytes, offset: int) -> DxaDirectory:
         return cls(*cls._STRUCT.unpack_from(table, offset))
 
 

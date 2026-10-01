@@ -22,6 +22,13 @@
 
 ## [Unreleased]
 
+### 变更
+
+- **Python 基线升级至 3.14**：不再支持 3.10 / 3.12；ruff、mypy 与
+  Windows / Ubuntu CI 同步升级，开发与回归环境按 `uv.lock` 安装。
+- **媒体依赖迁移至 PyAV 19**：移除已删除的 `metadata_errors` 参数，
+  保留非 UTF-8 Vorbis 注释、循环标签、损坏媒体与视频转码的回归门禁。
+
 ### 新增
 
 - **共享 I/O 边界**：`rpgmaker/io_boundary.py` 成为文本 / JSON / JSONL 读写的

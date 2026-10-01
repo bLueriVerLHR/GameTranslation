@@ -56,6 +56,10 @@ commit message 同样自查。注：不要用「裸 `rg` 扫规则文本自身�
 
 ## 测试要求
 
+- **开发与 CI 基线为 Python 3.14**，不再兼容 3.10 / 3.12。依赖安装用
+  `uv sync --locked --python 3.14 --extra images --extra fonts --extra dev`；
+  回归命令用 `uv run --no-sync python ...`，避免每次运行隐式重新解析依赖。
+  修改依赖须更新 `uv.lock`，保留媒体、打包与分层门禁，不靠跳过测试解决迁移。
 - **新功能 / 新工具必须写单元测试**（`tests/`，pytest），**正例、反例、
   边缘情况都要覆盖**；提交前全量跑（venv 解释器按平台取，POSIX 为
   `.venv/bin/python`，Windows 为 `.venv\Scripts\python.exe`）：
@@ -79,8 +83,8 @@ commit message 同样自查。注：不要用「裸 `rg` 扫规则文本自身�
   选择的是**定位缺陷与等语法**的规则（F 未定义名/未用导入与变量/重定义，
   E9 语法错误，B 循环变量捕获/bare except/无 `strict=` 的 zip/`raise` 丢失
   原因，C4 重复构造的内建，PIE 冗余写法，RET 只为 return 的赋值，UP 旧语法，
-  SIM 等价但更短的写法，PERF 循环重复造轮子）；**不选风格类规则**
-  （E402/E501/RUF/`I` 排序等）——否则仓库自己的书写习惯会全部报错
+  SIM 等价但更短的写法，PERF 循环重复造轮子）；**不选广泛风格类规则**
+  （E402/E501/RUF 等）；生产代码额外启用 `I` 导入排序——否则仓库自己的书写习惯会全部报错
   （本机全局 ruff 配置 `select = ALL` 会报出 1112 条，绝大多数是风格）。
   但 `UP031`/`UP030`/`SIM115` 是「选中但被 ignore，用计数预算卡住」的：
   它们是纯现代化、本身不是缺陷，而全仓 ~640 处机械改写有真实行为风险

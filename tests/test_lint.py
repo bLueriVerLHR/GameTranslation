@@ -26,10 +26,7 @@ import re
 import subprocess
 import sys
 
-try:
-    import tomllib                 # Python 3.11+
-except ImportError:               # pragma: no cover - exercised on 3.10 ci
-    import tomli as tomllib        # dev extra; see pyproject.toml
+import tomllib
 
 import pytest
 
@@ -84,8 +81,8 @@ def test_the_lint_config_is_actually_selected():
     # the bad-name rule is NOT selected (style, not a defect)
     assert "ambiguous-variable-name" not in settings
     # the repo's target version and excludes were read from pyproject.toml
-    assert 'unresolved_target_version = "3.10"' in settings or \
-        "unresolved_target_version = 3.10" in settings
+    assert 'unresolved_target_version = "3.14"' in settings or \
+        "unresolved_target_version = 3.14" in settings
     # the pinned exclude list was read from pyproject.toml too
     assert '"docs/table"' in settings
     assert '".private"' in settings and '".asset"' in settings

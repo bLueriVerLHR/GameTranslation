@@ -19,7 +19,7 @@ check ownership once at its entrance rather than re-deriving it per call.
 import os
 import sys
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 __all__ = [
@@ -293,7 +293,7 @@ def require_same_side(what, **paths) -> SideReport:
 
 # ------------------------------------------------------- ownership types
 
-class StorageSide(str, Enum):
+class StorageSide(StrEnum):
     """Which storage a path physically lives on.
 
     ``WINDOWS`` - the bytes live on the Windows filesystem (spelled
@@ -311,7 +311,7 @@ class StorageSide(str, Enum):
     NATIVE = "native"
 
 
-class PathDomain(str, Enum):
+class PathDomain(StrEnum):
     """Coarse classification of how a path is *spelled*.
 
     Used for diagnostics and for the path property tests.  It is deliberately
@@ -414,19 +414,19 @@ class PathRef:
     # -- constructors ---------------------------------------------------
 
     @classmethod
-    def parse(cls, path) -> "PathRef":
+    def parse(cls, path) -> PathRef:
         """Classify a stored path into an owned reference."""
         if isinstance(path, cls):
             return path
         return cls("" if path is None else os.fspath(path), side_of(path))
 
     @classmethod
-    def windows(cls, path) -> "PathRef":
+    def windows(cls, path) -> PathRef:
         """A reference known (not guessed) to be Windows-side."""
         return cls(str(path), StorageSide.WINDOWS)
 
     @classmethod
-    def posix(cls, path) -> "PathRef":
+    def posix(cls, path) -> PathRef:
         """A reference known (not guessed) to be POSIX-side."""
         return cls(str(path), StorageSide.POSIX)
 

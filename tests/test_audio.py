@@ -24,7 +24,7 @@ class TestProbe:
     def test_probe_one_reads_a_real_ogg(self, tmp_path):
         """Probing goes through PyAV: a real Ogg Vorbis fixture must report
         its codec/rate/channels/duration AND its loop tags."""
-        from conftest import real_ogg
+        from tests.helpers import real_ogg
         info = audio.probe_one(real_ogg(str(tmp_path / "bgm1.ogg")))
         assert info["codec"] == "vorbis"
         assert info["channels"] == 1

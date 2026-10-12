@@ -22,17 +22,13 @@ import os
 import sys
 
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
-
-import bake_translation as bake  # noqa: E402
-import build_translation as bt  # noqa: E402
-from rpgmaker import japanese as japanese_utils  # noqa: E402
-import gen_translation_shards as gts  # noqa: E402
-import merge_plain_chunks as mpc  # noqa: E402
-import merge_translation as mt  # noqa: E402
-import plain_io  # noqa: E402
+from tools import bake_translation as bake
+from tools import build_translation as bt
+from rpgmaker import japanese as japanese_utils
+from tools import gen_translation_shards as gts
+from tools import merge_plain_chunks as mpc
+from tools import merge_translation as mt
+from tools import plain_io
 
 
 def write_json(path, data):

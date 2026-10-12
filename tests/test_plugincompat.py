@@ -9,7 +9,7 @@ import logging
 import os
 
 import pytest
-from conftest import make_game
+from tests.helpers import make_game
 
 from rpgmaker import cli, jssyntax, plugincompat, verify
 

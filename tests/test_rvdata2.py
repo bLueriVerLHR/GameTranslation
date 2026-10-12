@@ -8,7 +8,7 @@ import struct
 
 import pytest
 
-from rvdata2_io import Decoder, MarshalError, load_rvdata2
+from tools.rvdata2_io import Decoder, MarshalError, load_rvdata2
 
 HDR = b"\x04\x08"
 

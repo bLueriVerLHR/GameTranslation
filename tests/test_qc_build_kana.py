@@ -9,7 +9,7 @@ import os
 
 import pytest
 
-import qc_build_kana as qc
+from tools import qc_build_kana as qc
 
 # hand-written kana, spelled with escapes so the file stays ASCII-safe
 KANA_TEXT = "\u3053\u3093\u306b\u3061\u306f"          # こんにちは

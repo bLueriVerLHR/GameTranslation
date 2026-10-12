@@ -10,13 +10,8 @@ but it must not start translating expressions or reference names, which would
 break comparisons and jumps.
 """
 
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from kirikiri.ks_extract import (display_text, iter_candidate_lines,
-                                 tag_text_attrs, translatable)  # noqa: E402
+                                 tag_text_attrs, translatable)
 
 
 def test_custom_macro_display_attributes_are_extracted():

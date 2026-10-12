@@ -366,11 +366,14 @@ def cmd_tyrano_verify(
     out: str = typer.Argument(..., help="built game folder"),
     source: str = typer.Option(None, help="original game folder"),
     png: bool = typer.Option(True, "--png/--no-png", help="also check PNG limits"),
+    assets: bool = typer.Option(True, "--assets/--no-assets",
+                                help="also check image/video asset refs"),
 ):
-    """Check layout, save backend, audio refs and PNG limits."""
+    """Check layout, save backend, audio and asset refs, and PNG limits."""
     _own("verify the tyrano build", out=out, source=source)
     from tyrano import verify as tyrano_verify
-    problems = tyrano_verify.verify(out, source=source, check_png=png)
+    problems = tyrano_verify.verify(out, source=source, check_png=png,
+                                    check_assets=assets)
     for problem in problems:
         log.error("verify: %s", problem)
     if problems:

@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
 """Unit tests for tools/downscale_images.py mobile-safe PNG downscaling."""
 import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.dirname(os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__)))))
 
 import pytest
 
-import downscale_images as di
+from tools import downscale_images as di
 
 
 @pytest.fixture

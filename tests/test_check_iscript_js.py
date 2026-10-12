@@ -9,14 +9,9 @@ Parsing is in-process (`rpgmaker.jssyntax`, tree-sitter) instead of
 `node --check`, so these tests need no Node.js install.
 """
 import json
-import os
-import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
-
-from tools import check_iscript_js as cij  # noqa: E402
-from rpgmaker import jssyntax  # noqa: E402
+from tools import check_iscript_js as cij
+from rpgmaker import jssyntax
 
 
 def write_ks(path, text, encoding="utf-8"):

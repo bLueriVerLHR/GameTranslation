@@ -10,11 +10,8 @@ Two owner requirements after the first real-device test:
 """
 
 import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from kirikiri.kag import project, shims  # noqa: E402
+from kirikiri.kag import project, shims
 
 
 class TestMobilePanelPosition:

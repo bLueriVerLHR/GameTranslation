@@ -196,8 +196,8 @@ class TestCorruptArchiveFailsTheRun:
     """A 7z integrity failure must not leave a green exit code behind."""
 
     def test_pipeline_compress_exits_1(self, tmp_path, monkeypatch):
-        import pipeline
-        from conftest import make_game
+        from rpgmaker import cli as pipeline
+        from tests.helpers import make_game
         web = make_game(str(tmp_path / "g"))
         monkeypatch.setattr(compress, "compress", lambda *a, **kw: "x.7z")
         monkeypatch.setattr(compress, "test_archive", lambda a: False)
@@ -206,8 +206,8 @@ class TestCorruptArchiveFailsTheRun:
         assert ei.value.code == 1
 
     def test_pipeline_compress_ok_stays_0(self, tmp_path, monkeypatch):
-        import pipeline
-        from conftest import make_game
+        from rpgmaker import cli as pipeline
+        from tests.helpers import make_game
         web = make_game(str(tmp_path / "g"))
         monkeypatch.setattr(compress, "compress", lambda *a, **kw: "x.7z")
         monkeypatch.setattr(compress, "test_archive", lambda a: True)

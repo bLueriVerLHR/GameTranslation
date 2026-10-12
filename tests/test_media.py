@@ -14,19 +14,15 @@ fixture is tracked, so it works on any machine.
 import math
 import os
 import struct
-import sys
 import wave
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT))
+from tests.helpers import REAL_OGG, make_wmv, real_ogg
 
-from conftest import REAL_OGG, make_wmv, real_ogg  # noqa: E402
-
-from rpgmaker import media  # noqa: E402
+from rpgmaker import media
 
 
 def make_wav(path, seconds=1.0, rate=22050, channels=1):

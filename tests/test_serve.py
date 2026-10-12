@@ -22,7 +22,7 @@ import urllib.request
 
 import pytest
 
-from conftest import free_port, make_game
+from tests.helpers import free_port, make_game
 
 from rpgmaker import serve
 

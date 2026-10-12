@@ -17,14 +17,11 @@ failure paths are tested directly rather than only the happy path.
 import errno
 import json
 import os
-import sys
 
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-
-from rpgmaker import io_boundary  # noqa: E402
+from rpgmaker import io_boundary
 
 
 def _leftovers(directory):

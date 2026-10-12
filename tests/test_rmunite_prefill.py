@@ -15,10 +15,7 @@ import sys
 
 import pytest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-
-from unity.rmunite import prefill  # noqa: E402
+from unity.rmunite import prefill
 
 
 def write_json(path, data):
@@ -44,10 +41,9 @@ class TestImportIsSideEffectFree:
     def test_import_without_argv_does_not_execute(self):
         # Module-level execution (old code) would call parse_args() with an
         # empty argv and exit(2).  A clean import must succeed and expose main.
-        code = (f"import sys; sys.path.insert(0, {REPO_ROOT!r}); "
-                "from unity.rmunite import prefill; "
+        code = ("from unity.rmunite import prefill; "
                 "assert hasattr(prefill, 'main'); print('OK')")
-        r = subprocess.run([sys.executable, "-c", code],
+        r = subprocess.run([sys.executable, "-I", "-c", code],
                            capture_output=True, text=True,
                            encoding="utf-8", errors="replace")
         assert r.returncode == 0, r.stderr

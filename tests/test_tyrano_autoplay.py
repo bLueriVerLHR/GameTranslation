@@ -11,12 +11,8 @@ The expected wrapped form below is byte-identical to the patch that was
 hand-applied and shipped in a real delivered build (round-trip verified).
 """
 import os
-import sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO)
-
-from tyrano import autoplay  # noqa: E402
+from tyrano import autoplay
 
 KAG_REL = os.path.join("tyrano", "plugins", "kag", "kag.tag_ext.js")
 

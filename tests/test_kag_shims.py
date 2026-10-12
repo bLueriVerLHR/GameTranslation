@@ -10,16 +10,13 @@ converter's byte-identical output gate covers the rest.
 """
 import ast
 import os
-import sys
 import tomllib
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from kirikiri import convert_kag as ck  # noqa: E402
-from kirikiri.kag import cli as kag_cli  # noqa: E402
-from kirikiri.kag import shims  # noqa: E402
+from kirikiri import convert_kag as ck
+from kirikiri.kag import cli as kag_cli
+from kirikiri.kag import shims
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 JS_DIR = os.path.join(REPO, "kirikiri", "kag", "js")

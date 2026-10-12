@@ -18,9 +18,7 @@ import sys
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
-
-from tyrano import asar as asar_mod  # noqa: E402
+from tyrano import asar as asar_mod
 
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "tiny_app.asar")
 

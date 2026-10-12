@@ -11,14 +11,11 @@ dropped 84% of another game's assets).
 """
 import hashlib
 import os
-import sys
 from collections import Counter
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from kirikiri.kag import assets  # noqa: E402
+from kirikiri.kag import assets
 
 FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "fixtures", "tlg")

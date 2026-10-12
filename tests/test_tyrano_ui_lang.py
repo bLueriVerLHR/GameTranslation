@@ -8,14 +8,11 @@ the mechanical gate and the refusal to touch anything else.
 """
 import json
 import os
-import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO)
+import pytest
 
-import pytest  # noqa: E402
-
-from tyrano import ui_lang as ul  # noqa: E402
+from tyrano import ui_lang as ul
 
 # Mirrors the real file's shape: two blocks, mixed quotes, a placeholder, an
 # escaped newline, a multi-line value and a `novel` filename block.

@@ -19,9 +19,7 @@ import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOL = os.path.join(REPO_ROOT, "tools", "check_coverage.py")
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
-
-import check_coverage as cc  # noqa: E402
+from tools import check_coverage as cc
 
 
 def _entry(statements, covered_lines, branches, covered_branches):

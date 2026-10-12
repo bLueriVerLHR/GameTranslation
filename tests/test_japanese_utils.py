@@ -6,14 +6,9 @@ Guards the C4 convergence contract: every tool that previously inlined its
 own kana pattern now shares a constant from this module, and each shared
 constant keeps the exact character set it replaced (behavior unchanged).
 """
-import os
 import re
-import sys
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-
-from rpgmaker import japanese as japanese_utils  # noqa: E402
+from rpgmaker import japanese as japanese_utils
 
 
 class TestKANA:

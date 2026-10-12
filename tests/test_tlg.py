@@ -18,13 +18,11 @@ the provenance recorded in tests/fixtures/MANIFEST.json.
 import os
 import random
 import struct
-import sys
 import zlib
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from kirikiri import tlg
 

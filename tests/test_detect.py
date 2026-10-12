@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for rpgmaker/detect.py engine/layout detection."""
 
-from conftest import make_game
+from tests.helpers import make_game
 
 from rpgmaker import detect
 

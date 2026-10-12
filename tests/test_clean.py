@@ -3,7 +3,7 @@
 import os
 
 import pytest
-from conftest import fs_is_case_sensitive, make_game
+from tests.helpers import fs_is_case_sensitive, make_game
 
 from rpgmaker import clean
 

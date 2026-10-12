@@ -5,16 +5,10 @@ Covers: transcript output stays one physical line per entry even for
 multi-line keys (the estimator accuracy requirement), and the auto-sizing
 estimate for global chunks mirrors the writer's key-count split.
 """
-import importlib.util
 import os
 import random
 
-
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-spec = importlib.util.spec_from_file_location(
-    "gts", os.path.join(REPO_ROOT, "tools", "gen_translation_shards.py"))
-gts = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(gts)
+from tools import gen_translation_shards as gts
 
 
 class _Args:

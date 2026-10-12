@@ -15,19 +15,14 @@ Marked `media`: the fixture is a real WMV encoded by PyAV and the assertions
 cover a real VP9+Opus round trip, so the PyAV build must carry libvpx-vp9.
 """
 import os
-import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
-sys.path.insert(0, os.path.join(ROOT, "tools"))
+import pytest
 
-import pytest  # noqa: E402
+from tests.helpers import make_wmv
 
-from conftest import make_wmv  # noqa: E402
-
-import transcode_video as tv  # noqa: E402
-from kirikiri import xp3pack, xp3tool  # noqa: E402
-from rpgmaker import media  # noqa: E402
+from tools import transcode_video as tv
+from kirikiri import xp3pack, xp3tool
+from rpgmaker import media
 
 
 pytestmark = pytest.mark.media

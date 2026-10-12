@@ -18,7 +18,7 @@ Contract under test:
 """
 import json
 
-import qc_translation_chunks as qc
+from tools import qc_translation_chunks as qc
 
 KEY = "\u3053\u3093\u306b\u3061\u306f"            # hiragana key
 KEY_CODE = "\\C[27]" + KEY                        # key carrying a control code

@@ -6,12 +6,7 @@ config.ks (the real file is bgm004.ogg), and that single comment failed the
 release gate for a build that was fine.  KAG3 comments are `;`-prefixed.
 """
 
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from tyrano import verify  # noqa: E402
+from tyrano import verify
 
 
 def make_web(root, scenario_body):

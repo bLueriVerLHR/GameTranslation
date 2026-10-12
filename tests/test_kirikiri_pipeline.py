@@ -17,17 +17,12 @@ game data is needed.  Coverage:
 
 import json
 import os
-import sys
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tests.test_xp3tool import junk, make_archive, obfuscated_names
 
-from test_xp3tool import junk, make_archive, obfuscated_names  # noqa: E402
-
-from kirikiri import pipeline  # noqa: E402
+from kirikiri import pipeline
 
 
 # ---------------------------------------------------------------------------

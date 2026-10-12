@@ -4,7 +4,7 @@ import json
 import os
 import random
 
-from conftest import make_game
+from tests.helpers import make_game
 
 from rpgmaker import constants
 from rpgmaker import decrypt as dec

@@ -7,13 +7,10 @@ for - `H岠壥壒2` really is what `H効果音2` looks like after that round tri
 so the assertions document the actual artifact instead of a made-up one.
 """
 import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
-import fix_mojibake_names as fm
+from tools import fix_mojibake_names as fm
 
 # (on-disk mojibake, original name)
 KNOWN = [

@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-import plain_io
+from tools import plain_io
 
 
 class TestEscapeRoundTrip:

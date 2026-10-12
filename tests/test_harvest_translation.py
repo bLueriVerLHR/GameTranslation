@@ -17,13 +17,8 @@ Contract under test (module docstring + docs/translation.md):
 """
 import json
 import logging
-import os
-import sys
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
-
-import harvest_translation as harvest  # noqa: E402
+from tools import harvest_translation as harvest
 
 
 def write_json(path, data, encoding="utf-8"):

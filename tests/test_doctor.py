@@ -295,7 +295,7 @@ class TestPipelineWiring:
         monkeypatch.setattr(doctor_mod, "run", fake_run)
 
     def test_pipeline_doctor_exits_with_code(self, monkeypatch, healthy):
-        import pipeline as pipeline_mod
+        from rpgmaker import cli as pipeline_mod
         calls = {}
         self._patch_doctor(monkeypatch, 1, calls)
         with pytest.raises(SystemExit) as e:
@@ -304,14 +304,14 @@ class TestPipelineWiring:
         assert calls["argv"] == []
 
     def test_pipeline_doctor_json_flag(self, monkeypatch, healthy):
-        import pipeline as pipeline_mod
+        from rpgmaker import cli as pipeline_mod
         calls = {}
         self._patch_doctor(monkeypatch, 0, calls)
         assert pipeline_mod.main(["doctor", "--json"]) is None
         assert calls["argv"] == ["--json"]
 
     def test_pipeline_help_lists_doctor(self, capsys):
-        import pipeline as pipeline_mod
+        from rpgmaker import cli as pipeline_mod
         assert pipeline_mod.main(["--help"]) is None
         assert "doctor" in capsys.readouterr().out
 

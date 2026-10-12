@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-import augment_adv_resources as aug
+from tools import augment_adv_resources as aug
 
 JA1 = "こんにちは"
 JA2 = "さようなら"

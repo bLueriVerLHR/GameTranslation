@@ -11,16 +11,11 @@ Test data uses "A" as a neutral non-kana prefix: a value like "Aッ" is not a
 pure-kana line, so the rule tables apply, which is what most cases exercise.
 """
 import json
-import os
 import sys
 
 import pytest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
-
-import clean_kana_ticks as ckt  # noqa: E402
+from tools import clean_kana_ticks as ckt
 
 
 @pytest.fixture

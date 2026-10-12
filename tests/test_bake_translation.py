@@ -16,13 +16,8 @@ import glob
 import json
 import os
 import shutil
-import sys
 
-
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
-
-import bake_translation as bake  # noqa: E402
+from tools import bake_translation as bake
 
 
 def write_json(path, data):

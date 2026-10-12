@@ -103,7 +103,8 @@ testpaths = ["tests"]
 # Measured with pytest-xdist on this suite: 27.8 s serial -> 11.2 s with
 # `-n auto` (1163 tests).  The suite is parallel-safe (every test builds its
 # own tmp game and binds its own free port); `-n 0` runs it serially.
-addopts = "-n auto"
+# Import test modules by package name without prepending source directories.
+addopts = "-n auto --import-mode=importlib"
 # Layers (PLAN Phase 5 task 2).  A marker means "this test needs something the
 # PR runner may not have", so the fast layer is exactly the unmarked tests:
 #   pytest tests -m "not slow and not media and not node and not engine_runtime"
@@ -160,9 +161,9 @@ skip_covered = true
 #
 # Deliberately NOT selected (they would fail on the repo's own conventions
 # rather than on defects): E402 and the rest of the E4/E7 groups, and E501 line
-# length.  Tests retain a narrow I exemption because several subprocess and
-# source-check fixtures intentionally construct an isolated import path; the
-# production code has no such exemption.
+# length.  Tests retain a narrow I exemption for fixture-heavy scaffolding;
+# both tests and production modules use package imports, not sys.path surgery.
+# Import-resolution regressions are guarded by tests/test_import_contracts.py.
 #
 # `UP031`/`UP030`/`SIM115` are selected but ignored, gated by a COUNT in
 # `[tool.gametranslation.lint-burndown]` instead: they are pure modernisation

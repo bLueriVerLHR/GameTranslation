@@ -11,13 +11,8 @@ rewritten to `../fgimage/TITLE.MA`, the shim's own fetch prefixed `./data/`,
 and the browser ended up requesting `/fgimage/TITLE.MA` -> 404.  Found by
 checking the server request log for 404s, not by looking at the screen.
 """
-import os
-import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
-
-from kirikiri import convert_kag as ck  # noqa: E402
+from kirikiri import convert_kag as ck
 
 # JS as the browser sees it: the Python literal "\." is the regex "\."
 DOT_SLASH_STRIP = "replace(/^\\.\\.\\//, '')"

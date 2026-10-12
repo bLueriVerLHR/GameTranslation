@@ -12,7 +12,7 @@ kept a Japanese title and Japanese element names at 100% coverage).
 
 This test is the drift alarm.
 """
-import rpgmaker_constants as constants
+from tools import rpgmaker_constants as constants
 
 from translation import mvkeys
 

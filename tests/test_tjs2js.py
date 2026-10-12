@@ -1,9 +1,5 @@
 """Unit tests for kirikiri/tjs2js.py (TJS2 -> JS converter)."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from kirikiri import tjs2js
 

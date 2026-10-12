@@ -15,14 +15,11 @@ rather than a copy in each engine.  Measured facts this file pins:
 """
 import codecs
 import os
-import sys
 
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-
-from rpgmaker import textencoding  # noqa: E402
+from rpgmaker import textencoding
 
 TEXT = "本文です。\n"
 

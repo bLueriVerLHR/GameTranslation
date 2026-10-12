@@ -1,0 +1,47 @@
+#!/bin/sh
+# Refuse to author a commit on a protected branch.
+#
+# AGENTS.md, "main 保护" (main protection): main only receives work that has
+# been audited and reviewed, and only through a merge from a reviewed branch.
+# A conflicted merge is *concluded* by `git commit`, so a merge in progress
+# must stay allowed - otherwise this hook would block the one sanctioned way
+# to land work into main.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# Check it is on:         tools/check_all.py  (reports the hooksPath state)
+# Deliberate bypass:      git commit --no-verify   (say why in the session)
+#
+# Messages are English on purpose: this is a code file (AGENTS.md language
+# rule) and a CJK message would be mangled by a non-UTF-8 console code page.
+set -u
+
+protected="main"
+
+branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+if [ -z "$branch" ]; then
+    exit 0                     # detached HEAD is not a branch commit
+fi
+
+case " $protected " in
+    *" $branch "*) ;;
+    *) exit 0 ;;               # "gtrans/main-protection" is not "main"
+esac
+
+git_dir=$(git rev-parse --git-dir 2>/dev/null || echo .git)
+if [ -f "$git_dir/MERGE_HEAD" ]; then
+    exit 0                     # concluding a merge = the reviewed path
+fi
+
+cat >&2 <<'EOF'
+refuse: direct commits on the protected branch are blocked.
+
+  AGENTS.md "main 保护": main only receives reviewed work, through a merge
+  from a branch that has been audited:
+
+      git switch -c gtrans/<feature>     # commit and self-test here
+      git switch main && git merge ...   # after the audit/review
+
+  Concluding a conflicted merge with `git commit` is not affected.
+  Deliberate bypass: `git commit --no-verify` (say why in the session).
+EOF
+exit 1

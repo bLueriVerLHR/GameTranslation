@@ -6,8 +6,11 @@ and cross-verified empirically against the real decoder (bit layout:
 header MSB-first, payload path-bits packed LSB-first).  They build valid
 streams from scratch, so the tests run without any .wolf fixture file.
 """
+import gc
+import os
 import random
 import struct
+import tracemalloc
 import zlib
 
 import pytest
@@ -360,6 +363,23 @@ def make_wolf_archive(files, key_string=b"DXLIBARC", no_key=False):
     return bytes(head) + bytes(huff) + bytes(payload)
 
 
+def with_header_block_at_end(blob):
+    """Move the compressed header block to the end of the container.
+
+    `make_wolf_archive` writes it right after the 64-byte header, but a real
+    archive keeps it at the tail (the decoder reads `raw[name_table_start:]`,
+    a 340 KB region on a 2.9 GB container).  Memory tests must use the real
+    layout, otherwise the tail slice copies the whole payload and measures the
+    fixture instead of the unpacker.
+    """
+    data_start = struct.unpack_from("<Q", blob, 8)[0]
+    huff, payload = blob[64:data_start], blob[data_start:]
+    head = bytearray(blob[:64])
+    struct.pack_into("<Q", head, 8, 64)                  # data_start
+    struct.pack_into("<Q", head, 16, 64 + len(payload))  # name_table_start
+    return bytes(head) + payload + huff
+
+
 class TestUnpackArchive:
     def test_plain_files(self, tmp_path):
         files = [("a.txt", b"hello world"), ("b.bin", b"\x00\x01\x02")]
@@ -437,6 +457,37 @@ class TestUnpackArchive:
         dx.unpack_archive(str(arch), str(out), b"DXLIBARC",
                           skip_protection_cleanup=True)
         assert (out / "game.dat").read_bytes() == content
+
+    def test_unpack_does_not_read_the_whole_archive(self, tmp_path):
+        """Peak memory must be one entry, not the container.
+
+        Measured on real data: a 2.9 GB Data.wolf on a 16 GB machine with only
+        ~2.5 GB free.  Reading the container whole (the pre-mmap behaviour)
+        cannot work on such a machine, so the unpack streams entry by entry:
+        peak stays a small multiple of the largest entry and does not grow with
+        the archive.  The header block is placed at the tail as in real
+        archives, so the tail slice stays small too.
+        """
+        entry = 1024 * 1024
+        files = [("mem%02d.bin" % i, os.urandom(entry)) for i in range(8)]
+        arch = tmp_path / "mem.wolf"
+        arch.write_bytes(with_header_block_at_end(make_wolf_archive(files)))
+        archive_size = arch.stat().st_size
+        assert archive_size > 7 * 1024 * 1024  # payloads are stored verbatim
+
+        out = tmp_path / "out"
+        del files
+        gc.collect()
+        tracemalloc.start()
+        try:
+            n = dx.unpack_archive(str(arch), str(out), b"DXLIBARC")
+            _current, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+
+        assert n == 8
+        assert (out / "mem07.bin").stat().st_size == entry
+        assert peak < archive_size // 2, (peak, archive_size)
 
 
 class TestRandomRoundtrip:

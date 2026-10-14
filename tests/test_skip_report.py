@@ -38,24 +38,6 @@ def _run(*argv):
 class TestClassify:
     """`classify` is the whole judgement; the CLI is a printer around it."""
 
-    def test_a_named_capability_maps_to_its_layer(self):
-        bucket, detail = sr.classify("Node.js is required for this test", "",
-                                     "skip")
-        assert bucket == "node"
-        assert "node.js" in detail
-
-    def test_a_media_capability_is_not_confused_with_a_guard(self):
-        for reason in ("the encoder lacks libvpx",
-                       "PyAV is needed to transcode"):
-            bucket, _detail = sr.classify(reason, "", "skip")
-            assert bucket == "media", reason
-
-    def test_two_capabilities_are_both_reported(self):
-        """A reason naming two layers must not silently pick one of them."""
-        bucket, _detail = sr.classify(
-            "PyAV is needed and Node.js is required", "", "skip")
-        assert bucket == "media+node"
-
     def test_a_documented_guard_is_reported_as_a_guard(self):
         for reason in ("git is unavailable",
                        "case-insensitive filesystem",

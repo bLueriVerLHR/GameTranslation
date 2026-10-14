@@ -244,8 +244,6 @@ class TestWheelBoundaryIsReal:
                             or r.module.startswith("tools.")))
         assert wheel_tools == [
             "tools",
-            "tools.check_iscript_js",
-            "tools.qc_ks_kana",
         ], (
             "the set of tools/ modules imported by other packages changed; "
             "update the wheel package list in pyproject.toml and this test "

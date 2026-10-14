@@ -29,7 +29,7 @@ class TestTheBudgetsComeFromPyproject:
     """One source of truth: the numbers live in pyproject, not in the tool."""
 
     def test_the_error_budget_is_recorded(self):
-        assert mypy_check.error_budget() == 188
+        assert mypy_check.error_budget() == 164
 
     def test_the_strict_tier_is_not_empty(self):
         modules = mypy_check.strict_list()
@@ -74,10 +74,9 @@ class TestTheBudgetsComeFromPyproject:
         """The budget must not depend on which runner measures it.
 
         Unpinned, mypy types the standard library for the host OS, so
-        ``ctypes.windll`` is an error on Linux CI and fine on Windows and the
-        same commit measures 189 there against 188 here (CI: ``mypy: 189
-        error(s), budget 188``).  A budget that moves with the runner cannot
-        be enforced, so the platform is pinned explicitly.
+        ``ctypes.windll`` is an error on Linux CI and fine on Windows, and the
+        same commit measures two different counts.  A budget that moves with
+        the runner cannot be enforced, so the platform is pinned explicitly.
         """
         config = mypy_check._config()["tool"]["mypy"]
         assert config["platform"], "an unset platform makes the count host-dependent"

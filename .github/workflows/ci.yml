@@ -54,7 +54,7 @@ jobs:
       - name: Skip inventory
         run: uv run --no-sync python -m tools.skip_report --verbose
       - name: Unit and contract tests (PR layer)
-        run: uv run --no-sync python -m pytest tests -q --junitxml=junit.xml -m "not slow and not media and not node and not engine_runtime and not wsl and not browser and not device"
+        run: uv run --no-sync python -m pytest tests -q --junitxml=junit.xml -m "not slow and not wsl and not browser and not device"
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v7
@@ -76,7 +76,7 @@ jobs:
           python -m pip install "uv==${{ env.UV_VERSION }}"
           python -m uv sync --locked --python 3.14 --extra images --extra fonts --extra dev
       - name: Measure branch coverage
-        # No marker filter: codecs and nightly layers must remain measured.
+        # No marker filter: the slow layer must remain measured.
         run: uv run --no-sync python -m pytest tests -q --cov --cov-branch --cov-report=xml --cov-report=term --cov-report=json:coverage.json
       - name: Enforce the recorded coverage floors
         run: uv run --no-sync python -m tools.check_coverage coverage.json
@@ -137,7 +137,7 @@ jobs:
         run: uv run --no-sync python -m pip_audit --progress-spinner off
 
   nightly:
-    name: nightly layers (slow, media, node, engine runtime)
+    name: nightly layers (slow)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -145,27 +145,17 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "24"
       - name: Install locked dependencies
         run: |
           python -m pip install "uv==${{ env.UV_VERSION }}"
           python -m uv sync --locked --python 3.14 --extra images --extra fonts --extra dev
-      - name: "Media layer (real codecs: libvpx-vp9, libvorbis)"
-        run: uv run --no-sync python -m pytest tests -q -m "media" --junitxml=junit-media.xml
-      - name: Node layer (external Node.js binary)
-        run: uv run --no-sync python -m pytest tests -q -m "node" --junitxml=junit-node.xml
-      - name: Engine runtime layer (a real engine tree must be present)
-        # No engine tree is provisioned; its explicit skip remains visible.
-        run: uv run --no-sync python -m pytest tests -q -m "engine_runtime" --junitxml=junit-engine.xml
-      - name: Slow layer (numba JIT, artifact builds, mutation table)
+      - name: Slow layer (artifact builds, mutation table)
         run: uv run --no-sync python -m pytest tests -q -m "slow" --junitxml=junit-slow.xml
       - name: Install pytest-randomly (nightly only)
         # Keep the plugin outside [dev] so ordinary local tests stay ordered.
         run: uv pip install pytest-randomly
       - name: Random order (the suite must not depend on execution order)
-        run: uv run --no-sync python -m pytest tests -q -p randomly -m "not slow and not media and not node and not engine_runtime and not wsl and not browser and not device" --junitxml=junit-random.xml
+        run: uv run --no-sync python -m pytest tests -q -p randomly -m "not slow and not wsl and not browser and not device" --junitxml=junit-random.xml
       - name: Upload nightly reports
         if: always()
         uses: actions/upload-artifact@v7

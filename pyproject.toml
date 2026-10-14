@@ -101,7 +101,7 @@ testpaths = ["tests"]
 addopts = "-n auto --import-mode=importlib"
 # Layers (PLAN Phase 5 task 2).  A marker means "this test needs something the
 # PR runner may not have", so the fast layer is exactly the unmarked tests:
-#   pytest tests -m "not slow and not engine_runtime"
+#   pytest tests -m "not slow and not wsl and not browser and not device"
 # Only tests whose *dependency is the point* carry a marker - a test that
 # happens to import PIL for a PNG helper stays unmarked.  `--strict-markers`
 # turns a typo into a collection error, and `markers` below is the single
@@ -109,7 +109,6 @@ addopts = "-n auto --import-mode=importlib"
 # dependency without declaring the matching marker.
 markers = [
     "slow: takes over ~5 s or builds/installs an artifact (nightly layer)",
-    "engine_runtime: needs a real engine install or game tree present locally",
     "wsl: only meaningful inside WSL (Windows/WSL bridge or /mnt paths)",
     "browser: needs browser/page automation",
     "device: needs an Android/JoiPlay device (never runs in CI)",
@@ -172,9 +171,9 @@ skip_covered = true
 # Not a ruff option: read by tests/test_lint.py
 # (`test_the_printf_and_open_budgets_only_shrink`).  Lower a number as sites
 # are rewritten; never raise one to make a new violation pass.
-up031 = 414
-up030 = 1
-sim115 = 224
+up031 = 358
+up030 = 0
+sim115 = 162
 
 [tool.mypy]
 # Phase 6 task 2.  One checker only, never mypy *and* pyright (plan §7).
@@ -236,7 +235,7 @@ warn_unused_ignores = true
 #
 # The count must not depend on the host OS (see the ``platform`` note above
 # ``[tool.mypy]``), so it is measured under that pinned platform.
-errors = 188
+errors = 164
 
 [tool.gametranslation.mypy-strict]
 # Modules ``tools/mypy_check.py`` holds at zero errors.  Sorted; add a module

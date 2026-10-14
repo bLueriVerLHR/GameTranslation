@@ -188,43 +188,6 @@ MUTATIONS = (
             "a /mnt/* tree once caused host display corruption.",
         criteria="same-side refusal",
     ),
-    Mutation(
-        mid="decrypt-flag-condition",
-        site="decryption flag clearing gated on the easy case",
-        path="rpgmaker/decrypt.py",
-        find='    if skipped:\n        log.warning("complex encryption',
-        replace='    if False:\n        log.warning("complex encryption',
-        selector=("tests/test_decrypt.py::TestSystemJson::test_clear_encryption_flags",
-                  "tests/test_decrypt.py::TestTreeDecrypt::test_complex_kept_flags_kept",),
-        why="Clearing the flags on a complex-encrypted game makes the engine "
-            "read still-encrypted files as plaintext and the game stops "
-            "starting.",
-        criteria="complex encryption",
-    ),
-    Mutation(
-        mid="verify-flag-detection",
-        site="build verification: leftover encryption flags",
-        path="rpgmaker/verify.py",
-        find='    if s.get("hasEncryptedImages") or s.get("hasEncryptedAudio"):',
-        replace="    if False:",
-        selector=("tests/test_verify.py::TestSystemFlags::test_flags_set",),
-        why="verify is the last automated gate before delivery; a flag check "
-            "that cannot fail is worse than no check.",
-        criteria="system flags",
-    ),
-    Mutation(
-        mid="verify-source-baseline",
-        site="build verification: source-vs-build reference comparison",
-        path="rpgmaker/verify.py",
-        find="        if _source_has_audio(source_dir, folder, name):",
-        replace="        if False:",
-        selector=("tests/test_verify.py::TestAudioRefs::test_missing_is_failure",
-                  "tests/test_verify.py::TestAudioRefs::test_missing_in_source_too_is_warning"),
-        why="The whole value of `--source` is separating a real build failure "
-            "from a pre-existing quirk; inverting the comparison swaps which "
-            "one is reported.",
-        criteria="audio reference baseline",
-    ),
 )
 
 BY_ID = collections.OrderedDict((m.mid, m) for m in MUTATIONS)

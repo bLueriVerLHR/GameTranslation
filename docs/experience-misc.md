@@ -4,8 +4,7 @@
 > 兼容、工具补丁」等不归入前四类主题的实战经验（由原单文件经验库拆分
 > 而来，原 §2-verify/serve、§6、§7.2、§7.3、§7.4、§8、§11-FOSSIL、
 > §12.2、§13.4、§13.5）。其他主题经验见：
-> [解密 / 解包 / Repacker 识别](experience-decrypt.md) ·
-> [音频 / 清理 / 打包](experience-audio-clean.md) ·
+> [打包与清理](experience-packaging.md) ·
 > [翻译](experience-translation.md) ·
 > [Tyrano](experience-tyrano.md) ·
 > [经验库索引](experience.md)。

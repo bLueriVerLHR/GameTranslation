@@ -68,7 +68,7 @@ class TestToolResolution:
     """Layered resolution: env -> tool_registry -> probe -> PATH."""
 
     def test_env_override_wins(self, monkeypatch, tmp_path):
-        exe = tmp_path / "GIT.bin"
+        exe = tmp_path / "git.bin"
         exe.write_bytes(b"x")
         monkeypatch.setenv("GIT", str(exe))
         assert tool_registry.find_git() == platform.posix(str(exe))
@@ -89,24 +89,24 @@ class TestToolResolution:
         assert tool_registry.find_git() is None
 
     def test_config_override(self, monkeypatch, tmp_path):
-        exe = tmp_path / "GIT.bin"
+        exe = tmp_path / "git.bin"
         exe.write_bytes(b"x")
-        self._cfg(monkeypatch, tmp_path, {"wsl": {"GIT": str(exe)},
-                                          "win32": {"GIT": str(exe)}})
+        self._cfg(monkeypatch, tmp_path, {"wsl": {"git": str(exe)},
+                                          "win32": {"git": str(exe)}})
         monkeypatch.delenv("GIT", raising=False)
         assert tool_registry.find_git() == platform.posix(str(exe))
 
     def test_config_glob_resolves_newest(self, monkeypatch, tmp_path):
         for ver in ("1.0", "2.0", "10.0"):
-            d = tmp_path / (f"GIT-{ver}") / "bin"
+            d = tmp_path / (f"git-{ver}") / "bin"
             d.mkdir(parents=True)
-            (d / "GIT.exe").write_bytes(b"x")
+            (d / "git.exe").write_bytes(b"x")
         self._cfg(monkeypatch, tmp_path,
-                  {"wsl": {"GIT": "GIT-*/bin/GIT.exe"},
-                   "win32": {"GIT": "GIT-*/bin/GIT.exe"}})
+                  {"wsl": {"git": "git-*/bin/git.exe"},
+                   "win32": {"git": "git-*/bin/git.exe"}})
         monkeypatch.delenv("GIT", raising=False)
         got = tool_registry.find_git()
-        assert got.endswith("GIT-10.0/bin/GIT.exe"), got
+        assert got.endswith("git-10.0/bin/git.exe"), got
 
     def test_config_relative_path_resolves_against_config_dir(
             self, monkeypatch, tmp_path):
@@ -115,9 +115,9 @@ class TestToolResolution:
         cfg = tmp_path / "env_config.json"
         monkeypatch.setattr(settings, "LOCAL_ENV_FILE", cfg)
         (tmp_path / "3rd").mkdir()
-        exe = tmp_path / "3rd" / "GIT"
+        exe = tmp_path / "3rd" / "git"
         exe.write_bytes(b"x")
-        cfg.write_text(json.dumps({"tools": {"wsl": {"GIT": "3rd/GIT"}}}),
+        cfg.write_text(json.dumps({"tools": {"wsl": {"git": "3rd/git"}}}),
                        encoding="utf-8")
         monkeypatch.delenv("GIT", raising=False)
         assert tool_registry.find_git() == platform.posix(str(exe))
@@ -134,9 +134,9 @@ class TestToolResolution:
         assert tool_registry.win_7z() == str(exe)
 
     def test_probe_finds_tool_under_anchor(self, monkeypatch, tmp_path):
-        d = tmp_path / "GIT-9.9" / "bin"
+        d = tmp_path / "Git" / "cmd"
         d.mkdir(parents=True)
-        exe = d / "GIT.exe"
+        exe = d / "git.exe"
         exe.write_bytes(b"x")
         monkeypatch.delenv("GT_NO_PROBE", raising=False)
         monkeypatch.setattr(tool_registry, "_anchor_paths", lambda side: [str(tmp_path)])
@@ -144,9 +144,9 @@ class TestToolResolution:
         assert tool_registry.find_git() == platform.posix(str(exe))
 
     def test_probe_skipped_when_disabled(self, monkeypatch, tmp_path):
-        d = tmp_path / "GIT-9.9" / "bin"
+        d = tmp_path / "Git" / "cmd"
         d.mkdir(parents=True)
-        (d / "GIT.exe").write_bytes(b"x")
+        (d / "git.exe").write_bytes(b"x")
         monkeypatch.setenv("GT_NO_PROBE", "1")
         monkeypatch.setattr(tool_registry, "_anchor_paths", lambda side: [str(tmp_path)])
         monkeypatch.setattr(shutil, "which", lambda name: None)
@@ -164,9 +164,9 @@ class TestToolResolution:
         monkeypatch.setattr(settings, "LOCAL_ENV_FILE",
                             tmp_path / "absent.json")
         monkeypatch.setattr(shutil, "which",
-                            lambda name: "/opt/bin/GIT" if name == "GIT"
+                            lambda name: "/opt/bin/git" if name == "git"
                             else None)
-        assert tool_registry.find_git() == "/opt/bin/GIT"
+        assert tool_registry.find_git() == "/opt/bin/git"
 
     def test_not_found_returns_none(self, monkeypatch, tmp_path):
         monkeypatch.delenv("GIT", raising=False)
@@ -176,23 +176,23 @@ class TestToolResolution:
         assert tool_registry.find_git() is None
 
     def test_resolve_tool_accepts_key_or_entry(self, monkeypatch, tmp_path):
-        exe = tmp_path / "GIT.bin"
+        exe = tmp_path / "git.bin"
         exe.write_bytes(b"x")
         monkeypatch.setenv("GIT", str(exe))
-        assert tool_registry.resolve_tool("GIT") == platform.posix(str(exe))
+        assert tool_registry.resolve_tool("git") == platform.posix(str(exe))
         assert tool_registry.resolve_tool(
-            tool_registry.TOOLS_BY_KEY["GIT"]) == platform.posix(str(exe))
+            tool_registry.TOOLS_BY_KEY["git"]) == platform.posix(str(exe))
 
     def test_resolve_tool_reports_source(self, monkeypatch, tmp_path):
-        exe = tmp_path / "GIT.bin"
+        exe = tmp_path / "git.bin"
         exe.write_bytes(b"x")
         monkeypatch.setenv("GIT", str(exe))
-        path, source = tool_registry.resolve_tool("GIT", with_source=True)
+        path, source = tool_registry.resolve_tool("git", with_source=True)
         assert path == platform.posix(str(exe))
         assert source == "env"
         monkeypatch.delenv("GIT", raising=False)
         monkeypatch.setattr(shutil, "which", lambda name: None)
-        assert tool_registry.resolve_tool("GIT", with_source=True) == \
+        assert tool_registry.resolve_tool("git", with_source=True) == \
             (None, None)
 
     def test_find_powershell_uses_shared_resolver(self, monkeypatch, tmp_path):
@@ -365,7 +365,7 @@ def test_no_resolver_is_registered_twice():
 
 class TestProbeReport:
     def test_shape_and_sources(self, monkeypatch, tmp_path):
-        exe = tmp_path / "GIT.bin"
+        exe = tmp_path / "git.bin"
         exe.write_bytes(b"x")
         monkeypatch.setenv("GIT", str(exe))
         monkeypatch.setattr(shutil, "which", lambda name: None)
@@ -374,12 +374,12 @@ class TestProbeReport:
         report = tool_registry.probe_report()
         by = {r["key"]: r for r in report}
         assert set(by) == {t.key for t in tool_registry.TOOLS}
-        assert by["GIT"]["path"] == platform.posix(str(exe))
-        assert by["GIT"]["source"] == "env"
-        assert by["GIT"]["hint"] == ""
+        assert by["git"]["path"] == platform.posix(str(exe))
+        assert by["git"]["source"] == "env"
+        assert by["git"]["hint"] == ""
         # unresolved tools report None plus their remediation hint
         monkeypatch.delenv("GIT", raising=False)
         by = {r["key"]: r for r in tool_registry.probe_report()}
-        assert by["GIT"]["path"] is None
-        assert by["GIT"]["source"] is None
-        assert by["GIT"]["hint"]
+        assert by["git"]["path"] is None
+        assert by["git"]["source"] is None
+        assert by["git"]["hint"]

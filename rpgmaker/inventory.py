@@ -202,10 +202,6 @@ _TOOLS_SHARED = [
            "",
            # Deprecated re-export of rpgmaker.plugins_io (same reason).
            ),
-    Module("tools.qc_ks_kana", "active", "shared-lib", ("kirikiri",), True,
-           "python -m tools.qc_ks_kana"),
-    Module("tools.check_iscript_js", "active", "shared-lib", ("kirikiri",), True,
-           "python -m tools.check_iscript_js"),
 ]
 
 # Tools only ever run as scripts by an operator.  Not needed in the wheel.
@@ -228,6 +224,13 @@ _TOOLS_MAINTENANCE = [
            False, "python -m tools.bake_tyrano_dict"),
     Module("tools.bake_with_name_prefix", "active", "maintenance", (), False,
            "python -m tools.bake_with_name_prefix"),
+    # The KAG3 converter used to import these two as libraries
+    # (`kirikiri.pipeline`); with that pipeline gone they are operator-run QC
+    # tools like the rest of this list, so nothing outside tools/ needs them.
+    Module("tools.check_iscript_js", "active", "maintenance", ("kirikiri",),
+           False, "python -m tools.check_iscript_js"),
+    Module("tools.qc_ks_kana", "active", "maintenance", ("kirikiri",), False,
+           "python -m tools.qc_ks_kana"),
     Module("tools.build_csv_template", "active", "maintenance", (), False,
            "python -m tools.build_csv_template"),
     Module("tools.build_ks_translation", "active", "maintenance", ("kirikiri",),

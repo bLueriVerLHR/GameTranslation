@@ -323,4 +323,4 @@ class TestPipelineWiring:
         import tyrano.pipeline as tyrano_mod
         assert tyrano_mod.tyrano_main(["--help"]) is None
         out = capsys.readouterr().out
-        assert "fix-autoplay" in out and "deliver" in out
+        assert "localize-ui" in out and "deliver" in out

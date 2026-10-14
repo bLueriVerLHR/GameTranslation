@@ -298,12 +298,6 @@ class TestWheelContents:
             "runtime import would fail on an installed copy (see "
             "pyproject.toml [tool.setuptools] packages)")
 
-    def test_ships_kag_shim_sources(self, wheel_members):
-        js = [m for m in wheel_members if m.startswith("kirikiri/kag/js/")]
-        assert js, ("the KAG3 converter reads these through importlib.resources "
-                    "(kirikiri/kag/shims.py); [tool.setuptools.package-data] "
-                    "must keep shipping them")
-
     def test_ships_engine_ui_mapping(self, wheel_members):
         assert "tyrano/ui_lang_zh.json" in wheel_members
 

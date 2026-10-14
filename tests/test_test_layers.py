@@ -4,8 +4,8 @@
 Three jobs, all of them about *what a test needs* rather than what it asserts:
 
 1. **Marker taxonomy.**  `pyproject.toml` registers the layers (`slow`,
-   `media`, `node`, `engine_runtime`, `wsl`, `browser`, `device`) and sets
-   `strict_markers = true`, so the fast layer is exactly the unmarked tests.
+   `wsl`, `browser`, `device`) and sets `strict_markers = true`, so the fast
+   layer is exactly the unmarked tests.
 
 2. **Skip budget.**  A skip means "the capability was not there".  The suite
    had 25 such sites with four genuinely different causes, and a bare
@@ -42,7 +42,6 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # one place cannot go unnoticed.
 EXPECTED_MARKERS = (
     "slow",
-    "engine_runtime",
     "wsl",
     "browser",
     "device",
@@ -57,14 +56,13 @@ RUNNER_LAYERS = frozenset({"wsl", "browser", "device"})
 FAST_LAYER_EXPR = " and ".join(f"not {m}" for m in EXPECTED_MARKERS)
 
 # Layers the nightly job must run.
-NIGHTLY_MARKERS = ("slow", "engine_runtime")
+NIGHTLY_MARKERS = ("slow",)
 
 # Skip reason -> the layer it proves.  Matched case-insensitively against the
 # reason text, so the reason is load-bearing: rewording it away from a known
 # capability is what makes the gate ask why.
 SKIP_REASON_LAYERS = {
     "slow": ("numba",),
-    "engine_runtime": ("engine source",),
 }
 
 # Skips that are NOT layer boundaries: the condition is the host platform, a
@@ -129,7 +127,11 @@ BUILTIN_MARKS = frozenset({
 # is required" guard as the audio runtime test, twice (helpers and test body).
 # 27 -> 28: `tests/test_lint.py` gained the burn-down budget gate (Phase 6
 # task 1), which needs ruff just like the two lint gates already there.
-SKIP_BUDGET = 28
+# 28 -> 11: the mobile build chain and the KAG converter left the toolkit, so
+# every skip that guarded a codec, a Node binary or an engine source went with
+# them.  What is left is the dev-tool / host-filesystem / incomplete-checkout
+# guards plus two optional imports.
+SKIP_BUDGET = 11
 
 # This gate cannot scan itself (its own string literals look like skip sites).
 SCAN_EXEMPT = frozenset({"tests/test_test_layers.py"})
@@ -459,8 +461,13 @@ def test_skips_prove_their_layer_and_declare_it():
 
 
 def test_video_calls_declare_the_media_layer():
-    """Encoding/decoding video needs a PyAV build with libvpx-vp9; that is a
-    layer boundary, and no import-level exemption applies."""
+    """Encoding/decoding video needs a real codec build; that was a layer
+    boundary, and no import-level exemption applied.
+
+    Video encoding left the toolkit with the mobile build chain, so the table
+    it checks is empty on purpose and the check stays as the place a
+    reintroduced call would have to register.
+    """
     issues = []
     for rel in _test_files():
         tree = ast.parse(_parse(rel))

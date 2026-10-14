@@ -30,8 +30,6 @@ class TestPackageAndDeliver:
         assert compress.test_archive(archive) is True
 
     def test_compressed_archive_has_game(self, tmp_path):
-        root = str(tmp_path / "src")
-        web = make_game(root)
         out = str(tmp_path / "out")
         os.makedirs(out)
         with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
@@ -58,7 +56,6 @@ class TestPackageAndDeliver:
     def test_deliver_roundtrip(self, tmp_path, monkeypatch):
         root = str(tmp_path / "src")
         web = make_game(root)
-        out = str(tmp_path / "build")
         games = str(tmp_path / "games")
         archives = str(tmp_path / "archives")
         compress.compress(web, str(tmp_path / "seed.7z"))

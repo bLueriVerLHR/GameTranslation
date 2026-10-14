@@ -61,17 +61,15 @@ pytestmark = pytest.mark.slow
 REQUIRED_MEMBERS = (
     "rpgmaker/__init__.py",
     "rpgmaker/cli.py",
-    "rpgmaker/plugincompat.py",          # core js/plugins.js compatibility
     "rpgmaker/japanese.py",              # core kana regexes (engines import)
     "rpgmaker/plugins_io.py",            # core js/plugins.js parser
     "translation/__init__.py",
     "translation/cli.py",                # python -m translation.cli
     "tools/__init__.py",
-    "tools/benchmark.py",              # python -m tools.benchmark
     "tools/plugins_io.py",               # deprecated re-export shim
     "tools/japanese_utils.py",           # deprecated re-export shim
     "kirikiri/__init__.py",
-    "kirikiri/kag/__init__.py",
+    "kirikiri/xp3tool.py",
     "tyrano/__init__.py",
     "wolfrpg/__init__.py",
     "unity/__init__.py",
@@ -81,16 +79,13 @@ REQUIRED_MEMBERS = (
 # Modules imported inside the throwaway install, with the checkout absent from
 # sys.path.  Each one failed against the incomplete wheel.
 IMPORT_PROBE = (
-    "import rpgmaker, rpgmaker.cli, rpgmaker.plugincompat",
-    "import rpgmaker.japanese, rpgmaker.plugins_io",
-    "import tools.benchmark, tools.plugins_io, tools.japanese_utils, tools.plain_io",
+    "import rpgmaker, rpgmaker.cli, rpgmaker.plugins_io",
+    "import rpgmaker.japanese",
+    "import tools.plugins_io, tools.japanese_utils, tools.plain_io",
     "import translation.cli",
-    "import kirikiri.pipeline, kirikiri.ks_extract",
+    "import kirikiri.xp3tool, kirikiri.xp3pack, kirikiri.ks_extract",
     "import tyrano.pipeline, tyrano.tyrano_extract",
     "import wolfrpg.dxarchive, unity.rmunite.extract_game",
-    "from importlib.resources import files; "
-    "files('kirikiri.kag').joinpath('js').is_dir() or "
-    "(_ for _ in ()).throw(SystemExit('kag shim js/ missing'))",
     "from importlib.resources import files; "
     "p = files('tyrano').joinpath('ui_lang_zh.json'); "
     "p.is_file() or (_ for _ in ()).throw("
@@ -363,7 +358,7 @@ class TestInstalledWheelIsUsable:
         _cli_probe(installed, ["rpgmaker.cli"])
         _cli_probe(installed, ["translation.cli"])
         _cli_probe(installed, ["tyrano.pipeline"])
-        _cli_probe(installed, ["tools.benchmark"])
+        _cli_probe(installed, ["kirikiri.xp3tool"])
 
     def test_console_scripts_run(self, installed):
         """The declared scripts must be executable, not just present.

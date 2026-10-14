@@ -85,9 +85,9 @@ class TestCollectChecks:
 
     def test_a_missing_optional_tool_does_not_fail_the_report(
             self, monkeypatch, healthy):
-        monkeypatch.setattr(tool_registry, "find_node", lambda: None)
+        monkeypatch.setattr(tool_registry, "find_git", lambda: None)
         lines = doctor.render(doctor.collect_checks())
-        assert "[WARN] node" in "\n".join(lines)
+        assert "[WARN] git" in "\n".join(lines)
         assert not any(l.startswith("[MISS] node") for l in lines)
 
     def test_a_missing_window_tool_warns_on_windows_only(
@@ -170,12 +170,14 @@ class TestRender:
         assert lines[-1] == "%d/%d checks OK" % (TOTAL_CHECKS, TOTAL_CHECKS)
 
     def test_render_miss_has_hint(self, monkeypatch, healthy):
-        # ffmpeg is `required`, so its absence is a MISS (with a hint)
-        monkeypatch.setattr(tool_registry, "find_ffmpeg", lambda: None)
+        # The Windows bridge is fatal only on WSL (doctor._is_fatal), so its
+        # absence is a MISS exactly there.
+        monkeypatch.setattr(tool_registry, "find_powershell", lambda: None)
+        monkeypatch.setattr(platform, "is_wsl", lambda: True)
         lines = doctor.render(doctor.collect_checks())
         miss = next(l for l in lines if l.startswith("[MISS]"))
         assert "->" in miss
-        assert "ffmpeg" in miss
+        assert "powershell" in miss
 
 
 class TestJsonReport:
@@ -202,11 +204,11 @@ class TestJsonReport:
 
     def test_json_keeps_warnings_out_of_ok(self, monkeypatch, healthy,
                                            capsys):
-        monkeypatch.setattr(tool_registry, "find_node", lambda: None)
+        monkeypatch.setattr(tool_registry, "find_git", lambda: None)
         assert doctor.run(["--json"]) == 0
         payload = json.loads(capsys.readouterr().out)
         assert payload["ok"] is True
-        assert payload["warnings"] == ["node"]
+        assert payload["warnings"] == ["git"]
 
     def test_every_check_row_has_the_pinned_shape(self, healthy, capsys):
         doctor.run(["--json"])
@@ -260,22 +262,24 @@ class TestRun:
 
     def test_run_exit_one_when_a_required_tool_is_missing(
             self, monkeypatch, healthy, capsys):
-        monkeypatch.setattr(tool_registry, "find_ffmpeg", lambda: None)
+        monkeypatch.setattr(tool_registry, "find_powershell", lambda: None)
+        monkeypatch.setattr(platform, "is_wsl", lambda: True)
         assert doctor.run() == 1
         out = capsys.readouterr().out
-        assert "[MISS] ffmpeg" in out
+        assert "[MISS] powershell" in out
         assert "%d/%d checks OK" % (TOTAL_CHECKS - 1, TOTAL_CHECKS) in out
 
     def test_run_exit_zero_when_only_optional_tools_are_missing(
             self, monkeypatch, healthy, capsys):
-        """A machine without node/git still builds games; doctor must say so
-        instead of exiting 1 as though the environment were broken."""
-        monkeypatch.setattr(tool_registry, "find_node", lambda: None)
+        """A machine without git or the Windows bridge still translates games;
+        doctor must say so instead of exiting 1 as though the environment were
+        broken."""
         monkeypatch.setattr(tool_registry, "find_git", lambda: None)
+        monkeypatch.setattr(tool_registry, "win_7z", lambda: None)
         assert doctor.run() == 0
         out = capsys.readouterr().out
-        assert "[WARN] node" in out and "[WARN] git" in out
-        assert "not required for a build here" in out
+        assert "[WARN] git" in out and "[WARN] win7z" in out
+        assert "not required" in out
 
 
 class TestPipelineWiring:

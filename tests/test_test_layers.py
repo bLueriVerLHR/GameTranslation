@@ -42,8 +42,6 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # one place cannot go unnoticed.
 EXPECTED_MARKERS = (
     "slow",
-    "media",
-    "node",
     "engine_runtime",
     "wsl",
     "browser",
@@ -59,14 +57,12 @@ RUNNER_LAYERS = frozenset({"wsl", "browser", "device"})
 FAST_LAYER_EXPR = " and ".join(f"not {m}" for m in EXPECTED_MARKERS)
 
 # Layers the nightly job must run.
-NIGHTLY_MARKERS = ("slow", "media", "node", "engine_runtime")
+NIGHTLY_MARKERS = ("slow", "engine_runtime")
 
 # Skip reason -> the layer it proves.  Matched case-insensitively against the
 # reason text, so the reason is load-bearing: rewording it away from a known
 # capability is what makes the gate ask why.
 SKIP_REASON_LAYERS = {
-    "node": ("node.js", "node binary"),
-    "media": ("libvpx", "pyav", "encoder"),
     "slow": ("numba",),
     "engine_runtime": ("engine source",),
 }
@@ -103,16 +99,14 @@ GUARD_SKIP_REASONS = (
 # all.  Recorded explicitly so a new optional import is a deliberate act.
 OPTIONAL_IMPORTS = frozenset({
     "PIL",      # [images] extra
-    "av",       # core dependency; the import check is a build-capability guard
-    "asar",     # core dependency, same
-    "numba",    # [images] extra, JIT acceleration for the TLG fast path
+    "asar",     # core dependency
+    "numba",    # [images] extra
 })
 
-# Video ENCODING is never optional in a way that is not a layer boundary: the
-# encoder needs a PyAV build carrying libvpx-vp9.  Probing is deliberately NOT
-# listed - reading a container, or failing on a missing file, needs no codec
-# and is covered by the fast layer.
-MEDIA_ONLY_CALLS = ("media.transcode_to_webm",)
+# Video/image encoding left the toolkit with the mobile build pipeline, so no
+# test may reach an encoder any more: the tuple is empty on purpose and the
+# check below stays as the place a reintroduced call would have to register.
+MEDIA_ONLY_CALLS = ()
 
 SKIP_CALLS = frozenset({"skip", "importorskip", "xfail"})
 

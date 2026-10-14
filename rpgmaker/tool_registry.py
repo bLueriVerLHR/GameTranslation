@@ -36,9 +36,7 @@ __all__ = [
     "TOOLS_BY_KEY",
     "Tool",
     "ToolStatus",
-    "find_ffmpeg",
     "find_git",
-    "find_node",
     "find_powershell",
     "probe_report",
     "resolve_tool",
@@ -56,10 +54,10 @@ POWERSHELL_TIMEOUT = 3600
 class ToolStatus(StrEnum):
     """What role a tool plays, so a missing one can be reported honestly.
 
-    ``REQUIRED``          - a build cannot be completed without it.
+    ``REQUIRED``          - a translation cannot be completed without it.
     ``OPTIONAL``          - the toolkit degrades to a slower Python fallback.
-    ``DEV_ONLY``          - development workflow (repo tooling), never a build.
-    ``TEST_ONLY``         - only a test executes it; a build does not need it.
+    ``DEV_ONLY``          - development workflow (repo tooling), never a run.
+    ``TEST_ONLY``         - only a test executes it; a run does not need it.
     ``WINDOWS_BRIDGE``    - only the cross-system bridge uses it, and only on
                             the platform that owns the Windows-side bytes.
 
@@ -78,7 +76,7 @@ class ToolStatus(StrEnum):
 
     @property
     def missing_is_fatal(self) -> bool:
-        """Whether an absent tool makes a build fail (vs. degrade)."""
+        """Whether an absent tool makes a run fail (vs. degrade)."""
         return self is ToolStatus.REQUIRED
 
 
@@ -146,35 +144,12 @@ _POSIX_ANCHOR_TOKENS = ("/usr/bin", "/usr/local/bin", "/usr/sbin", "/opt",
 
 TOOLS = (
     Tool(
-        key="node", env="NODE", exe=("node", "node.exe"),
-        probe=("*/nvm/installs/*/node.exe", "nodejs/node.exe"),
-        status=ToolStatus.TEST_ONLY,
-        purpose="executing generated JavaScript in the KAG runtime tests",
-        hint="needed only by tests/test_kag_audio_runtime.py; set NODE or "
-             "install Node.js to run that layer",
-    ),
-    Tool(
-        key="ffmpeg", env="FFMPEG", exe=("ffmpeg",),
-        probe=(
-            "ffmpeg*/bin/ffmpeg.exe",
-            "Microsoft/WinGet/Packages/*/*/bin/ffmpeg.exe",
-            "Microsoft/WinGet/Links/ffmpeg.exe",
-            "scoop/apps/ffmpeg/current/bin/ffmpeg.exe",
-            "scoop/shims/ffmpeg.exe",
-            "ffmpeg",
-        ),
-        status=ToolStatus.REQUIRED,
-        purpose="Vorbis encoding for the audio step (media probe is in-process)",
-        hint="install ffmpeg (with libvorbis) or set FFMPEG / "
-             "config tools.<platform>.ffmpeg",
-    ),
-    Tool(
         key="git", env="GIT", exe=("git", "git.exe"),
         probe=("Git/cmd/git.exe", "Git/bin/git.exe",
                "Programs/Git/cmd/git.exe"),
         status=ToolStatus.DEV_ONLY,
         purpose="repo versioning / hygiene (development workflow only)",
-        hint="only needed for the development workflow, not for conversion",
+        hint="only needed for the development workflow, not for translation",
     ),
     Tool(
         key="powershell", env="POWERSHELL_EXE",
@@ -238,7 +213,7 @@ def _glob_hits(view_pattern):
 
     The full path is the sort key (not the file name), because version
     directories live above the binary: WinGet installs as
-    ``Packages/<pkg>/<version>/bin/ffmpeg.exe``.
+    ``Packages/<pkg>/<version>/bin/<tool>.exe``.
     """
     try:
         hits = glob.glob(view_pattern)
@@ -353,23 +328,8 @@ def resolve_tool(tool, with_source=False):
     return (None, None) if with_source else None
 
 
-def find_ffmpeg():
-    return resolve_tool("ffmpeg")
-
-
 def find_git():
     return resolve_tool("git")
-
-
-def find_node():
-    """JavaScript runtime - used by the KAG audio runtime tests only.
-
-    Syntax checking is in-process (``rpgmaker.jssyntax``) and app.asar is read
-    by the ``asar`` package, so no tool needs Node.js any more; the remaining
-    user is ``tests/test_kag_audio_runtime.py``, which really does have to
-    execute the generated JavaScript to observe its runtime behaviour.
-    """
-    return resolve_tool("node")
 
 
 def find_powershell():

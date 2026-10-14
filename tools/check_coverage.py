@@ -68,7 +68,6 @@ HIGH_RISK_GROUPS = {
         "rpgmaker/japanese.py",
         "rpgmaker/jssyntax.py",
         "rpgmaker/logsetup.py",
-        "rpgmaker/media.py",
         "rpgmaker/platform.py",
         "rpgmaker/plugins_io.py",
         "rpgmaker/proctools.py",
@@ -78,7 +77,6 @@ HIGH_RISK_GROUPS = {
         "rpgmaker/workspace.py",
     ),
     "format": (
-        "kirikiri/tlg.py",
         "kirikiri/xp3pack.py",
         "kirikiri/xp3tool.py",
         "translation/rawlib.py",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CHANGELOG and deprecation-policy gates (PLAN Phase 8 tasks 3 and 4).
+"""CHANGELOG and deprecation-policy gates.
 
 Why this file exists
 --------------------
@@ -84,7 +84,7 @@ def _deprecation_targets(text):
 
 class TestTheChangelogIsAPlausibleChangelog:
     def test_it_exists(self):
-        assert os.path.isfile(CHANGELOG), "PLAN Phase 8 task 3 requires a CHANGELOG"
+        assert os.path.isfile(CHANGELOG), "the release process requires a CHANGELOG"
 
     def test_it_has_an_unreleased_section(self):
         """New work lands in `Unreleased`; a file with only releases rots."""

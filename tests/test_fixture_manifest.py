@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """The tracked test fixtures must be documented and unchanged.
 
-PLAN Phase 5 task 8 asks for sanitized golden fixtures with input, expected
-artifact, manifest, provenance and license.  A fixture directory with no
+Sanitized golden fixtures must record input, expected artifact, manifest,
+provenance and license.  A fixture directory with no
 manifest rots in a specific way: someone regenerates a file to make a test
 pass and the "independent reference" silently becomes a snapshot of whatever
 the code currently does - the check stops being a check.

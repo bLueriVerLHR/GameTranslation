@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The shared scenario-encoding contract (PLAN Phase 5 task 5, defect C).
+"""The shared scenario-encoding contract.
 
 Two engines (.ks readers for KiriKiri and TyranoScript) decode bytes from
 other people's game builds, so the heuristic is core (`rpgmaker.textencoding`)
@@ -187,7 +187,7 @@ class TestLoadTextFile:
 
 
 class TestBothEnginesShareOneImplementation:
-    """PLAN Phase 3 task 7: an engine may import core, never another engine.
+    """An engine may import core, never another engine.
 
     The first version of the shared decode lived in `kirikiri.ks_extract` with
     `tyrano.tyrano_extract` importing it, which is a cross-engine edge.  These

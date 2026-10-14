@@ -40,7 +40,5 @@
     "translation/mvkeys.py": 92.5
   },
   "total": 74.4,
-  "waivers": {
-    "kirikiri/tlg.py": "measured 47.7% after the phase-6 lint rewrite collapsed the same executed statements onto fewer lines (910->902 statements, 316->310 branches). Verified line-by-line against the phase-5 baseline tree: no identical source line went covered->missing, and this host never covered the slow numba kernels in either tree. The 0.2 drop is line arithmetic - re-record the floor once the slow layer is measured again."
-  }
+  "waivers": {}
 }

@@ -1,8 +1,8 @@
 """Package boundaries must hold - the arrow may not point back the wrong way.
 
-Phase 3 of PLAN.md is "package boundaries + unified `gt`", and PLAN.md §7
-forbids "core importing concrete engines".  Nothing enforced that before this
-file: the boundary was a convention, so the one real violation
+The rule is "core importing concrete engines" is forbidden, with the
+top-level `gt` CLI as the one assembly layer.  Nothing enforced that before
+this file: the boundary was a convention, so the one real violation
 (`rpgmaker/plugincompat.py` doing `from tools import plugins_io`) survived
 unnoticed until an ad-hoc scan found it.
 
@@ -58,7 +58,7 @@ TOOLS_IMPORTS_ALLOWED = {
 TOOLS_PACKAGE_SENTINEL = "__package__"
 
 #: Cross-engine imports that are the assembly layer doing its job: the single
-#: top-level CLI is allowed to wire engines together (PLAN Phase 3 task 7).
+#: top-level CLI is allowed to wire engines together.
 CROSS_ENGINE_ALLOWED = {
     "rpgmaker.cli": {"tyrano"},
 }
@@ -239,8 +239,8 @@ class TestEnginesDoNotImportEachOther:
         """A package may not reach into another engine's code.
 
         Today the only cross-engine import is `rpgmaker/cli.py` reaching for
-        the Tyrano CLI, which is the assembly layer doing exactly what PLAN
-        Phase 3 task 7 wants ("the top-level CLI assembles engines").  Any
+        the Tyrano CLI, which is the assembly layer doing its job (the
+        top-level CLI assembles engines).  Any
         other edge would mean two engines are entangled and neither can be
         moved or retired independently.
         """
@@ -291,7 +291,7 @@ class TestEnginesDoNotImportEachOther:
 
 class TestNoReverseImportsOfTyrano:
     def test_no_module_needs_a_sys_path_hack_to_import_its_package(self):
-        """Task 4 of Phase 3: no `sys.path` surgery for package-internal imports.
+        """No `sys.path` surgery for package-internal imports.
 
         `kirikiri/ks_extract.py` and `tyrano/tyrano_extract.py` used to insert
         `<repo>/tools` and then try both `import japanese_utils` and

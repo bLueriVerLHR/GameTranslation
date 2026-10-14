@@ -199,7 +199,7 @@ def test_text_mode_open_always_pins_an_encoding():
 
 
 # Directories whose text-subprocess calls are exempt: the retired archive is
-# gone (Phase 8), so only the guard's own helpers remain, which must not flag
+# gone, so only the guard's own helpers remain, which must not flag
 # themselves.
 SUBPROCESS_EXEMPT_PREFIXES = ("tests/test_text_io_portability.py",)
 

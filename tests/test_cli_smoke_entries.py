@@ -37,7 +37,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 #: `--help` must work for every probed entry.  This set is empty now: the
 #: last two hand-rolled argv parsers (`tools.build_csv_template`,
-#: `tools.patch_names`) were moved onto `cliutil.command_app` in Phase 3, so
+#: `tools.patch_names`) were moved onto `cliutil.command_app`, so
 #: there are no longer any entries that cannot answer `--help`.  Keep the
 #: constant so a reintroduced hand-rolled parser has an obvious place to be
 #: recorded (and fails `test_no_entry_is_pinned_as_legacy` below).
@@ -144,7 +144,7 @@ class TestEveryEntryAnswersHelp:
 
 class TestEntriesThatAreNotHelp:
     def test_no_entry_is_pinned_as_legacy(self):
-        """Every runnable entry must answer `--help` (Phase 3 end state).
+        """Every runnable entry must answer `--help`.
 
         While `LEGACY_ARGV_ENTRIES` was non-empty this file deliberately
         pinned the hand-rolled parsers' no-argument behaviour instead of

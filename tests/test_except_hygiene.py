@@ -16,7 +16,7 @@ broadly" but "never catch broadly *and say nothing*":
   catch from a bug someone silenced.
 
 Both failures are reported with `path:line` so the fix is a one-line edit.
-Narrowing each site is the real work (PLAN Phase 6 task 5); this gate only
+Narrowing each site is the real work; this gate only
 stops the count from growing while that happens.
 """
 import ast
@@ -34,7 +34,7 @@ BROAD_NAMES = frozenset({"Exception", "BaseException"})
 #: record is the evidence that the catch was taken.
 SILENT_BODY_NODES = (ast.Pass, ast.Continue)
 
-#: The archive directory that was exempt here is gone (Phase 8 retired it), so
+#: The archive directory that was exempt here is gone, so
 #: the list is now empty.  Kept as a named constant because it is the place a
 #: future archive would be declared, and because the scan below reads through it.
 EXEMPT_PREFIXES = ()
@@ -49,8 +49,8 @@ def _tracked_python_files():
     """Tracked and untracked (but not ignored) Python files.
 
     `git ls-files` without `--others` would miss a new module until it is
-    committed - the blind spot that let a dead resolver through Phase 4's
-    first version of the tool-registry gate.
+    committed - the blind spot that let a dead resolver through the first
+    version of the tool-registry gate.
     """
     proc = subprocess.run(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard",

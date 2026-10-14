@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Property tests for the path conversions (PLAN Phase 4 task 9).
+"""Property tests for the path conversions.
 
 The conversions are the load-bearing part of the CRITICAL cross-system rule,
 so they are checked as *properties* over generated inputs rather than as a

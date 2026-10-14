@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""CONTRIBUTING templates gate (PLAN Phase 8 task 4).
+"""CONTRIBUTING templates gate.
 
 Why this file exists
 --------------------
-The plan's acceptance criterion for Phase 8 is that "every entry has an owner
+The acceptance criterion is that "every entry has an owner
 and a documented path".  An undocumented contribution path is how a repo ends
 up with five different ways to add an engine, and this repo has already paid
 for that: `docs/reference/tooling.md` records that the same capability had
@@ -35,7 +35,7 @@ CONTRIBUTING = os.path.join(REPO_ROOT, "docs", "CONTRIBUTING.md")
 TEMPLATES = (
     ("新增引擎", ("rpgmaker/inventory.py", "docs/reference/support-matrix.md")),
     ("新增命令", ("rpgmaker/cliutil.py",)),
-    ("新增测试", ("tests/", "tools/check_all.py")),
+    ("新增测试", ("tests/", "check_all")),
     ("新增文档", ("docs/index.md", "docs/reference/repo-layout.md")),
     ("新增 ADR", ("docs/reference/adr/",)),
 )
@@ -47,12 +47,19 @@ def _read(path):
 
 
 def _section(text, name):
-    """Body of `## <name>` up to the next `##`, or "" when absent."""
-    match = re.search(rf"^##\s+{re.escape(name)}\s*$", text, re.M)
+    """Body of a ``## <name>`` section up to the next ``##``, or "" when absent.
+
+    A template may also be a ``### <name>`` subsection (they are grouped under
+    one ``##`` umbrella heading), so the level is not part of the contract:
+    what matters is that each named procedure exists and names its artifacts.
+    The body ends at the next heading of the same or a higher level.
+    """
+    match = re.search(rf"^(#{{2,3}})\s+{re.escape(name)}\s*$", text, re.M)
     if not match:
         return ""
+    level = len(match.group(1))
     rest = text[match.end():]
-    end = re.search(r"^##\s+", rest, re.M)
+    end = re.search(rf"^#{{2,{level}}}\s+", rest, re.M)
     return rest[:end.start()] if end else rest
 
 
@@ -105,9 +112,14 @@ class TestTheTemplatesPointAtTheRealRegistry:
 class TestTheTemplatesAgreeWithTheGates:
     def test_the_test_template_names_a_real_gate(self):
         """The template tells contributors how to run the checks; that command
-        must be the one the repo actually documents."""
+        must be the one the repo actually documents.
+
+        The spelling is not pinned - ``tools/check_all.py`` and
+        ``python -m tools.check_all`` name the same gate - but the tool itself
+        must be named, and it must exist.
+        """
         body = _section(_read(CONTRIBUTING), "新增测试")
-        assert "check_all.py" in body
+        assert "check_all" in body
         assert os.path.isfile(os.path.join(REPO_ROOT, "tools", "check_all.py"))
 
     def test_the_document_template_names_the_two_drift_gates(self):

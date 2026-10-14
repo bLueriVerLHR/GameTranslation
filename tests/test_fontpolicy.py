@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for rpgmaker.fontpolicy - the PLAN Phase 4 task 7 policy matrix.
+"""Tests for rpgmaker.fontpolicy - the font policy matrix.
 
 The matrix exists because the failure this guards against is silent: a Chinese
 build whose font was not applied renders every Chinese character as a box, and

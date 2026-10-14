@@ -3,64 +3,10 @@
 import contextlib
 import json
 import os
-import shutil
-import socket
 import sys
 
-FAKE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_tools")
-FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
-REAL_OGG = os.path.join(FIXTURE_DIR, "sine_loop.ogg")
-PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
-def real_ogg(dest):
-    """Copy the genuine Vorbis fixture with loop tags; return its destination."""
-    shutil.copyfile(REAL_OGG, dest)
-    return dest
-
-
-def make_wmv(dest, seconds=1.0, rate=10, width=64, height=48, audio=True,
-             noise=False):
-    """Generate real WMV media through PyAV, optionally with detailed frames."""
-    import av
-    import random
-
-    dest = str(dest)
-    frames = max(1, int(round(seconds * rate)))
-    rng = random.Random(1234)
-    with av.open(dest, "w", format="asf") as c:
-        vstream = c.add_stream("wmv2", rate=rate)
-        vstream.width, vstream.height = width, height
-        vstream.pix_fmt = "yuv420p"
-        astream = None
-        if audio:
-            astream = c.add_stream("wmav2", rate=22050)
-            astream.layout = "mono"
-            astream.bit_rate = 32000
-        for i in range(frames):
-            frame = av.VideoFrame(width, height, "yuv420p")
-            for plane in frame.planes:
-                plane.update(bytes(rng.getrandbits(8) for _ in
-                                   range(plane.buffer_size)) if noise
-                             else bytes(plane.buffer_size))
-            frame.pts = i
-            for packet in vstream.encode(frame):
-                c.mux(packet)
-        for packet in vstream.encode(None):
-            c.mux(packet)
-        if astream is not None:
-            samples = 2205  # 0.1 s at 22.05 kHz
-            for i in range(max(1, int(round(seconds * 10)))):
-                frame = av.AudioFrame(format="s16", layout="mono", samples=samples)
-                frame.sample_rate = 22050
-                for plane in frame.planes:
-                    plane.update(bytes(plane.buffer_size))
-                frame.pts = i * samples
-                for packet in astream.encode(frame):
-                    c.mux(packet)
-            for packet in astream.encode(None):
-                c.mux(packet)
-    return dest
 
 
 def make_launcher(script_path, workdir):
@@ -76,10 +22,6 @@ def make_launcher(script_path, workdir):
     return launcher
 
 
-def fake_launcher(script, workdir):
-    """Create a launcher for one bundled fake tool."""
-    return make_launcher(os.path.join(FAKE_DIR, script), workdir)
-
 
 def make_png_bytes(w=1, h=1):
     """Generate a minimal valid RGBA PNG through Pillow."""
@@ -89,6 +31,7 @@ def make_png_bytes(w=1, h=1):
     buf = io.BytesIO()
     Image.new("RGBA", (w, h), (255, 0, 0, 255)).save(buf, "PNG")
     return buf.getvalue()
+
 
 
 def write_system_json(root, encrypted=False):
@@ -181,11 +124,3 @@ def fs_is_case_sensitive(path):
         with contextlib.suppress(OSError):
             os.remove(probe)
 
-
-def free_port():
-    """Find a free loopback port for a synthetic HTTP server."""
-    s = socket.socket()
-    s.bind(("127.0.0.1", 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port

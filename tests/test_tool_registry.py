@@ -2,9 +2,9 @@
 """The application registry and the
 layered resolver: env -> tool_registry -> probe -> PATH.
 
-Split out of tests/test_config.py when rpgmaker/tool_registry.py was split
-(PLAN Phase 4): patching a name on the facade no longer reaches the code
-that reads it, so each test now patches the module that owns the name.
+Split out of tests/test_config.py when rpgmaker/tool_registry.py was split:
+patching a name on the facade no longer reaches the code that reads it, so
+each test now patches the module that owns the name.
 """
 
 import ast
@@ -256,7 +256,7 @@ class TestRunPowershell:
 
 
 class TestToolStatus:
-    """PLAN Phase 4 task 8: a tool's status says who must install it.
+    """A tool's status says who must install it.
 
     Without this the only signal was a hint string, so a CI image that lacks a
     dev-only tool looked the same as one missing a required encoder.
@@ -333,7 +333,7 @@ def _resolver_call_sites():
 
 
 def test_no_dead_resolver_is_registered():
-    """PLAN Phase 4 task 8: a resolver with no caller is dead code.
+    """A resolver with no caller is dead code.
 
     An entry that nothing resolves hides the fact that the feature it
     described is gone - the same judgement that removed the ``ffprobe``

@@ -346,7 +346,7 @@ class TestInstalledWheelIsUsable:
     def test_installed_entry_points_help(self, installed):
         """Every documented CLI must at least start from an installed copy.
 
-        PLAN.md Phase 1 lists these three by name; `gt localize-ui` is what
+        All of these are documented entry points; `gt localize-ui` is what
         reads tyrano/ui_lang_zh.json, which the wheel used to omit.
         """
         _cli_probe(installed, ["rpgmaker.cli"])

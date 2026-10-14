@@ -22,7 +22,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from rpgmaker import inventory
 
 #: Packages that hold production code.  `tests/` is not a product; the retired
-#: `superseded/` archive was deleted in Phase 8.
+#: `superseded/` archive has been deleted.
 PRODUCTION_PACKAGES = ("rpgmaker", "kirikiri", "tyrano", "wolfrpg", "unity",
                        "translation", "tools")
 
@@ -232,7 +232,7 @@ class TestWheelBoundaryIsReal:
         If this list changes, the packaging decision must be revisited - that
         is the point of the test.
 
-        This list shrank in Phase 3: the kana regexes and the plugins.js
+        This list shrank over time: the kana regexes and the plugins.js
         parser were core all along (`shared-lib`), so they moved into
         `rpgmaker/` as `rpgmaker.japanese` / `rpgmaker.plugins_io` and their
         `tools/` paths became deprecated re-export shims that nothing

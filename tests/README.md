@@ -157,7 +157,7 @@ python -m tools.mutation_check --only coverage-gate
 「为什么那条守卫重要」「哪个测试负责发现」。做法是**在临时副本里**改源码再跑真
 测试（同 `tests/test_wheel_contents.py`），从不改工作树。
 
-- **不用 `mutmut`**：它拒绝在 Windows 运行（提示要用 WSL），而 ADR-0002 禁止
+- **不用 `mutmut`**：它拒绝在 Windows 运行（提示要用 WSL），而 `docs/reference/adr/cross-system-file-ownership.md` 禁止
   WSL 原生工具处理 `/mnt/*` 树。
 - 任意变异农场会产生大量等价变异（比如舍入方向），存活也没有意义；PLAN 点名的
   风险点比一个分数值钱（当前 **10 个，10/10 KILLED**：翻译的覆盖/控制码/假名残留/

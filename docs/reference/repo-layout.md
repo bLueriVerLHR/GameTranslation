@@ -22,6 +22,7 @@ GameTranslation/
 ├── uv.lock              # 全量依赖锁定（uv lock 生成，含 extra，仅审计/复现用）
 ├── CHANGELOG.md         # 面向使用者的变更记录（Keep a Changelog；弃用/删除在此留痕）
 ├── .github/workflows/ci.yml # CI：Windows + Ubuntu × py3.14，锁定依赖 + wheel 可用性
+├── .githooks/pre-commit # 仓库内 git 钩子：拒绝在 main 上直接 commit（合并收尾放行）
 ├── kirikiri/            # KiriKiri（吉里吉里）工具包
 │   ├── xp3tool.py       #   XP3 解包（zlib 索引、0x80 间接块、raw/zlib 段，含受保护变体体检）
 │   ├── xp3pack.py       #   XP3 打包（patch.xp3：raw 段 + zlib 索引 + 自校验）

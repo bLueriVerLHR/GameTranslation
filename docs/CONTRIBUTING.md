@@ -14,6 +14,24 @@
 - 不同功能开不同分支，**绝不在主分支上直接改**。
 - 本地分支**不推送**到 GitHub（只在本地工作）。
 
+## main 保护（mandatory）
+
+**未获得代码审计/评阅之前，main 不得接受任何 commit。** 流程：
+
+1. 开工前确认钩子已启用（每个克隆一次）：本机制已落到 main 后，执行
+   `git config core.hooksPath .githooks`；若当前分支还看不到
+   `.githooks/pre-commit`（落地之前），则先把它拷到
+   `.git/hooks/pre-commit` 兑底（`core.hooksPath` 一旦设置，git 会忽略
+   `.git/hooks`，两者别混用）。
+2. 在 `<代号>/<功能>` 分支上提交并跑完门禁。
+3. 审计/评阅通过（由 owner 或 owner 指定的独立审阅者做，agent
+   不得自己审自己）后，`git switch main && git merge <分支>`。
+
+机制是仓库内 `.githooks/pre-commit`：它在 main 上拒绝直接 commit，但
+`MERGE_HEAD` 存在时放行——所以「用 `git commit` 收尾一次有冲突的合并」
+这条正途不会被拦。紧急绕过用 `git commit --no-verify`，并在会话里说明原因。
+行为测试在 `tests/test_git_hooks.py`。
+
 ## 提交信息规范
 
 - 主要用**中文**描述，但不得含游戏名与敏感词（见下方自查）。

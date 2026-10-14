@@ -139,6 +139,25 @@ commit**；提交前自查扫描时排除本地私有目录（见上节）。
   `translation` / `development` / `audio` / `clean`。不同功能开不同分支，
   绝不在主分支上直接改。
 - **本地分支不推送**：feature 分支只在本地工作，不 push 到 GitHub。
+- **main 保护（mandatory, 2026-10 定案）**：**未获得代码审计/评阅之前，main
+  不得接受任何 commit**。改动一律在 `<代号>/<功能>` 分支上提交，审计/评阅
+  通过后再合并回 main。
+  - **机制**：仓库内 `.githooks/pre-commit`（在 main 上拒绝直接 commit；
+    `MERGE_HEAD` 存在时放行，所以「用 `git commit` 收尾一次有冲突的合并」
+    这个正途不被拦）。启用方式（**每个克隆一次**，配置本身不入库）：
+    `git config core.hooksPath .githooks`。
+    ⚠️ 注意：一旦设了 `core.hooksPath`，git 就**完全忽略** `.git/hooks`，
+    而版本化的 `.githooks/` 只存在于含它的分支上。所以开关前先确认当前
+    分支确实有 `.githooks/pre-commit`（看 `git ls-files .githooks/`）；
+    没有（即本机制尚未落地到 main 的分支）就**不要**设 `core.hooksPath`，
+    改用与分支无关的兑底：把 `.githooks/pre-commit` 拷到
+    `.git/hooks/pre-commit`。两种方式都不需要改仓库内容。
+  - 紧急绕过用 `git commit --no-verify`，**且必须在会话里说明原因**。
+  - **审计/评阅由 owner 或 owner 指定的独立审阅者进行**：agent **不得**
+    自己审自己然后把改动落到 main；自测与门禁全绿只是审阅的前置条件，
+    不是审阅本身。
+  - 待审改动的位置写在会话报告里（分支名 + 内容摘要），main 保持与
+    `origin/main` 一致；未经审计不得在 main 上留下任何本地 commit。
 - **完成后合并回主分支（main）**：
   `git checkout main` → `git merge <分支>` — 允许多个 commit，无需 squash
   成单一提交；每个功能/修复一个提交，按逻辑拆分即可。

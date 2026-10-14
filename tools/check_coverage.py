@@ -18,6 +18,13 @@ deliberate act that this tool refuses unless the module is moved to `waivers`
 with a reason.  That is what makes "higher bars for core and format parsers"
 mechanical instead of aspirational.
 
+Record the baseline from a measurement the CI runner can reproduce.  The
+coverage job runs on the Linux runner with no private data present, so a
+measurement taken on a host that has the local font assets can sit above it
+(the font scan in `rpgmaker/assets.py` runs there and not on CI).  Where the
+two platforms disagree, the recorded floor is the lower of the two, so both an
+enforcing CI run and a local run hold it.
+
 Usage
 -----
     # Record / raise the baseline from a fresh measurement.

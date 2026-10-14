@@ -68,10 +68,10 @@ class TestToolResolution:
     """Layered resolution: env -> tool_registry -> probe -> PATH."""
 
     def test_env_override_wins(self, monkeypatch, tmp_path):
-        exe = tmp_path / "ffmpeg.bin"
+        exe = tmp_path / "git.bin"
         exe.write_bytes(b"x")
-        monkeypatch.setenv("FFMPEG", str(exe))
-        assert tool_registry.find_ffmpeg() == platform.posix(str(exe))
+        monkeypatch.setenv("GIT", str(exe))
+        assert tool_registry.find_git() == platform.posix(str(exe))
 
     def test_env_override_windows_form_for_win_tools(self, monkeypatch,
                                                      tmp_path):
@@ -84,29 +84,29 @@ class TestToolResolution:
 
     def test_env_override_missing_file_falls_through(self, monkeypatch,
                                                      tmp_path):
-        monkeypatch.setenv("FFMPEG", str(tmp_path / "nope"))
+        monkeypatch.setenv("GIT", str(tmp_path / "nope"))
         monkeypatch.setattr(shutil, "which", lambda name: None)
-        assert tool_registry.find_ffmpeg() is None
+        assert tool_registry.find_git() is None
 
     def test_config_override(self, monkeypatch, tmp_path):
-        exe = tmp_path / "ffmpeg.bin"
+        exe = tmp_path / "git.bin"
         exe.write_bytes(b"x")
-        self._cfg(monkeypatch, tmp_path, {"wsl": {"ffmpeg": str(exe)},
-                                          "win32": {"ffmpeg": str(exe)}})
-        monkeypatch.delenv("FFMPEG", raising=False)
-        assert tool_registry.find_ffmpeg() == platform.posix(str(exe))
+        self._cfg(monkeypatch, tmp_path, {"wsl": {"git": str(exe)},
+                                          "win32": {"git": str(exe)}})
+        monkeypatch.delenv("GIT", raising=False)
+        assert tool_registry.find_git() == platform.posix(str(exe))
 
     def test_config_glob_resolves_newest(self, monkeypatch, tmp_path):
         for ver in ("1.0", "2.0", "10.0"):
-            d = tmp_path / (f"ffmpeg-{ver}") / "bin"
+            d = tmp_path / (f"git-{ver}") / "bin"
             d.mkdir(parents=True)
-            (d / "ffmpeg.exe").write_bytes(b"x")
+            (d / "git.exe").write_bytes(b"x")
         self._cfg(monkeypatch, tmp_path,
-                  {"wsl": {"ffmpeg": "ffmpeg-*/bin/ffmpeg.exe"},
-                   "win32": {"ffmpeg": "ffmpeg-*/bin/ffmpeg.exe"}})
-        monkeypatch.delenv("FFMPEG", raising=False)
-        got = tool_registry.find_ffmpeg()
-        assert got.endswith("ffmpeg-10.0/bin/ffmpeg.exe"), got
+                  {"wsl": {"git": "git-*/bin/git.exe"},
+                   "win32": {"git": "git-*/bin/git.exe"}})
+        monkeypatch.delenv("GIT", raising=False)
+        got = tool_registry.find_git()
+        assert got.endswith("git-10.0/bin/git.exe"), got
 
     def test_config_relative_path_resolves_against_config_dir(
             self, monkeypatch, tmp_path):
@@ -115,12 +115,12 @@ class TestToolResolution:
         cfg = tmp_path / "env_config.json"
         monkeypatch.setattr(settings, "LOCAL_ENV_FILE", cfg)
         (tmp_path / "3rd").mkdir()
-        exe = tmp_path / "3rd" / "ffmpeg"
+        exe = tmp_path / "3rd" / "git"
         exe.write_bytes(b"x")
-        cfg.write_text(json.dumps({"tools": {"wsl": {"ffmpeg": "3rd/ffmpeg"}}}),
+        cfg.write_text(json.dumps({"tools": {"wsl": {"git": "3rd/git"}}}),
                        encoding="utf-8")
-        monkeypatch.delenv("FFMPEG", raising=False)
-        assert tool_registry.find_ffmpeg() == platform.posix(str(exe))
+        monkeypatch.delenv("GIT", raising=False)
+        assert tool_registry.find_git() == platform.posix(str(exe))
 
     def test_win_key_reads_win32_section(self, monkeypatch, tmp_path):
         exe = tmp_path / "7z.exe"
@@ -134,23 +134,23 @@ class TestToolResolution:
         assert tool_registry.win_7z() == str(exe)
 
     def test_probe_finds_tool_under_anchor(self, monkeypatch, tmp_path):
-        d = tmp_path / "ffmpeg-9.9" / "bin"
+        d = tmp_path / "Git" / "cmd"
         d.mkdir(parents=True)
-        exe = d / "ffmpeg.exe"
+        exe = d / "git.exe"
         exe.write_bytes(b"x")
         monkeypatch.delenv("GT_NO_PROBE", raising=False)
         monkeypatch.setattr(tool_registry, "_anchor_paths", lambda side: [str(tmp_path)])
         monkeypatch.setattr(shutil, "which", lambda name: None)
-        assert tool_registry.find_ffmpeg() == platform.posix(str(exe))
+        assert tool_registry.find_git() == platform.posix(str(exe))
 
     def test_probe_skipped_when_disabled(self, monkeypatch, tmp_path):
-        d = tmp_path / "ffmpeg-9.9" / "bin"
+        d = tmp_path / "Git" / "cmd"
         d.mkdir(parents=True)
-        (d / "ffmpeg.exe").write_bytes(b"x")
+        (d / "git.exe").write_bytes(b"x")
         monkeypatch.setenv("GT_NO_PROBE", "1")
         monkeypatch.setattr(tool_registry, "_anchor_paths", lambda side: [str(tmp_path)])
         monkeypatch.setattr(shutil, "which", lambda name: None)
-        assert tool_registry.find_ffmpeg() is None
+        assert tool_registry.find_git() is None
 
     def test_anchors_only_return_existing_dirs(self, monkeypatch, tmp_path):
         monkeypatch.setenv("ProgramFiles", str(tmp_path))
@@ -160,39 +160,39 @@ class TestToolResolution:
         assert platform.posix(str(tmp_path / "missing")) not in anchors
 
     def test_path_lookup_is_last_resort(self, monkeypatch, tmp_path):
-        monkeypatch.delenv("FFMPEG", raising=False)
+        monkeypatch.delenv("GIT", raising=False)
         monkeypatch.setattr(settings, "LOCAL_ENV_FILE",
                             tmp_path / "absent.json")
         monkeypatch.setattr(shutil, "which",
-                            lambda name: "/opt/bin/ffmpeg" if name == "ffmpeg"
+                            lambda name: "/opt/bin/git" if name == "git"
                             else None)
-        assert tool_registry.find_ffmpeg() == "/opt/bin/ffmpeg"
+        assert tool_registry.find_git() == "/opt/bin/git"
 
     def test_not_found_returns_none(self, monkeypatch, tmp_path):
-        monkeypatch.delenv("FFMPEG", raising=False)
+        monkeypatch.delenv("GIT", raising=False)
         monkeypatch.setattr(settings, "LOCAL_ENV_FILE",
                             tmp_path / "absent.json")
         monkeypatch.setattr(shutil, "which", lambda name: None)
-        assert tool_registry.find_ffmpeg() is None
+        assert tool_registry.find_git() is None
 
     def test_resolve_tool_accepts_key_or_entry(self, monkeypatch, tmp_path):
-        exe = tmp_path / "ffmpeg.bin"
+        exe = tmp_path / "git.bin"
         exe.write_bytes(b"x")
-        monkeypatch.setenv("FFMPEG", str(exe))
-        assert tool_registry.resolve_tool("ffmpeg") == platform.posix(str(exe))
+        monkeypatch.setenv("GIT", str(exe))
+        assert tool_registry.resolve_tool("git") == platform.posix(str(exe))
         assert tool_registry.resolve_tool(
-            tool_registry.TOOLS_BY_KEY["ffmpeg"]) == platform.posix(str(exe))
+            tool_registry.TOOLS_BY_KEY["git"]) == platform.posix(str(exe))
 
     def test_resolve_tool_reports_source(self, monkeypatch, tmp_path):
-        exe = tmp_path / "ffmpeg.bin"
+        exe = tmp_path / "git.bin"
         exe.write_bytes(b"x")
-        monkeypatch.setenv("FFMPEG", str(exe))
-        path, source = tool_registry.resolve_tool("ffmpeg", with_source=True)
+        monkeypatch.setenv("GIT", str(exe))
+        path, source = tool_registry.resolve_tool("git", with_source=True)
         assert path == platform.posix(str(exe))
         assert source == "env"
-        monkeypatch.delenv("FFMPEG", raising=False)
+        monkeypatch.delenv("GIT", raising=False)
         monkeypatch.setattr(shutil, "which", lambda name: None)
-        assert tool_registry.resolve_tool("ffmpeg", with_source=True) == \
+        assert tool_registry.resolve_tool("git", with_source=True) == \
             (None, None)
 
     def test_find_powershell_uses_shared_resolver(self, monkeypatch, tmp_path):
@@ -200,16 +200,6 @@ class TestToolResolution:
         exe.write_bytes(b"x")
         monkeypatch.setenv("POWERSHELL_EXE", str(exe))
         assert tool_registry.find_powershell() == platform.posix(str(exe))
-
-    def test_find_node_shared_with_the_test_harness(self, monkeypatch,
-                                                    tmp_path):
-        """Node is only used by the KAG audio runtime tests now (syntax
-        checking and asar reading are in-process), but the resolver entry
-        stays so those tests probe it the same way as every other tool."""
-        exe = tmp_path / "node.exe"
-        exe.write_bytes(b"x")
-        monkeypatch.setenv("NODE", str(exe))
-        assert tool_registry.find_node() == platform.posix(str(exe))
 
     @staticmethod
     def _cfg(monkeypatch, tmp_path, tools_section):
@@ -273,8 +263,6 @@ class TestToolStatus:
     """
 
     EXPECTED = {
-        "ffmpeg": "required",
-        "node": "test-only",
         "git": "dev-only",
         "powershell": "windows-bridge",
         "win7z": "windows-bridge",
@@ -288,10 +276,16 @@ class TestToolStatus:
         actual = {t.key: t.status.value for t in tool_registry.TOOLS}
         assert actual == self.EXPECTED
 
-    def test_only_required_is_fatal_when_missing(self):
-        fatal = {t.key for t in tool_registry.TOOLS
-                 if t.status.missing_is_fatal}
-        assert fatal == {"ffmpeg"}
+    def test_no_external_program_is_required(self):
+        """Translation and packaging need no external program at all.
+
+        Every reader and writer is in-process (py7zr, asar, the XP3 and
+        DXArchive parsers); the only fatal absence left is the Windows-side
+        bridge, and that is fatal only on WSL (``doctor._is_fatal``).
+        """
+        fatal = [t.key for t in tool_registry.TOOLS
+                 if t.status.missing_is_fatal]
+        assert fatal == []
 
     def test_missing_is_fatal_is_a_status_property(self):
         for status in tool_registry.ToolStatus:
@@ -371,21 +365,21 @@ def test_no_resolver_is_registered_twice():
 
 class TestProbeReport:
     def test_shape_and_sources(self, monkeypatch, tmp_path):
-        exe = tmp_path / "ffmpeg.bin"
+        exe = tmp_path / "git.bin"
         exe.write_bytes(b"x")
-        monkeypatch.setenv("FFMPEG", str(exe))
+        monkeypatch.setenv("GIT", str(exe))
         monkeypatch.setattr(shutil, "which", lambda name: None)
         monkeypatch.setattr(settings, "LOCAL_ENV_FILE",
                             tmp_path / "absent.json")
         report = tool_registry.probe_report()
         by = {r["key"]: r for r in report}
         assert set(by) == {t.key for t in tool_registry.TOOLS}
-        assert by["ffmpeg"]["path"] == platform.posix(str(exe))
-        assert by["ffmpeg"]["source"] == "env"
-        assert by["ffmpeg"]["hint"] == ""
+        assert by["git"]["path"] == platform.posix(str(exe))
+        assert by["git"]["source"] == "env"
+        assert by["git"]["hint"] == ""
         # unresolved tools report None plus their remediation hint
-        monkeypatch.delenv("FFMPEG", raising=False)
+        monkeypatch.delenv("GIT", raising=False)
         by = {r["key"]: r for r in tool_registry.probe_report()}
-        assert by["ffmpeg"]["path"] is None
-        assert by["ffmpeg"]["source"] is None
-        assert by["ffmpeg"]["hint"]
+        assert by["git"]["path"] is None
+        assert by["git"]["source"] is None
+        assert by["git"]["hint"]

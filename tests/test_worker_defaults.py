@@ -78,14 +78,6 @@ class TestPoolsDeriveTheirSize:
         src = SOURCES[os.path.join("tools", "merge_plain_chunks.py")]
         assert 'runtime.auto_workers("qc"' in src
 
-    def test_tlg_batch_tool_uses_the_tlg_kind(self):
-        src = SOURCES[os.path.join("tools", "batch_decode_tlg.py")]
-        assert 'runtime.resolve_workers("tlg"' in src
-
-    def test_video_tool_default_is_not_a_constant(self):
-        src = SOURCES[os.path.join("tools", "transcode_video.py")]
-        assert 'runtime.resolve_workers("video"' in src
-
 
 class TestVideoKind:
     """Video encoding jobs are half the cores: each VP9 encoder is itself

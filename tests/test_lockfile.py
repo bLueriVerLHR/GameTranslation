@@ -101,7 +101,6 @@ def test_python_baseline_is_shared_by_packaging_lint_types_and_ci():
     root = Path(REPO_ROOT)
     config = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     assert config["project"]["requires-python"] == ">=3.14"
-    assert "av>=19.0,<20" in config["project"]["dependencies"]
     assert config["tool"]["ruff"]["target-version"] == "py314"
     assert config["tool"]["mypy"]["python_version"] == "3.14"
     workflow = yaml.safe_load((root / ".github/workflows/ci.yml")

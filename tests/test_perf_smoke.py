@@ -1,32 +1,30 @@
 #!/usr/bin/env python3
-"""Large-directory performance smoke test (review report §3.4 / D).
+"""Large-directory performance smoke test.
 
 Principle: NO hard timing threshold that could flake on a slow machine.  The
-primary assertions are behavioral - the walkers and the pipeline must touch
-EVERY file in a large synthetic build - and a deliberately generous wall-clock
-bound (60s) only guards against an O(n^2) regression (double copying, repeated
-rescans), never against normal machine slowness.
+primary assertions are behavioral - packaging must cover EVERY file in a large
+tree and auto-tuning must still use more than one worker - and a deliberately
+generous wall-clock bound (60s) only guards against an O(n^2) regression
+(repeated rescans, double copying), never against normal machine slowness.
 
 Marked `slow`: the point is scale (80 data files, 120 PNGs, 60 audio files),
-so it belongs to the nightly/soak layer rather than every PR.
+so it belongs to the nightly layer rather than every run.
 """
-import io
 import os
 import time
 
 import pytest
 
-from tests.helpers import make_game
+from tests.helpers import make_game, make_png_bytes
 
-from rpgmaker import audio, build, runtime, verify
-
+from rpgmaker import archive as archive_mod
+from rpgmaker import compress, runtime
 
 pytestmark = pytest.mark.slow
 
 
 def make_large_game(root, n_maps=80, n_pngs=120, n_audio=60):
     """A synthetic game with many data JSONs, PNGs and audio files."""
-    from PIL import Image
     web = make_game(root, with_movies=False, add_junk=False)
     data_dir = os.path.join(web, "data")
     png_dir = os.path.join(web, "img", "pictures")
@@ -36,71 +34,53 @@ def make_large_game(root, n_maps=80, n_pngs=120, n_audio=60):
                   "w", encoding="utf-8") as f:
             f.write('{"@name": "Map%03d", "displayName": "Map%03d", '
                     '"events": []}' % (i + 1, i + 1))
+    png = make_png_bytes(4, 4)
     for i in range(n_pngs):
-        buf = io.BytesIO()
-        Image.new("RGBA", (4, 4), (i % 256, 0, 0, 255)).save(buf, "PNG")
         with open(os.path.join(png_dir, "pic_%03d.png" % i), "wb") as f:
-            f.write(buf.getvalue())
+            f.write(png)
+    blob = b"O" * 20000
     for i in range(n_audio):
         with open(os.path.join(audio_dir, "bgm_%03d.ogg" % i), "wb") as f:
-            f.write(b"O" * 20000)
+            f.write(blob)
     return web
 
 
-class TestLargeBuildSmoke:
-    def test_walkers_cover_every_file(self, tmp_path, fake_tools):
-        """The corpus walkers must enumerate the whole large tree - a
-        regression that silently drops files would hide below any timing
-        bound, so the file COUNT is the hard assertion."""
+class TestLargeTreeSmoke:
+    def test_packaging_covers_every_file(self, tmp_path):
+        """Every generated file must reach the archive: a regression that
+        silently drops files would hide below any timing bound, so the member
+        COUNT is the hard assertion."""
         web = make_large_game(str(tmp_path / "src"))
-        pngs = list(verify._iter_png_files(web))
-        audios = list(audio.iter_audio_files(web))
-        assert len(pngs) >= 120
-        assert len(audios) >= 60
-        # every generated file is reachable (no walker truncation)
-        assert len({os.path.basename(p) for p in pngs}) >= 120
-        assert len({os.path.basename(a) for a in audios}) >= 60
+        archive = compress.compress(web, str(tmp_path / "g.7z"))
+        names = archive_mod.names(archive)
+        assert len([n for n in names if n.endswith(".png")]) >= 120
+        assert len([n for n in names if n.endswith(".ogg")]) >= 60
+        assert len([n for n in names
+                    if os.path.basename(n).startswith("Map")]) >= 80
 
-    def test_build_and_verify_large_tree_within_generous_bound(
-            self, tmp_path, fake_tools):
-        """Build + verify a several-hundred-file tree completes in reasonable
-        time (generous 60s; only an O(n^2) regression would trip it)."""
+    def test_pack_and_extract_large_tree_within_generous_bound(self, tmp_path):
+        """Pack + extract a several-hundred-file tree within the generous
+        bound (only an O(n^2) regression would trip it)."""
         web = make_large_game(str(tmp_path / "src"))
-        out = str(tmp_path / "out")
-        t0 = time.monotonic()
-        build.build_joiplay(web, out, workers=4)
-        t_build = time.monotonic() - t0
-        assert t_build < 60, f"build took {t_build:.1f}s - likely O(n^2) regression"
+        archive = str(tmp_path / "g.7z")
+        started = time.monotonic()
+        compress.compress(web, archive)
+        took = time.monotonic() - started
+        assert took < 60, f"packing took {took:.1f}s - likely O(n^2) regression"
 
-        t0 = time.monotonic()
-        issues = verify.verify_all(out, workers=4)
-        t_verify = time.monotonic() - t0
-        assert issues == []
-        assert t_verify < 60, \
-            f"verify took {t_verify:.1f}s - likely O(n^2) regression"
+        dest = str(tmp_path / "out")
+        started = time.monotonic()
+        archive_mod.extract(archive, dest)
+        took = time.monotonic() - started
+        assert took < 60, f"extraction took {took:.1f}s - likely O(n^2) regression"
 
-        # every map JSON survived the build (count preserved through copy)
-        n_built = len([f for f in os.listdir(os.path.join(out, "data"))
+        built = os.path.join(dest, "src", "data")
+        n_built = len([f for f in os.listdir(built)
                        if f.startswith("Map") and f.endswith(".json")])
         assert n_built >= 80
 
-    def test_audio_reencode_large_batch_smoke(self, tmp_path, fake_tools):
-        """Probe + re-encode a batch of 60 files completes within the bound
-        and reports per-file counts (no loss of files under load)."""
+    def test_auto_workers_parallelism_active(self, tmp_path):
+        """Auto-tuning picks more than one worker on a large tree: a
+        single-threaded regression would show up as workers == 1 here."""
         web = make_large_game(str(tmp_path / "src"))
-        infos = audio.probe_all(web, workers=4, sample=60)
-        assert len(infos) == 60
-        t0 = time.monotonic()
-        counts, _saved = audio.reencode_all(web, infos, workers=4)
-        elapsed = time.monotonic() - t0
-        assert elapsed < 60, \
-            f"reencode took {elapsed:.1f}s - likely O(n^2) regression"
-        assert sum(counts.values()) == 60
-
-    def test_auto_workers_parallelism_active(self, tmp_path, fake_tools):
-        """The build path auto-tunes to >1 workers on a large tree (parallel
-        copy is the optimization under test; a single-threaded regression
-        would show up as workers == 1 here)."""
-        web = make_large_game(str(tmp_path / "src"))
-        workers = runtime.resolve_workers("copy", None, path=web)
-        assert workers >= 2
+        assert runtime.resolve_workers("compress", None, path=web) >= 2

@@ -42,7 +42,7 @@ import zlib
 
 import pytest
 
-from kirikiri import tlg, xp3tool
+from kirikiri import xp3tool
 from tests.test_dxarchive import huffman_encode
 from wolfrpg import dxarchive as dx
 
@@ -51,7 +51,7 @@ from wolfrpg import dxarchive as dx
 #: UnicodeDecodeError, MemoryError) is a defect, not a rejection.  `zlib.error`
 #: is in the list because a corrupt compressed segment surfaces from the
 #: standard library's decompressor.
-DOCUMENTED = (ValueError, xp3tool.Xp3Error, tlg.TlgError, zlib.error)
+DOCUMENTED = (ValueError, xp3tool.Xp3Error, zlib.error)
 
 
 def _random_buffers(seed, count, min_size=0, max_size=64):
@@ -274,35 +274,3 @@ def _lz_encode(data):
                  + bytes(payload))
 
 
-# ---------------------------------------------------------------------------
-# TLG images
-# ---------------------------------------------------------------------------
-
-class TestTlgBoundaries:
-    @pytest.mark.parametrize("size", [0, 1, 8, 63])
-    def test_short_input_is_a_tlg_error_not_a_struct_error(self, size):
-        with pytest.raises(tlg.TlgError):
-            tlg.parse_header(b"\x00" * size)
-
-    @pytest.mark.parametrize("magic", [b"TLG6.0", b"TLG5.0", b"XXXYYY",
-                                       b"XXXZZZ", b"JKMXE8"])
-    def test_known_magic_with_garbage_body_is_documented(self, magic):
-        raw = magic + b"\x00" * (64 - len(magic))
-        exc = _target(tlg.parse_header, raw)
-        assert exc is not None and issubclass(exc, DOCUMENTED), exc
-
-    def test_random_bytes_never_leak_a_foreign_exception(self):
-        leaked = []
-        for raw in _random_buffers(20260921, 300, max_size=128):
-            exc = _target(tlg.parse_header, raw)
-            if exc is not None and not issubclass(exc, DOCUMENTED):
-                leaked.append((raw[:8], exc.__name__))
-        assert leaked == [], f"undocumented exceptions: {leaked[:5]}"
-
-    def test_a_truncated_real_header_body_is_not_a_crash(self):
-        """A plausible header whose pixel data is missing."""
-        body = struct.pack("<I", 64) + struct.pack("<I", 64)
-        raw = (b"TLG5.0\x00raw\x1a" + b"\x00" * 5 + bytes([3])
-               + b"\x00" + body)
-        exc = _target(tlg.parse_header, raw)
-        assert exc is None or issubclass(exc, DOCUMENTED), exc

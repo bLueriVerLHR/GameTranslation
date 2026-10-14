@@ -1,7 +1,7 @@
 """Every `tools/` and `translation.cli` entry point must gate its own paths.
 
 `tests/test_engine_ownership.py` proves the *engine* entry points enforce the
-AGENTS.md CRITICAL cross-system rule.  The 27 command-line tools in `tools/`
+AGENTS.md CRITICAL cross-system rule.  The command-line tools in `tools/`
 plus the translation CLI were still unguarded: each took a game directory or a
 build directory as a positional argument and went straight to `os.path.isdir`
 / `makedirs` / `open`.  A WSL process could therefore read and rewrite a
@@ -46,24 +46,19 @@ GATED_TOOLS = [
     "tools/bake_csv_translation.py",
     "tools/bake_translation.py",
     "tools/bake_with_name_prefix.py",
-    "tools/batch_decode_tlg.py",
     "tools/build_ks_translation.py",
     "tools/build_translation.py",
     "tools/build_tyrano_translation.py",
     "tools/build_wolf_translation.py",
     "tools/check_iscript_js.py",
-    "tools/downscale_images.py",
     "tools/extract_remaining_text.py",
     "tools/extract_rvdata2.py",
-    "tools/fit_texture_4096.py",
     "tools/fix_mojibake_names.py",
     "tools/plugin_json_leaves.py",
     "tools/qc_build_kana.py",
     "tools/qc_ks_kana.py",
     "tools/resolve_text_keys.py",
-    "tools/transcode_video.py",
     "tools/translate_rpgmaker.py",
-    "tools/unlock_gallery.py",
     "translation/cli.py",
 ]
 
@@ -238,7 +233,7 @@ class TestTheGtCliGatesItsPaths:
         command.
         """
         names = {node.name for node in self._commands()}
-        assert len(names) >= 20, f"found only {sorted(names)}"
+        assert len(names) >= 9, f"found only {sorted(names)}"
         ungated = sorted(
             node.name for node in self._commands()
             if _own_paths_line(node) is None and node.name not in self.PATHLESS)
@@ -290,7 +285,7 @@ class TestTheGtCliGatesItsPaths:
             "from rpgmaker import platform;"
             "platform.is_wsl = lambda: True;"
             "import rpgmaker.cli as cli;"
-            "cli.main(['build', '/mnt/c/game', '-o', '/mnt/c/out'])"
+            "cli.main(['clean', '/mnt/c/game'])"
         )
         proc = subprocess.run(
             [sys.executable, "-c", code], cwd=REPO_ROOT, capture_output=True,
@@ -301,23 +296,22 @@ class TestTheGtCliGatesItsPaths:
             f"{proc.returncode}):\n{combined[-1500:]}")
         assert "cross-system" in combined, (
             f"gt refused for the wrong reason:\n{combined[-1500:]}")
-        assert "refusing to build the JoiPlay folder" in combined, (
+        assert "refusing to clean the game tree" in combined, (
             f"the refusal must name the operation:\n{combined[-1500:]}")
 
     def test_the_gt_cli_accepts_a_native_path(self, tmp_path):
         """Negative control: a native path must not be refused.
 
-        `build` is expected to fail afterwards (there is no web root in an
-        empty folder) - what must not appear is a cross-system refusal, which
-        is what a gate wired to the wrong variable would produce.
+        `clean` is expected to fail afterwards (an empty folder has no web
+        root) - what must not appear is a cross-system refusal, which is what
+        a gate wired to the wrong variable would produce.
         """
         game = tmp_path / "game"
         game.mkdir()
-        out = tmp_path / "out"
         code = (
             "import sys;"
             "import rpgmaker.cli as cli;"
-            f"cli.main(['build', {str(game)!r}, '-o', {str(out)!r}])"
+            f"cli.main(['clean', {str(game)!r}])"
         )
         proc = subprocess.run(
             [sys.executable, "-c", code], cwd=REPO_ROOT, capture_output=True,
@@ -339,9 +333,6 @@ class TestTheGateRefusesAtRuntime:
             errors="replace", timeout=120, env=env)
 
     @pytest.mark.parametrize("module,args", [
-        ("tools.downscale_images", ["/mnt/c/game"]),
-        ("tools.unlock_gallery", ["/mnt/c/game"]),
-        ("tools.batch_decode_tlg", ["/mnt/c/game", "/mnt/c/out"]),
         ("tools.qc_ks_kana", ["/mnt/c/game"]),
         ("tools.build_wolf_translation", ["/mnt/c/patch", "/mnt/c/out"]),
         ("tools.bake_with_name_prefix",

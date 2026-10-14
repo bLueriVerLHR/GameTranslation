@@ -37,7 +37,7 @@ EXPECTED_REEXPORTS = {
     "private_dir", "private_path",
     # tool_registry
     "POWERSHELL_TIMEOUT", "TOOLS", "TOOLS_BY_KEY", "Tool", "ToolStatus",
-    "find_ffmpeg", "find_git", "find_node", "find_powershell",
+    "find_git", "find_powershell",
     "probe_report", "resolve_tool", "run_powershell", "win_7z",
     # deliverables
     "archives_dir", "deliverable_bases", "games_dir", "probe_deliverable",

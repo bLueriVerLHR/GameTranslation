@@ -253,15 +253,6 @@ class TestTheSpecificDefectsFound:
             "the decoder contract must be tested with bytes, not with "
             "sys.stdout.write which re-encodes using the child's locale")
 
-    def test_kirikiri_font_test_does_not_read_private_data(self):
-        """1 failure: the test required gitignored local font data."""
-        path = os.path.join(REPO_ROOT, "tests", "test_kirikiri_pipeline.py")
-        with open(path, encoding="utf-8") as handle:
-            source = handle.read()
-        assert "monkeypatch.setattr(pipeline, \"FONT_DIR\"" in source, (
-            "the font positive case must build its own fixture; reading the "
-            "real font dir made the suite fail on any clean checkout")
-
     def test_wheel_probe_decodes_cli_help_as_utf8(self):
         """The CLI answers `--help` in Chinese, so the probe must pin utf-8."""
         path = os.path.join(REPO_ROOT, "tests", "test_wheel_contents.py")

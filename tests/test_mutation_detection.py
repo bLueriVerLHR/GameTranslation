@@ -35,8 +35,6 @@ REQUIRED_SITES = {
     "translation coverage": "coverage-gate",
     "archive integrity": "archive-integrity",
     "windows/wsl same-side refusal": "same-side-refusal",
-    "decryption flag": "decrypt-flag-condition",
-    "resource reference verification": "verify-source-baseline",
 }
 
 

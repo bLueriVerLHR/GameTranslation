@@ -46,10 +46,11 @@ FOREIGN_ENGINE_PACKAGES = ("tyrano", "kirikiri", "wolfrpg", "unity")
 #: that really are shared (inventoried `shared-lib`) plus `tools/` importing
 #: its own siblings.  Anything else is the violation rule 1 prevents.
 TOOLS_IMPORTS_ALLOWED = {
-    # kirikiri engine libraries that live under tools/ for historical
-    # reasons: the script checker and the kana QC pass.  `kirikiri.pipeline`
-    # imports them lazily inside `convert_game`.
-    "kirikiri.pipeline": {"check_iscript_js", "qc_ks_kana"},
+    # Empty: nothing outside tools/ imports a tools/ module any more.
+    # The two entries that used to live here (the TJS script checker and the
+    # kana QC pass, imported lazily by `kirikiri.pipeline`) left with the
+    # KAG3 conversion chain; both tools remain usable as `python -m`
+    # commands, which is not an import edge.
 }
 
 #: A bare `from tools import x` contributes the sentinel below for `tools`

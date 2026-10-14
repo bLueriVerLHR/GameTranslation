@@ -17,7 +17,7 @@ name = "GameTranslation"
 # (here and in the package) used to drift, and the wheel then disagreed with
 # the installed module about what version it was.
 dynamic = ["version"]
-description = "Local toolkit for JP->ZH translation and playable builds (RPG Maker MZ/MV, TyranoScript, KiriKiri, Unity, Wolf RPG)"
+description = "Local toolkit for JP->ZH game translation (RPG Maker MZ/MV, TyranoScript, KiriKiri, Unity, Wolf RPG)"
 readme = "README.md"
 requires-python = ">=3.14"
 license = {text = "GPL-3.0-or-later"}
@@ -27,30 +27,27 @@ license = {text = "GPL-3.0-or-later"}
 #            Typer command, so no tool carries its own argparse block
 #   py7zr  - 7z + ZStandard create/verify/extract, in-process (see
 #            rpgmaker/archive.py: measured faster than 7z.exe -mmt, same size)
-#   av     - PyAV: FFmpeg bindings for probing, decode checks AND the
-#            VP9+Opus WebM encode (no ffprobe; no ffmpeg for video)
 #   asar   - Electron app.asar extraction (tyrano/asar.py), replacing
 #            `npx @electron/asar` and its Node.js requirement
 #   tree-sitter + tree-sitter-javascript - in-process JS syntax checking
 #            (rpgmaker/jssyntax.py), replacing `node --check`
 # Optional extras cover the engine-specific pieces (PyPI never installs an
 # extra implicitly):
-#   pip install -e ".[images]"   # PNG downscaling, TLG->PNG, KAG image ops
+#   pip install -e ".[images]"   # PNG inspection and icon-set work
 #   pip install -e ".[unity]"    # RPG Maker Unite bundle extraction
 #   pip install -e ".[fonts]"    # Chinese+Japanese font merging (KiriKiri)
 #   pip install -e ".[dev]"      # tests (pytest + xdist + coverage) + ruff
 dependencies = [
     "typer>=0.12",
     "py7zr>=1.0",
-    "av>=19.0,<20",
     "asar>=0.1",
     "tree-sitter>=0.22",
     "tree-sitter-javascript>=0.21",
 ]
 
 [project.scripts]
-# One CLI for both pipelines: `gt build ...` (RPG Maker) and
-# `gt-tyrano build ...`; pipeline.py / tyrano/pipeline.py stay as wrappers.
+# One CLI for both engines: `gt clean ...` (RPG Maker) and
+# `gt-tyrano clean ...`; pipeline.py / tyrano/pipeline.py stay as wrappers.
 gt = "rpgmaker.cli:main"
 gt-tyrano = "rpgmaker.cli:tyrano_main"
 
@@ -67,10 +64,10 @@ dev = ["pytest>=9", "pytest-xdist>=3", "pytest-cov>=7", "ruff>=0.14", "mypy>=1.1
 # must not be installed.
 #
 # translation/ and tools/ were missing here, which made the installed artifact
-# unusable: `python -m translation.cli` is a documented entry point, and the
-# `gt` CLI itself reaches `tools` through rpgmaker.plugincompat.  A built wheel
-# carried 68 members with translation/tools/ui_lang_zh.json all absent, while
-# an editable install hid the defect by importing straight from the checkout.
+# unusable: `python -m translation.cli` is a documented entry point.  A built
+# wheel carried 68 members with translation/tools/ui_lang_zh.json all absent,
+# while an editable install hid the defect by importing straight from the
+# checkout.
 # tests/test_wheel_contents.py now pins this, so the list cannot silently
 # regress again.
 #
@@ -80,7 +77,6 @@ dev = ["pytest>=9", "pytest-xdist>=3", "pytest-cov>=7", "ruff>=0.14", "mypy>=1.1
 packages = [
     "rpgmaker",
     "kirikiri",
-    "kirikiri.kag",
     "translation",
     "tools",
     "tyrano",
@@ -91,9 +87,7 @@ packages = [
 
 [tool.setuptools.package-data]
 # Non-Python runtime data an installed copy must ship:
-#   kirikiri.kag  - the converter's .js/.css shim sources (importlib.resources)
 #   tyrano        - the reusable engine UI mapping, loaded by `localize-ui`
-"kirikiri.kag" = ["js/*.js", "js/*.css"]
 "tyrano" = ["ui_lang_zh.json"]
 
 [tool.pytest.ini_options]
@@ -107,7 +101,7 @@ testpaths = ["tests"]
 addopts = "-n auto --import-mode=importlib"
 # Layers (PLAN Phase 5 task 2).  A marker means "this test needs something the
 # PR runner may not have", so the fast layer is exactly the unmarked tests:
-#   pytest tests -m "not slow and not media and not node and not engine_runtime"
+#   pytest tests -m "not slow and not wsl and not browser and not device"
 # Only tests whose *dependency is the point* carry a marker - a test that
 # happens to import PIL for a PNG helper stays unmarked.  `--strict-markers`
 # turns a typo into a collection error, and `markers` below is the single
@@ -115,9 +109,6 @@ addopts = "-n auto --import-mode=importlib"
 # dependency without declaring the matching marker.
 markers = [
     "slow: takes over ~5 s or builds/installs an artifact (nightly layer)",
-    "media: needs a real codec/container (PyAV libvpx/libvorbis, ffmpeg binary)",
-    "node: needs an external Node.js binary (rpgmaker.tool_registry.find_node)",
-    "engine_runtime: needs a real engine install or game tree present locally",
     "wsl: only meaningful inside WSL (Windows/WSL bridge or /mnt paths)",
     "browser: needs browser/page automation",
     "device: needs an Android/JoiPlay device (never runs in CI)",
@@ -180,9 +171,9 @@ skip_covered = true
 # Not a ruff option: read by tests/test_lint.py
 # (`test_the_printf_and_open_budgets_only_shrink`).  Lower a number as sites
 # are rewritten; never raise one to make a new violation pass.
-up031 = 414
-up030 = 1
-sim115 = 224
+up031 = 358
+up030 = 0
+sim115 = 162
 
 [tool.mypy]
 # Phase 6 task 2.  One checker only, never mypy *and* pyright (plan §7).
@@ -244,7 +235,7 @@ warn_unused_ignores = true
 #
 # The count must not depend on the host OS (see the ``platform`` note above
 # ``[tool.mypy]``), so it is measured under that pinned platform.
-errors = 188
+errors = 164
 
 [tool.gametranslation.mypy-strict]
 # Modules ``tools/mypy_check.py`` holds at zero errors.  Sorted; add a module
@@ -264,7 +255,6 @@ modules = [
     "rpgmaker/jssyntax.py",
     "rpgmaker/platform.py",
     "rpgmaker/proctools.py",
-    "rpgmaker/serve.py",
     "rpgmaker/settings.py",
     "rpgmaker/textencoding.py",
     "rpgmaker/tool_registry.py",

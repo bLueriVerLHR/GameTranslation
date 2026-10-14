@@ -96,8 +96,6 @@ _RPGMAKER = [
     Module("rpgmaker", "active", "core", (), True, "package"),
     Module("rpgmaker.archive", "active", "core", (), True),
     Module("rpgmaker.assets", "active", "core", (), True),
-    Module("rpgmaker.audio", "active", "engine", ("rpgmaker",), True),
-    Module("rpgmaker.build", "active", "engine", ("rpgmaker",), True),
     Module("rpgmaker.clean", "active", "engine", (), True),
     Module("rpgmaker.cli", "active", "cli", ("rpgmaker", "tyrano"), True,
            "gt / gt-tyrano / python -m rpgmaker.cli"),
@@ -110,7 +108,6 @@ _RPGMAKER = [
            # by tests/test_config_facade.py), so it ships but has no logic.
            ),
     Module("rpgmaker.constants", "active", "core", (), True),
-    Module("rpgmaker.decrypt", "active", "engine", ("rpgmaker",), True),
     Module("rpgmaker.deliver", "active", "core", (), True),
     Module("rpgmaker.deliverables", "active", "core", (), True),
     Module("rpgmaker.detect", "active", "core", (), True),
@@ -128,44 +125,24 @@ _RPGMAKER = [
     Module("rpgmaker.jssyntax", "active", "core", (), True),
     Module("rpgmaker.io_boundary", "active", "core", (), True),
     Module("rpgmaker.logsetup", "active", "core", (), True),
-    Module("rpgmaker.media", "active", "core", (), True),
     Module("rpgmaker.platform", "active", "core", (), True),
     Module("rpgmaker.plugins_io", "active", "core", (), True),
-    Module("rpgmaker.plugincompat", "active", "engine", ("rpgmaker",), True),
     Module("rpgmaker.proctools", "active", "core", (), True),
     Module("rpgmaker.runtime", "active", "core", (), True),
-    Module("rpgmaker.serve", "active", "core", (), True),
     Module("rpgmaker.settings", "active", "core", (), True),
     Module("rpgmaker.textencoding", "active", "core", (), True),
     Module("rpgmaker.tool_registry", "active", "core", (), True),
-    Module("rpgmaker.verify", "active", "engine", ("rpgmaker",), True),
     Module("rpgmaker.workspace", "active", "core", (), True),
 ]
 
 _KIRIKIRI = [
     Module("kirikiri", "active", "engine", ("kirikiri",), True, "package"),
-    Module("kirikiri.convert_kag", "active", "pipeline", ("kirikiri",), True,
-           "python -m kirikiri.convert_kag"),
-    Module("kirikiri.kag", "active", "engine", ("kirikiri",), True,
-           "package"),
-    Module("kirikiri.kag.assets", "active", "engine", ("kirikiri",), True),
-    Module("kirikiri.kag.cli", "active", "cli", ("kirikiri",), True,
-           "python -m kirikiri.kag.cli"),
-    Module("kirikiri.kag.fonts", "active", "engine", ("kirikiri",), True),
-    Module("kirikiri.kag.project", "active", "engine", ("kirikiri",), True),
-    Module("kirikiri.kag.scenario", "active", "engine", ("kirikiri",), True),
-    Module("kirikiri.kag.shims", "active", "engine", ("kirikiri",), True),
-    Module("kirikiri.kag.tags", "active", "engine", ("kirikiri",), True),
     Module("kirikiri.ks_extract", "active", "shared-lib", ("kirikiri",), True),
     Module("kirikiri.merge_font", "maintenance", "maintenance", (), False,
            "python -m kirikiri.merge_font",
            # Font merging is per-game and driven by local font data; nothing
            # imports it, so it stays out of the wheel.
            ),
-    Module("kirikiri.pipeline", "active", "pipeline", ("kirikiri",), True,
-           "python -m kirikiri.pipeline"),
-    Module("kirikiri.tjs2js", "active", "engine", ("kirikiri",), True),
-    Module("kirikiri.tlg", "active", "engine", ("kirikiri",), True),
     Module("kirikiri.xp3pack", "active", "engine", ("kirikiri",), True,
            "python -m kirikiri.xp3pack"),
     Module("kirikiri.xp3tool", "active", "engine", ("kirikiri",), True,
@@ -176,15 +153,11 @@ _TYRANO = [
     Module("tyrano", "active", "engine", ("tyrano",), True, "package"),
     Module("tyrano.asar", "active", "engine", ("tyrano",), True,
            "python -m tyrano.asar"),
-    Module("tyrano.audio", "active", "engine", ("tyrano",), True),
-    Module("tyrano.autoplay", "active", "engine", ("tyrano",), True),
-    Module("tyrano.build", "active", "engine", ("tyrano",), True),
     Module("tyrano.clean", "active", "engine", ("tyrano",), True),
     Module("tyrano.pipeline", "active", "pipeline", ("tyrano",), True,
            "gt-tyrano / python -m tyrano.pipeline"),
     Module("tyrano.tyrano_extract", "active", "shared-lib", ("tyrano",), True),
     Module("tyrano.ui_lang", "active", "engine", ("tyrano",), True),
-    Module("tyrano.verify", "active", "engine", ("tyrano",), True),
 ]
 
 _WOLF = [
@@ -229,10 +202,6 @@ _TOOLS_SHARED = [
            "",
            # Deprecated re-export of rpgmaker.plugins_io (same reason).
            ),
-    Module("tools.qc_ks_kana", "active", "shared-lib", ("kirikiri",), True,
-           "python -m tools.qc_ks_kana"),
-    Module("tools.check_iscript_js", "active", "shared-lib", ("kirikiri",), True,
-           "python -m tools.check_iscript_js"),
 ]
 
 # Tools only ever run as scripts by an operator.  Not needed in the wheel.
@@ -255,10 +224,13 @@ _TOOLS_MAINTENANCE = [
            False, "python -m tools.bake_tyrano_dict"),
     Module("tools.bake_with_name_prefix", "active", "maintenance", (), False,
            "python -m tools.bake_with_name_prefix"),
-    Module("tools.batch_decode_tlg", "active", "maintenance", ("kirikiri",),
-           False, "python -m tools.batch_decode_tlg"),
-    Module("tools.benchmark", "active", "maintenance", (), False,
-           "python -m tools.benchmark"),
+    # The KAG3 converter used to import these two as libraries
+    # (`kirikiri.pipeline`); with that pipeline gone they are operator-run QC
+    # tools like the rest of this list, so nothing outside tools/ needs them.
+    Module("tools.check_iscript_js", "active", "maintenance", ("kirikiri",),
+           False, "python -m tools.check_iscript_js"),
+    Module("tools.qc_ks_kana", "active", "maintenance", ("kirikiri",), False,
+           "python -m tools.qc_ks_kana"),
     Module("tools.build_csv_template", "active", "maintenance", (), False,
            "python -m tools.build_csv_template"),
     Module("tools.build_ks_translation", "active", "maintenance", ("kirikiri",),
@@ -277,20 +249,14 @@ _TOOLS_MAINTENANCE = [
            "python -m tools.check_coverage coverage.json"),
     Module("tools.mypy_check", "active", "maintenance", (), False,
            "python -m tools.mypy_check"),
-    Module("tools.check_tyrano_build", "active", "maintenance", ("tyrano",),
-           False, "python -m tools.check_tyrano_build"),
     Module("tools.clean_kana_ticks", "active", "maintenance", (), False,
            "python -m tools.clean_kana_ticks"),
-    Module("tools.downscale_images", "active", "maintenance", (), False,
-           "python -m tools.downscale_images"),
     Module("tools.extract_remaining_text", "active", "maintenance",
            ("rpgmaker",), False, "python -m tools.extract_remaining_text"),
     Module("tools.extract_rvdata2", "active", "maintenance", ("rpgmaker",),
            False, "python -m tools.extract_rvdata2"),
     Module("tools.final_qc", "active", "maintenance", (), False,
            "python -m tools.final_qc"),
-    Module("tools.fit_texture_4096", "active", "maintenance", (), False,
-           "python -m tools.fit_texture_4096"),
     Module("tools.fix_mojibake_names", "active", "maintenance", (), False,
            "python -m tools.fix_mojibake_names"),
     Module("tools.gen_completion_shards", "active", "maintenance", (), False,
@@ -317,10 +283,6 @@ _TOOLS_MAINTENANCE = [
            False, "python -m tools.resolve_text_keys"),
     Module("tools.skip_report", "active", "maintenance", (), False,
            "python -m tools.skip_report"),
-    Module("tools.transcode_video", "active", "maintenance", (), False,
-           "python -m tools.transcode_video"),
-    Module("tools.unlock_gallery", "active", "maintenance", ("rpgmaker",),
-           False, "python -m tools.unlock_gallery"),
     # Post-incident data repair: a corrupted dictionary or line-ending damage
     # cannot be re-derived, so these stay even though nothing imports them.
     Module("tools.fix_dbl_nl", "maintenance", "maintenance", (), False,
@@ -375,24 +337,21 @@ if len(set(_names)) != len(_names):
 
 #: Every capability a pipeline step can provide.  An engine that lacks one
 #: must report that explicitly rather than silently doing nothing.
-CAPABILITIES = ("detect", "unpack", "adpack", "decrypt", "extract_text",
-                "apply_translation", "audio", "verify", "build_mobile",
-                "serve", "package", "inject")
+CAPABILITIES = ("detect", "unpack", "adpack", "extract_text",
+                "apply_translation", "package", "inject")
 
 #: Which capabilities each engine declares.  `detect` is universal: an unknown
 #: engine is a detection result, not a failure to detect.
 #:
-#: Unity and Wolf RPG deliberately have no build_mobile: they are translated
-#: in place and never run through a JoiPlay pipeline.
+#: No engine declares a runtime-conversion capability: every engine is
+#: translated in place and runs on the platform it shipped for.
 ENGINE_CAPABILITIES = {
-    "rpgmaker": ("detect", "adpack", "decrypt", "extract_text",
-                 "apply_translation", "audio", "verify", "build_mobile",
-                 "serve", "package"),
+    "rpgmaker": ("detect", "adpack", "extract_text",
+                 "apply_translation", "package"),
     "tyrano": ("detect", "unpack", "extract_text", "apply_translation",
-               "audio", "verify", "build_mobile", "serve", "package"),
+               "package"),
     "kirikiri": ("detect", "unpack", "extract_text", "apply_translation",
-                 "audio", "verify", "build_mobile", "serve", "package",
-                 "inject"),
+                 "package", "inject"),
     "wolfrpg": ("detect", "unpack", "extract_text", "apply_translation"),
     "unity": ("detect", "unpack", "extract_text", "apply_translation",
               "inject"),

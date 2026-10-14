@@ -4,8 +4,7 @@
 > 的实战经验（由原单文件经验库拆分而来，原 §7/§7.1/§7.5/§7.7/§7.8/§12/
 > §13.1/§13.2/§13.3）。
 > 其他主题经验见：
-> [解密 / 解包 / Repacker 识别](experience-decrypt.md) ·
-> [音频 / 清理 / 打包](experience-audio-clean.md) ·
+> [打包与清理](experience-packaging.md) ·
 > [Tyrano](experience-tyrano.md) ·
 > [其他 / 杂项](experience-misc.md) ·
 > [经验库索引](experience.md)。
@@ -283,7 +282,7 @@ false，因为 `$gameMap.isEventRunning()` 恒 true；地图解释器空闲
 
 ## 6. 大 MZ MTool-repack 转换的翻译要点（全流水线 + 全翻译）
 
-完整会话记录见 [音频/清理/打包](experience-audio-clean.md)（工具加固部分
+完整会话记录见 [音频/清理/打包](experience-packaging.md)（工具加固部分
 也见此处）；翻译侧关键点（原 experience.md §11 的翻译部分）：
 
 - **MTool 字典 harvest：** 14,092 模板键 → 8,402 预填（exact 3427 /

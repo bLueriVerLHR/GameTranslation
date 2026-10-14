@@ -244,8 +244,6 @@ class TestWheelBoundaryIsReal:
                             or r.module.startswith("tools.")))
         assert wheel_tools == [
             "tools",
-            "tools.check_iscript_js",
-            "tools.qc_ks_kana",
         ], (
             "the set of tools/ modules imported by other packages changed; "
             "update the wheel package list in pyproject.toml and this test "
@@ -297,24 +295,29 @@ class TestCapabilityDeclarations:
             unknown = [c for c in caps if c not in inventory.CAPABILITIES]
             assert not unknown, f"{engine} declares unknown capability {unknown}"
 
-    def test_mobile_build_engines_also_declare_detection_and_verification(self):
-        """A build pipeline without detect/verify cannot refuse a bad input."""
+    def test_packaging_engines_also_declare_detection(self):
+        """A package step without detect cannot refuse a bad input."""
         for engine, caps in inventory.ENGINE_CAPABILITIES.items():
-            if "build_mobile" not in caps:
+            if "package" not in caps:
                 continue
             assert "detect" in caps, engine
-            assert "verify" in caps, engine
+            assert "extract_text" in caps, engine
 
-    def test_translation_only_engines_do_not_claim_a_mobile_build(self):
-        """The hard rule: Unity and Wolf RPG never get a JoiPlay build."""
+    def test_no_engine_claims_a_runtime_conversion(self):
+        """Every engine is translated in place and runs on its own platform."""
+        for engine in inventory.ENGINE_CAPABILITIES:
+            for capability in ("build_mobile", "audio", "decrypt", "serve"):
+                assert not inventory.supports(engine, capability), engine
+
+    def test_long_form_engines_still_declare_extraction(self):
+        """Translated in place: text extraction is what they must provide."""
         for engine in ("wolfrpg", "unity"):
-            assert not inventory.supports(engine, "build_mobile")
             assert inventory.supports(engine, "extract_text")
             assert inventory.supports(engine, "apply_translation")
 
     def test_unknown_engine_supports_nothing_rather_than_everything(self):
         """"Fail closed": an unrecognised engine must not silently proceed."""
-        assert not inventory.supports("unknown-engine", "build_mobile")
+        assert not inventory.supports("unknown-engine", "package")
         assert not inventory.supports("", "detect")
 
     def test_supports_matches_the_table_for_known_engines(self):

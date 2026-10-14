@@ -3,8 +3,7 @@
 > **先读这篇**：本文收录「TyranoScript / TyranoBuilder」相关的实战经验
 > （由原单文件经验库拆分而来，原 §7.3.1、§10-KAG3 移植）。
 > 完整构建/翻译指南见 `docs/tyrano.md`。其他主题经验见：
-> [解密 / 解包 / Repacker 识别](experience-decrypt.md) ·
-> [音频 / 清理 / 打包](experience-audio-clean.md) ·
+> [打包与清理](experience-packaging.md) ·
 > [翻译](experience-translation.md) ·
 > [其他 / 杂项](experience-misc.md) ·
 > [经验库索引](experience.md)。

@@ -1,11 +1,10 @@
 """Every engine entry point must refuse the other storage side before I/O.
 
 AGENTS.md makes the cross-system rule CRITICAL because violating it once
-caused a machine-level incident.  `rpgmaker/archive.py` and `rpgmaker/deliver.py`
-were the only gated entry points for a long time; the engine pipelines
-(unpack, convert, clean, verify, audio, extraction) also read or write game
-files with plain native Python I/O - typically ffmpeg, fontTools, UnityPy,
-the XP3/DXArchive readers - and had nothing guarding them.
+caused a machine-level incident.  `rpgmaker/archive.py` and
+`rpgmaker/deliver.py` were the only gated entry points for a long time; the
+engine readers (XP3, DXArchive, asar, UnityPy, fontTools) also read or write
+game files with plain native Python I/O and had nothing guarding them.
 
 The gates all go through `platform.require_native_paths`, which compares each
 path to the *processor*, not merely to the other paths in the same call.  The
@@ -16,24 +15,18 @@ same entry points are not broken for paths on the processor's own side.
 """
 import pytest
 
-from kirikiri import merge_font, pipeline, xp3pack, xp3tool
-from kirikiri.kag import cli as kag_cli
+from kirikiri import merge_font, xp3pack, xp3tool
 from rpgmaker import platform
-from tyrano import asar, audio, autoplay, build, clean, ui_lang, verify
+from tyrano import asar, clean, ui_lang
 from unity.rmunite import extract_game, prefill
 from wolfrpg import dxarchive
 
 ENTRY_POINTS = [
     "xp3pack.pack",
     "xp3tool.extract_all",
-    "pipeline.unpack",
-    "kag.convert",
     "merge_font.merge_fonts",
-    "tyrano.build.unpack_game",
     "tyrano.asar.extract",
     "tyrano.clean.cleanup_all",
-    "tyrano.audio.convert",
-    "tyrano.verify.verify",
     "tyrano.ui_lang.cmd_dump",
     "tyrano.ui_lang.cmd_apply",
     "unity.extract_game.cmd",
@@ -48,19 +41,10 @@ def _invoke(name, game, archive):
         "xp3pack.pack": lambda: xp3pack.pack(game, archive),
         "xp3tool.extract_all": lambda: xp3tool.extract_all(archive,
                                                            game + "-out"),
-        "pipeline.unpack": lambda: pipeline.unpack(
-            {"_source": game, "_src": game + "-src", "_archives": "auto"}),
-        "kag.convert": lambda: kag_cli.convert(unpacked=game,
-                                               engine=game + "-engine",
-                                               out_dir=game + "-out"),
         "merge_font.merge_fonts": lambda: merge_font.merge_fonts(
             game + "-cn.ttf", game + "-jp.ttf", game + "-merged.ttf", 2048),
-        "tyrano.build.unpack_game": lambda: build.unpack_game(game,
-                                                              game + "-work"),
         "tyrano.asar.extract": lambda: asar.extract(archive, game + "-out"),
         "tyrano.clean.cleanup_all": lambda: clean.cleanup_all(game),
-        "tyrano.audio.convert": lambda: audio.convert(game),
-        "tyrano.verify.verify": lambda: verify.verify(game),
         "tyrano.ui_lang.cmd_dump": lambda: ui_lang.cmd_dump(game),
         "tyrano.ui_lang.cmd_apply": lambda: ui_lang.cmd_apply(game),
         "unity.extract_game.cmd": lambda: extract_game.cmd(game, game + "-out"),
@@ -93,30 +77,6 @@ def test_refusal_names_the_offending_role(wsl, entry_point):
     assert "cannot handle" in message
 
 
-def test_autoplay_gate_fires_when_the_file_exists(wsl, monkeypatch):
-    """``patch_autoplay`` warns instead of gating for an absent file.
-
-    That is deliberate - "the file is not here" is the more useful message.
-    The gate still fires when the foreign file IS present, which is the case
-    that would actually rewrite a Windows-side file.
-    """
-    monkeypatch.setattr("os.path.isfile", lambda path: True)
-    with pytest.raises(platform.CrossSideError, match="cross-system"):
-        autoplay.patch_autoplay("/mnt/c/game-work")
-
-
-def test_verify_gates_the_source_argument_too(monkeypatch):
-    """A same-side build plus a foreign original is still a cross-side read.
-
-    Simulated by classifying the source spelling as Windows-side while the
-    processor stays native, so only the source role can be the offender.
-    """
-    monkeypatch.setattr(platform, "is_windows_side",
-                        lambda path: str(path).startswith("W:"))
-    with pytest.raises(platform.CrossSideError, match="source="):
-        verify.verify("build", source="W:/game")
-
-
 def test_unity_extraction_gates_before_walking_the_tree(wsl, monkeypatch):
     """The gate must precede ``find_bundle_root``, which walks the game dir."""
     def _walked(*_args, **_kwargs):
@@ -137,7 +97,7 @@ def test_wolf_unpack_creates_no_output_directory(wsl, tmp_path):
 
 def test_clean_dry_run_reports_instead_of_refusing(wsl, tmp_path):
     """``--dry-run`` only stats and prints, so it is deliberately ungated."""
-    root = tmp_path / "build"
+    root = tmp_path / "game"
     root.mkdir()
     (root / "winmm.dll").write_bytes(b"hook")
     removed = clean.cleanup_all(str(root), dry_run=True)
@@ -153,7 +113,8 @@ def test_native_paths_are_not_refused(entry_point, tmp_path):
     """The gates must not turn a same-side run into a refusal.
 
     The call may still fail for any other reason (missing input, unreadable
-    archive, no ffmpeg); a `CrossSideError` is the regression this catches.
+    archive, absent fontTools/UnityPy); a `CrossSideError` is the regression
+    this catches.
     """
     game = tmp_path / "game"
     game.mkdir()
@@ -171,7 +132,7 @@ def test_native_paths_are_not_refused(entry_point, tmp_path):
         _invoke(entry_point, str(game), str(game / "data.xp3"))
     except BaseException as exc:  # noqa: BLE001 - any later failure is fine
         # Any later, unrelated failure (missing input, unreadable archive,
-        # absent ffmpeg/UnityPy, SystemExit from a CLI-style entry point) is
+        # absent optional package, SystemExit from a CLI-style entry point) is
         # acceptable: this test only asserts the gate did not refuse a path
         # that is on the processor's own side.
         assert not isinstance(exc, platform.CrossSideError), (

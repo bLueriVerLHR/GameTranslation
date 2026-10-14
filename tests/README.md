@@ -49,11 +49,11 @@ PLAN Phase 5 task 1 写的是「按 unit / contract / integration / e2e 重组�
 | `engine_runtime` | 需要本机真实引擎安装/游戏树 | skip |
 | `wsl` | 只在 WSL 内有意义 | 非 WSL 跳过 |
 | `browser` | 需要浏览器/页面自动化 | 不跑 |
-| `device` | 需要 Android/JoiPlay 实机 | 永不跑 |
+| `device` | 需要 Android 实机 | 永不跑 |
 
-`slow`/`media`/`node`/`engine_runtime` 由 CI 的 `nightly` 任务分别执行
-（`.github/workflows/ci.yml`）。**不要把浏览器冒烟当成 Android 实机验收**——
-两者是不同层（ADR-0004、`docs/kirikiri-tyrano.md` §7）。
+`slow` 与 `engine_runtime` 由 CI 的 `nightly` 任务执行
+（`.github/workflows/ci.yml`）。**不要把浏览器冒烟当成实机验收**——两者是
+不同层。
 
 ## 2. skip 预算
 

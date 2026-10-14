@@ -16,7 +16,7 @@ survives means the guard is decoration.
 
 Why not `mutmut`: it refuses to run on Windows ("To run mutmut on Windows,
 please use the WSL"), and running WSL-native tools over a Windows-side tree is
-exactly what the cross-system CRITICAL rule forbids (ADR-0002).  This tool
+exactly what the cross-system CRITICAL rule forbids (docs/reference/adr/cross-system-file-ownership.md).  This tool
 therefore uses the pattern already proven in this repo
 (`tests/test_wheel_contents.py::_copy_tree_to`): build in a temporary copy,
 never in place, and run real pytest against that copy.

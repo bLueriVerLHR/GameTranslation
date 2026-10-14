@@ -20,7 +20,9 @@ Only the *standard* v8 layout is supported (cryptVersion 0 / old DXA
 keying).  Wolf Pro / ChaCha20 / AES variants are detected and rejected with
 a clear error - the project pipeline never touches those.
 """
+import contextlib
 import logging
+import mmap
 import os
 import struct
 import sys
@@ -616,9 +618,35 @@ def unpack_archive(
                                         archive=archive_path, out_dir=out_dir)
     archive_path, out_dir = str(own["archive"]), str(own["out_dir"])
     os.makedirs(out_dir, exist_ok=True)
-    with open(archive_path, "rb") as f:
-        raw = f.read()
+    with _mapped_archive(archive_path) as raw:
+        return _unpack_mapped(raw, out_dir, key_string, skip_protection_cleanup)
 
+
+@contextlib.contextmanager
+def _mapped_archive(path: str):
+    """Yield a read-only memory map of the container file.
+
+    A commercial Data.wolf is regularly far larger than the RAM this process may
+    use (measured: 2.9 GB on a 16 GB machine with ~2.5 GB free), so the file is
+    mapped instead of read into memory.  Every access in `_unpack_mapped` is a
+    slice or an explicit byte range, so decoding is unchanged; peak memory drops
+    from "the whole archive" to "the largest single entry".  Windows refuses to
+    map an empty file, hence the explicit size check.
+    """
+    with open(path, "rb") as f:
+        if os.fstat(f.fileno()).st_size == 0:
+            raise ValueError("file too small to be a DXArchive")
+        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mapped:
+            yield mapped
+
+
+def _unpack_mapped(raw, out_dir: str, key_string: bytes,
+                   skip_protection_cleanup: bool) -> int:
+    """Decode a mapped (or in-memory) container into out_dir.
+
+    Split out of `unpack_archive` so the mapping stays a thin shell and this
+    decode body is unchanged by the switch to mmap (`git diff -w` shows it).
+    """
     if len(raw) < 64:
         raise ValueError("file too small to be a DXArchive")
     head = DxaHeader(raw[:64])

@@ -24,6 +24,15 @@ python3 wolfrpg/dxarchive.py <game>/Data/MapData.wolf <out_dir> \
 
 - key 是**引擎内置 v2.225 加密密钥**（UberWolf 源码里的
   `DEFAULT_CRYPT_MODES`），游戏作者一般不换。
+- **用错 key 的症状是 Huffman 解码越界**（`Huffman block: truncated payload`），
+  不是密钥校验失败：模块默认的 `DXLIBARC` 是 DXLib 的默认串，Wolf 游戏必须用
+  上面那条引擎密钥才能解出头部块。排错时先怀疑 key，再怀疑格式。
+- **大档案走 mmap**（`_mapped_archive`）：实测一份 2.9 GB 的 `Data.wolf`，在
+  16 GB 内存、仅 ~2.5 GB 空闲的机器上按老写法（整份 `f.read()`）必然失败；
+  改为只读内存映射后峰值内存 = 最大单个条目。压缩头部块位于**文件尾部**
+  （`raw[name_table_start:]`），所以解包前先读这一段（本例 339,580 字节）。
+- 头部块可**自检**：解出的长度应等于 64 字节头里的 `head_size` 字段
+  （实测 1,013,748 字节）；不一致说明 key 判断或版本判断有误。
 - 解包产物：`MapData/`（.mps 地图）、`BasicData/`（.dat/.project 数据库）。
 - **坑**：文件头 `Flags=0`（cryptVersion=0）→ 走旧版 KeyConv 路径，
   别被 `wolfVersionFixTo`（MTool 残留）误导。

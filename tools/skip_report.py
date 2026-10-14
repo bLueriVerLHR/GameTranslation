@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Print why every test skip happens, and fail on an unexplained one.
 
-PLAN Phase 5 task 9 (skip budget).  `tests/test_test_layers.py` already fails
+Skip budget.  `tests/test_test_layers.py` already fails
 the build when a *new* skip site appears (`SKIP_BUDGET`) and when a reason
 names no known layer, but a green suite still hides the shape of the hole:
 "2 skipped" tells the reader nothing about WHAT is missing, so a skip can grow

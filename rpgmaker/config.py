@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """config.py - deprecated façade over the split configuration modules.
 
-PLAN Phase 4 split this module, which had grown five unrelated
-responsibilities, into one module each:
+This module was split, having grown five unrelated responsibilities, into
+one module each:
 
     platform       platform detection, path domains and cross-system
                    conversion (``PathDomain``/``StorageSide``/``PathRef``)

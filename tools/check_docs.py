@@ -54,7 +54,7 @@ What is NOT checked (excluded, so the tree does not have to list them)
   for running outside a git checkout.
 * generated files: *.pyc, *.pyo, *.7z, *.csv, .DS_Store
 * package markers: __init__.py
-* test scaffolding: tests/fake_tools/ (fake tool scripts), tests/fixtures/
+* test scaffolding: tests/fixtures/
   (binary fixtures) - regenerated, not part of the documented tool layout
 
 Ellipsis handling
@@ -127,9 +127,9 @@ EXTERNAL_MODULES = frozenset({
     "translation.cli",  # resolved from repo root below, kept for clarity
 })
 # ``gt``/``gt-tyrano`` subcommands documented but not implemented yet.  Each
-# entry is a promise with an owner phase; remove it when the command lands.
+# entry is a promise: remove it when the command lands.
 PLANNED_COMMANDS = frozenset({
-    "workspace",   # PLAN Phase 4: gt workspace list/info/clean
+    "workspace",   # documented in docs/reference/local-layout.md
 })
 CLI_APPS = (
     ("gt", "rpgmaker.cli", "app"),
@@ -364,7 +364,7 @@ EXCLUDED_DIRS = frozenset({
     ".private", ".asset", "docs/table",
     "work", "tmp",
     "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
-    "build", "dist", "tests/fake_tools", "tests/fixtures",
+    "build", "dist", "tests/fixtures",
 })
 EXCLUDED_SUFFIXES = (".pyc", ".pyo", ".7z", ".csv", ".DS_Store")
 # Package marker exempt everywhere.

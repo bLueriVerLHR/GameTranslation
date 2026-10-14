@@ -3,8 +3,8 @@
 
 Why this exists
 ---------------
-Phase 6 task 4 is "unify the I/O boundary: paths, encoding, JSON, atomic
-write, backup, log context".  Before this module the repository had **three**
+This module is the one I/O boundary: paths, encoding, JSON, atomic write,
+backup and log context.  Before it the repository had **three**
 near-copies of "tolerate a BOM when loading JSON", a dozen hand-rolled
 `json.dumps({"..."}, ensure_ascii=False, indent=1) + "\n"` blocks with
 slightly different punctuation, and exactly **one** write that was atomic
@@ -44,7 +44,7 @@ The contract
   than silently dropping it (see `translation/rawlib.py` for why an empty
   result must not be distinguishable from a clean one).
 
-Not in scope: `pathlib` adoption (task 6) and log context, which already has
+Not in scope: `pathlib` adoption and log context, which already has
 its single entry point in `rpgmaker/logsetup.py` (`logsetup.phase`).
 """
 

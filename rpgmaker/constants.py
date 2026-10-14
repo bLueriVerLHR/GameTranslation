@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """constants.py - RPG Maker build constants.
 
-Split out of the former god-module ``rpgmaker/config.py`` (PLAN Phase 4).
+Split out of the former god-module ``rpgmaker/config.py``.
 These are facts about the engine's output layout and the JoiPlay target, not
 configuration: nothing here is machine-specific and nothing is ever probed or
 overridden, so it lives away from the resolver machinery.

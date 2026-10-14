@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """settings.py - the local private-data layout and the machine config.
 
-Split out of the former god-module ``rpgmaker/config.py`` (PLAN Phase 4).
+Split out of the former god-module ``rpgmaker/config.py``.
 This module owns exactly one responsibility: where a *gitignored* local
 resource lives, and what the optional machine config in it says.
 

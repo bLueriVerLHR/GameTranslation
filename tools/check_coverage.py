@@ -1,7 +1,7 @@
 """check_coverage.py - enforce per-area and per-module coverage floors.
 
-Why this exists (PLAN.md Phase 5 task 4)
----------------------------------------
+Why this exists
+--------------
 A single global coverage number hides exactly the modules that need attention:
 a well-covered `translation` package can carry a 0%-covered binary decoder and
 the total still looks healthy.  This gate therefore compares three granularities

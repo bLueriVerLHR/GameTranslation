@@ -188,6 +188,18 @@ commit**；提交前自查扫描时排除本地私有目录（见上节）。
   `git commit -F <file>` 传入（PowerShell heredoc 会把 CJK 变成 `?`，且
   `<` 是保留字）。
 
+## Python 导入规则（mandatory）
+
+- 生产模块、测试与测试子进程一律使用正规包导入，不允许通过修改 `sys.path`
+  或注入仓库/`tools/` 的 `PYTHONPATH` 来补救导入；工具通过 `python -m`
+  或已安装 CLI 启动，开发/测试先安装项目及所需 extra。
+- pytest 使用 `--import-mode=importlib`；共享测试构造器放 `tests/helpers.py`，
+  fixture 由 `tests/conftest.py` 注册，不把 conftest 当普通工具模块导入。
+- 隔离 wheel 安装目标的路径配置与证明隔离有效的负例不属于导入补丁，必须
+  保留其验证强度；仓库资源/固件定位使用根路径常量是允许的。
+- `tests/test_import_contracts.py` 守卫测试导入；生产边界由
+  `tests/test_package_boundaries.py` 守卫。
+
 ## 语言规则（mandatory）
 
 - **代码文件**（`.py`/`.cs` 等）：代码与注释一律**英文**。唯一例外是
@@ -213,8 +225,9 @@ commit**；提交前自查扫描时排除本地私有目录（见上节）。
   **只能从 `main()` 调用，绝不能在 import 期配置**——import 期调用会改写
   整个进程（含 pytest 会话）的 root logger，并让后续配置静默失效。
   计时一个阶段用 `with logsetup.phase("名称", log):`（自动打 start/done +
-  耗时）。任何模块都能用（可直接从自身目录运行的模块统一用
-  `sys.path.append(repo_root)` 后 import 本模块，不再各自写 basicConfig）。
+  耗时）。任何模块都能通过正规包导入使用；工具统一以 `python -m <包.模块>`
+  或已安装的 CLI 启动，不通过修改 `sys.path` 支持直接运行包内文件，也不再
+  各自写 basicConfig。
 - **CLI 的 `--help` 也要能打中文**：`--help` 由 CLI 框架在命令体执行前
   应答，早于 `logsetup.setup()`；`cliutil.run()` 会先调
   `logsetup.ensure_utf8_streams()` 修流。自定义入口（不走 `cliutil.run` 的

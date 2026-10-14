@@ -21,13 +21,10 @@ import logging
 import struct
 import sys
 import zlib
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from kirikiri import xp3tool  # noqa: E402
+from kirikiri import xp3tool
 
 MAGIC = b"XP3\r\n \n\x1a\x8b\x67\x01"
 

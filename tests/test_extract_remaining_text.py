@@ -18,13 +18,8 @@ Contract under test (AGENTS.md + docs/translation.md):
 """
 import json
 import os
-import sys
 
-
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
-
-import extract_remaining_text as ext  # noqa: E402
+from tools import extract_remaining_text as ext
 
 
 def write_json(path, data):

@@ -14,10 +14,7 @@ from typing import Annotated
 import pytest
 import typer
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-
-from rpgmaker import cliutil, logsetup  # noqa: E402
+from rpgmaker import cliutil, logsetup
 
 
 def make_app():

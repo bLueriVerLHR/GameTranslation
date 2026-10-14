@@ -33,7 +33,6 @@ call in a child process, because a hang cannot be asserted from inside the
 same interpreter.
 """
 
-import os
 import random
 import re
 import subprocess
@@ -43,12 +42,9 @@ import zlib
 
 import pytest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-
-from kirikiri import tlg, xp3tool  # noqa: E402
-from test_dxarchive import huffman_encode  # noqa: E402 - shared test encoder
-from wolfrpg import dxarchive as dx  # noqa: E402
+from kirikiri import tlg, xp3tool
+from tests.test_dxarchive import huffman_encode
+from wolfrpg import dxarchive as dx
 
 #: Exceptions a parser is allowed to raise on hostile input.  Every parser
 #: here documents one of these; anything else (IndexError, struct.error,
@@ -107,8 +103,7 @@ class TestXp3Boundaries:
         contract is the point: a batch unpack must fail, not stall.
         """
         code = (
-            "import struct, sys\n"
-            f"sys.path.insert(0, {REPO_ROOT!r})\n"
+            "import struct\n"
             "from kirikiri import xp3tool\n"
             "buf = b'XXXX' + struct.pack('<q', -12) + b'data' * 8\n"
             "try:\n"
@@ -116,7 +111,7 @@ class TestXp3Boundaries:
             "except xp3tool.Xp3Error:\n"
             "    raise SystemExit(0)\n"
             "raise SystemExit(3)\n")
-        proc = subprocess.run([sys.executable, "-c", code], timeout=30,
+        proc = subprocess.run([sys.executable, "-I", "-c", code], timeout=30,
                               capture_output=True, encoding="utf-8", errors="replace")
         assert proc.returncode == 0, proc.stderr
 

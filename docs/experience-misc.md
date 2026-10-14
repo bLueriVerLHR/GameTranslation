@@ -495,3 +495,25 @@ encoded = data.encode(enc)                 # 于是用错误字节序写出
 3. 跨引擎共享的逻辑一律放 core（第 3 阶段任务 7 的规则），
    `tests/test_package_boundaries.py` 会拦下再抄一份的尝试 —— 这道门禁正是
    在本次合并里抓到了 `tyrano → kirikiri` 的边。
+
+## 13. PowerShell 的 `> NUL` 会在仓库里留下一个叫 `NUL` 的文件（2026-10）
+
+**现象**：全量测试突然出现 `shutil.Error: [WinError 87] The parameter is incorrect`，
+报错指向 `<repo>\NUL -> <temp>\GameTranslation\NUL`。原因是仓库根目录多了一个
+0 字节、名为 `NUL` 的文件（Windows 保留设备名），而这类测试会把**整个仓库复制**
+到临时目录，复制到 `NUL` 必然失败。
+
+**来源**：某条 PowerShell 命令里写了 `... > NUL`。在 `cmd` 里 `NUL` 是空设备，
+但在 **PowerShell 里它是普通文件名**，于是真的创建了一个文件。
+
+**判据**：测试失败信息里出现「复制仓库」+ `WinError 87`/`NUL`/`CON`/`AUX`/
+`PRN`/`COM1` 之类的名字，就是这类污染，不是代码坏了。
+
+**修法**（保留名不能直接 `Remove-Item`）：
+
+`powershell
+cmd /c 'del "\\?\C:\<repo>\NUL"'
+`
+
+**规矩**：PowerShell 里丢弃输出一律用 `> $null` 或 `| Out-Null`，**绝不用 `> NUL`**；
+新建脚本/命令前先 `git status --porcelain` 扫一眼有没有冒出来的未跟踪文件。

@@ -18,11 +18,8 @@ Coverage:
 """
 
 import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from kirikiri.kag import assets  # noqa: E402
+from kirikiri.kag import assets
 
 
 def build_tree(root, spec, files=()):

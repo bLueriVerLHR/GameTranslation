@@ -78,6 +78,11 @@ commit message 同样自查。注：不要用「裸 `rg` 扫规则文本自身�
   `uv sync --locked --python 3.14 --extra images --extra fonts --extra dev`；
   回归命令用 `uv run --no-sync python ...`，避免每次运行隐式重新解析依赖。
   修改依赖须更新 `uv.lock`，保留媒体、打包与分层门禁，不靠跳过测试解决迁移。
+- **测试导入使用正规包名**：工具用 `from tools import ...`，共享构造器用
+  `from tests.helpers import ...`；pytest 使用 `--import-mode=importlib`。
+  不修改 `sys.path`，也不通过 `PYTHONPATH` / pytest `pythonpath` 注入仓库路径。
+  `tests/test_import_contracts.py` 会扫描测试与子进程代码字面量，并在仓库外
+  用隔离解释器验证已安装包导入；wheel 安装目标的隔离负例仍保留。
 - **新功能 / 新工具必须写单元测试**（`tests/`，pytest），**正例、反例、
   边缘情况都要覆盖**；提交前全量跑（venv 解释器按平台取，POSIX 为
   `.venv/bin/python`，Windows 为 `.venv\Scripts\python.exe`）：

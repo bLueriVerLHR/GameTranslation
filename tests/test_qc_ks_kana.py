@@ -10,15 +10,9 @@ identifiers.  An agent acting on that would translate the identifiers and
 break every reference.
 """
 import json
-import os
-import sys
 
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
-
-from kirikiri.ks_extract import iter_display_lines  # noqa: E402
-from tools import qc_ks_kana  # noqa: E402
+from kirikiri.ks_extract import iter_display_lines
+from tools import qc_ks_kana
 
 
 def write_ks(path, text, encoding="utf-8"):

@@ -13,15 +13,11 @@ Two defects found while delivering a build kept in a work slot:
 The fakes below keep it hermetic (no real 7z work, no delivery dirs touched).
 """
 
-import os
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from rpgmaker import deliver as deliver_mod  # noqa: E402
+from rpgmaker import deliver as deliver_mod
 
 
 class _FakeCompress:

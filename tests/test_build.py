@@ -2,7 +2,7 @@
 """Unit tests for rpgmaker/build.py JoiPlay folder build."""
 import os
 
-from conftest import make_game
+from tests.helpers import make_game
 
 from rpgmaker import build
 

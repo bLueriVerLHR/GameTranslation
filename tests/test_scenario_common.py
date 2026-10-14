@@ -12,16 +12,11 @@ produce the documented outputs.
 """
 import json
 import os
-import sys
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
-sys.path.insert(0, os.path.join(REPO_ROOT, ".."))  # repo root for kirikiri pkg
-
-import scenario_common as sc  # noqa: E402
+from tools import scenario_common as sc
 
 
 def write(path, text):
@@ -112,7 +107,7 @@ class TestBuildKsSmoke:
     minimal scenario tree protects the refactor onto scenario_common."""
 
     def test_build_produces_work_package(self, tmp_path):
-        import build_ks_translation as ks
+        from tools import build_ks_translation as ks
         root = tmp_path / "g"
         sc_dir = root / "scenario"
         write(str(sc_dir / "start.ks"),
@@ -133,7 +128,7 @@ class TestBuildKsSmoke:
 
     def test_no_scenario_dir_raises(self, tmp_path):
         import typer
-        import build_ks_translation as ks
+        from tools import build_ks_translation as ks
         root = tmp_path / "g"
         root.mkdir()
         # A missing scenario dir is a failure raised from the builder: the
@@ -144,7 +139,7 @@ class TestBuildKsSmoke:
         assert exc.value.exit_code == 1
 
     def test_code_block_bodies_never_become_keys(self, tmp_path):
-        import build_ks_translation as ks
+        from tools import build_ks_translation as ks
         root = tmp_path / "g"
         sc_dir = root / "scenario"
         # Both dialects in one file, plus the line numbers of the surviving

@@ -5,9 +5,7 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from tools import check_tyrano_build as G  # noqa: E402
+from tools import check_tyrano_build as G
 
 
 def snap(text=(100, 200, 300, 240), inner_z=8000, imgs=(), windows=None, ctrl=(),

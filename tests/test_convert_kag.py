@@ -7,15 +7,12 @@ also pin the re-export surface."""
 import json
 import os
 import re
-import sys
 import types
 import collections
 from collections import Counter
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from kirikiri import convert_kag as ck
 

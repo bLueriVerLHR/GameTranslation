@@ -24,6 +24,9 @@
 
 ### 变更
 
+- **测试导入正规化**：移除测试与子进程的导入路径补丁，工具统一从包导入；
+  共享构造器拆到 `tests/helpers.py`，pytest 使用 importlib 模式，并增加
+  安装态导入及禁止路径注入的回归门禁。
 - **Python 基线升级至 3.14**：不再支持 3.10 / 3.12；ruff、mypy 与
   Windows / Ubuntu CI 同步升级，开发与回归环境按 `uv.lock` 安装。
 - **媒体依赖迁移至 PyAV 19**：移除已删除的 `metadata_errors` 参数，

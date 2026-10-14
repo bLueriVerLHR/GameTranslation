@@ -9,11 +9,8 @@ has no converted counterpart.
 """
 
 import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from kirikiri.kag import assets  # noqa: E402
+from kirikiri.kag import assets
 
 
 def _stats():

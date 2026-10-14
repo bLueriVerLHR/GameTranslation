@@ -8,11 +8,8 @@ default, re-introduces a legacy constant, or sizes a pool from
 `os.cpu_count()` instead of the resolver.
 """
 import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from rpgmaker import runtime  # noqa: E402
+from rpgmaker import runtime
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKAGES = ("rpgmaker", "kirikiri", "tyrano", "wolfrpg", "unity", "tools")

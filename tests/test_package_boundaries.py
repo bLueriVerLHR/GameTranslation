@@ -24,15 +24,11 @@ gate follows the inventory instead of keeping a second list that would drift.
 import ast
 import os
 import subprocess
-import sys
 
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
-
-from rpgmaker import inventory  # noqa: E402
+from rpgmaker import inventory
 
 #: Directories that hold products.  `tests/` is not a product.
 PACKAGES = ("rpgmaker", "kirikiri", "tyrano", "wolfrpg", "unity", "translation",

@@ -30,8 +30,6 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT))
 # NOTE: the kirikiri/ dir must NOT go on sys.path: it would make a bare
 # `import pipeline` / `import xp3tool` resolve to kirikiri/*.py (kirikiri has a
 # pipeline.py mirroring tyrano/pipeline.py), shadowing the repo-root modules for
@@ -39,8 +37,8 @@ sys.path.insert(0, str(REPO_ROOT))
 # by name, which works because the package import below sets up the package
 # first (and kirikiri/ itself is a package).
 
-from kirikiri import xp3pack  # noqa: E402
-from kirikiri import xp3tool  # noqa: E402
+from kirikiri import xp3pack
+from kirikiri import xp3tool
 
 MAGIC = b"XP3\r\n \n\x1a\x8b\x67\x01"
 

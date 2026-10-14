@@ -37,17 +37,12 @@ measured over 8 comment shapes (`; 1: x=1`, `; 0x1: q=4`, `;-1: z=3`, ...),
 `isNaN` guard already skips it.  There is nothing to test; the check is
 readability, not behaviour.
 """
-import os
 import subprocess
-import sys
 
 import pytest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-
-from kirikiri.kag import shims  # noqa: E402
-from rpgmaker.tool_registry import find_node  # noqa: E402
+from kirikiri.kag import shims
+from rpgmaker.tool_registry import find_node
 
 
 pytestmark = pytest.mark.node

@@ -117,9 +117,20 @@ python3 tyrano/pipeline.py deliver <work>/build          # 写回存储侧
   补丁的文件（含 `_p&&_p.catch` 标记）跳过；没有 `.play()` 调用的
   引擎版本是 no-op。不用 `[bgmovie]` 的游戏可跳过此步。
 - **verify --source**：布局（index.html/tyrano/data）、存档后端、
-  音频引用完整性（mp3 残留 + dangling）、PNG 4096 上限。`--source`
+  音频引用完整性（mp3 残留 + dangling）、**资源引用**（立绘/CG/背景/视频，
+  按标签各自的资源目录解析、**大小写精确**）、PNG 4096 上限。`--source`
   指向**解包后未转换**的原始目录：源里本来就缺的引用（制作缺陷）
-  降级为不报错——只把转换造成的丢失当回归。
+  降级为不报错——只把转换造成的丢失当回归。`--no-png` / `--no-assets`
+  可按需跳过最后两项。
+
+  资源引用为什么也要查：Windows 大小写不敏感，`storage="Chara/1/x.png"`
+  指向 `chara/1/x.png` 在 PC 上正常、在 Android/JoiPlay 上是 404，而这类
+  引用是流水线**从不重写**的——查不出来就会带着「PC 全绿、手机缺图」的
+  构建出厂。裸文件名按标签的资源目录解析（`bg`→`bgimage`、
+  `chara_*`/`tb_image_show`→`fgimage`、`playse`→`sound`、`playbgm`→`bgm`、
+  `bgmovie`→`video`、`glyph`→`tyrano/images/system`），带 `data/` 的值按
+  原样解析；表外的第三方插件标签只要落在任一标准资源目录就算通过（不臆造
+  失败）。音频仍由音频检查负责，不重复报告。
 - **serve --test**：HTTP 冒烟（PC 浏览器 file:// 会拦截 .ks 的 ajax
   加载，必须走 HTTP 试玩）。serve/compress/deliver 复用 RPG Maker
   流水线的引擎无关模块。
@@ -140,6 +151,44 @@ python3 tools/build_tyrano_translation.py <work>/build <work> \
 # → merge_plain_chunks → merge_translation → translated.json
 python3 tools/apply_tyrano_translation.py <work>          # 写回 <work>/patch/
 ```
+
+**外部字典（MTool 运行时机翻）路线**：repack 常把译文放在游戏根目录的
+`翻译文件.json`，由 MTool hook **只在运行时**替换显示文本 —— 浏览器/JoiPlay
+构建里它根本不会生效（构建是原版日文）。这类包不必从零翻，但有两条路：
+
+1. **正规翻译链**（上）：工作包全量翻一遍，译文进 v2 门禁；
+2. **直接烘焙外部字典**：
+
+```
+python3 tools/bake_tyrano_dict.py <work> <dict.json> \
+    [--min-coverage 0.5] [--force] [--report r.json]   # → <work>/translated.json
+python3 tools/apply_tyrano_translation.py <work>        # → <work>/patch/
+python3 tools/qc_ks_kana.py <work>/patch                # 独立假名残留门禁
+```
+
+`bake_tyrano_dict.py` 的要点（都是实测出来的，不是推测）：
+
+- 工作包的键是**带标签的整行**，字典的键是**渲染后的文本**，所以烘焙 =
+  重建整行：标签逐字节保留、文本段换成译文（`apply_tyrano_translation.py`
+  就是整行替换）。
+- 文本有两种形态，只处理第一种会留下**可见日文**：行内文本段
+  （`[font color=red]本文[l]`）与块标签的 `text="..."` 属性
+  （`[glink text="始めから" ...]` —— 标题按钮就在这里）。实测某游戏
+  3 个标题按钮就属于后者。
+- 逐条门禁：译文非空、无换行、无假名残留、重建后**单位前后字节不变**、
+  重建行仍只有一个文本单位。不合格的条目保留原日文行并计数，不猜。
+- 覆盖率低于 `--min-coverage`（默认 0.5）拒绝写盘：半汉化会污染后续
+  补翻（与 MZ 侧 bake 同一门槛）；`--force` 用于刻意的阶段式 harvest。
+- identity 条目（`v == k` **且含假名**）自动剔除，否则它会 shadow 掉真正的
+  译文。
+- **字典路径一律命令行传入**：游戏专属数据绝不进仓库。
+
+**字体（汉化必须过）**：构建期把项目标准中文字体接进 Tyrano 的改动点是
+`tyrano/css/font.css`（`@font-face`）与 `data/system/Config.tjs` 的
+`;userFace=`（注意 Config.tjs 里 `;` 是**有效配置行**）。游戏自带的
+`tyrano.css` 里还是日文字体栈（`@ＭＳ 明朝` / `Yu Gothic` / `Meiryo`），
+不接字体会导致中文落在系统回退字体上、字形不统一。本地字体策略表
+（`docs/reference/local-layout.md` §5）缺失时**必须 WARN**，不得当成已应用。
 
 提取规则（键 = **去首尾空白的整行**，标签原样保留，只翻日文片段）：
 

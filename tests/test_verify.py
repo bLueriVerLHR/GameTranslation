@@ -6,7 +6,7 @@ import os
 import random
 
 
-from conftest import make_game
+from tests.helpers import make_game
 
 from rpgmaker import verify, tool_registry
 
@@ -180,7 +180,7 @@ class TestVerifyAll:
         assert "decode" in flat.lower()
 
     def test_decode_mode_clean_on_a_real_ogg(self, game_dir, fake_tools):
-        from conftest import real_ogg
+        from tests.helpers import real_ogg
         _root, web = game_dir
         for rel in ("audio/bgm/bgm1.ogg", "audio/se/se1.ogg",
                     "audio/bgm/bgm_mono.ogg"):

@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from conftest import make_game
+from tests.helpers import make_game
 
 from rpgmaker import audio, build, runtime, verify
 

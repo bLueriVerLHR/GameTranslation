@@ -6,15 +6,11 @@ what a control code is, so the cases below pin the behaviour that used to be
 duplicated in five files (and check the shapes those copies relied on).
 """
 import os
-import sys
 
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
-
-import ctrl_codes  # noqa: E402
+from tools import ctrl_codes
 
 
 class TestCtrlSignature:

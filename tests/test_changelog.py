@@ -21,14 +21,11 @@ longer exist, which is the same "documented and wrong" failure.
 """
 import os
 import re
-import sys
 
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-
-from rpgmaker import inventory  # noqa: E402
+from rpgmaker import inventory
 
 CHANGELOG = os.path.join(REPO_ROOT, "CHANGELOG.md")
 POLICY = os.path.join(REPO_ROOT, "docs", "reference", "deprecation-policy.md")

@@ -113,7 +113,7 @@ class TestCollect:
 
     def test_the_totals_match_the_gate_budget(self):
         """The inventory and `SKIP_BUDGET` count the same sites."""
-        import test_test_layers as layers
+        from tests import test_test_layers as layers
         assert len(sr.collect()) == layers.SKIP_BUDGET
 
 

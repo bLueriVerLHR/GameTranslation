@@ -7,21 +7,16 @@ The asar steps monkeypatch tyrano.asar.extract so no Node.js is needed in
 tests; the audio conversion uses the fake ffmpeg from conftest.
 """
 import os
-import sys
 from pathlib import Path
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO)
-sys.path.insert(0, os.path.join(REPO, "tools"))
+import pytest
 
-import pytest  # noqa: E402
+from rpgmaker import tool_registry
 
-from rpgmaker import tool_registry  # noqa: E402
-
-from tyrano import audio as ta  # noqa: E402
-from tyrano import build as tb  # noqa: E402
-from tyrano import clean as tc  # noqa: E402
-from tyrano import verify as tv  # noqa: E402
+from tyrano import audio as ta
+from tyrano import build as tb
+from tyrano import clean as tc
+from tyrano import verify as tv
 
 CONFIG = "data/system/Config.tjs"
 
@@ -433,7 +428,7 @@ class TestVerify:
         assert any("mp3 refs left" in p for p in problems)
 
     def test_png_over_limit_reported(self, tmp_path):
-        from conftest import make_png_bytes
+        from tests.helpers import make_png_bytes
         root = make_asar_game(str(tmp_path))
         tb.fix_save_backend(root)
         os.makedirs(os.path.join(root, "data", "image"), exist_ok=True)
@@ -443,7 +438,7 @@ class TestVerify:
         assert any("5000" in p for p in problems)
 
     def test_png_within_limit_ok(self, tmp_path):
-        from conftest import make_png_bytes
+        from tests.helpers import make_png_bytes
         root = make_asar_game(str(tmp_path))
         tb.fix_save_backend(root)
         os.makedirs(os.path.join(root, "data", "image"), exist_ok=True)

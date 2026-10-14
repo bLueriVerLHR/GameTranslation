@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-import resolve_text_keys as rtk
+from tools import resolve_text_keys as rtk
 
 # hand-written, spelled with escapes so the file stays ASCII-safe
 ZH_NEW_GAME = "\u65b0\u6e38\u620f"                  # 新游戏
@@ -425,7 +425,7 @@ def test_nested_json_parameter_keeps_parsing(tmp_path):
 
 def test_resolved_build_passes_the_acceptance_scan(tmp_path):
     """Cross-tool: after inlining, qc_build_kana must find no text keys."""
-    import qc_build_kana as qc
+    from tools import qc_build_kana as qc
     build = make_build(str(tmp_path))
     rtk.resolve_build(build)
     findings = qc.scan(build)

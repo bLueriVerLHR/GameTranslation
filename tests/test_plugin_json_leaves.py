@@ -8,8 +8,8 @@ rebuilt blob is always re-parseable.
 import json
 import os
 
-import plain_io
-import plugin_json_leaves as pjl
+from tools import plain_io
+from tools import plugin_json_leaves as pjl
 
 KANA = "\u30c6\u30b9\u30c8"                 # テスト
 KANA_MORE = "\u30c6\u30b9\u30c8\u30b7\u30b7"  # テストシシ

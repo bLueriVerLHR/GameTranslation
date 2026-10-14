@@ -20,19 +20,14 @@ so the suite stays deterministic on any platform / sandbox.
 """
 import json
 import os
-import sys
 
 import pytest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
+from tests.helpers import make_game
 
-from conftest import make_game  # noqa: E402
-
-from rpgmaker import audio, compress, decrypt, verify, constants, platform, tool_registry# noqa: E402
-from rpgmaker import archive, deliver  # noqa: E402
-from tyrano import audio as tyrano_audio  # noqa: E402
+from rpgmaker import audio, compress, decrypt, verify, constants, platform, tool_registry
+from rpgmaker import archive, deliver
+from tyrano import audio as tyrano_audio
 
 
 def _make_folder(tmp_path, name="game"):
@@ -296,7 +291,7 @@ class TestPermissionDenied:
                                                            monkeypatch):
         # a denied data JSON read is a real failure - it must surface as the
         # specific OSError subclass, never get swallowed
-        import build_translation as bt
+        from tools import build_translation as bt
         root = str(tmp_path / "game")
         data = os.path.join(root, "data")
         os.makedirs(data)

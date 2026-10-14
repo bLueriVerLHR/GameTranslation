@@ -15,15 +15,11 @@ the inventory against the actual tree and against actual imports:
 import ast
 import os
 import subprocess
-import sys
 
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
-
-from rpgmaker import inventory  # noqa: E402
+from rpgmaker import inventory
 
 #: Packages that hold production code.  `tests/` is not a product; the retired
 #: `superseded/` archive was deleted in Phase 8.

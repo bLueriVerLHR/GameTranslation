@@ -28,9 +28,7 @@ import sys
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
-
-import check_all as ca  # noqa: E402
+from tools import check_all as ca
 
 
 def _gate(name, code="print('ran')", required=True, needs=(), coverage_only=False):

@@ -11,13 +11,7 @@ file exists and probes" and a truncated file would otherwise be kept as cached
 and stay broken forever.
 """
 
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
-
-from transcode_video import _drop_bad_output, dedupe_by_output  # noqa: E402
+from tools.transcode_video import _drop_bad_output, dedupe_by_output
 
 
 def entry(name):

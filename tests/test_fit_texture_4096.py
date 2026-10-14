@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Unit tests for tools/fit_texture_4096.py (atlas re-tiling + IconSet crop).
 
-Path setup comes from tests/conftest.py (repo root + tools/).
+Modules are imported through their installed package names.
 """
 import json
 import os
 
 from PIL import Image
 
-import fit_texture_4096 as ft
+from tools import fit_texture_4096 as ft
 from rpgmaker import constants
 
 

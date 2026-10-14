@@ -8,13 +8,10 @@ import subprocess
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO)
-sys.path.insert(0, os.path.join(REPO, "tools"))
+import pytest
 
-import pytest  # noqa: E402
-
-import build_tyrano_translation as bt  # noqa: E402
-import apply_tyrano_translation as at  # noqa: E402
+from tools import build_tyrano_translation as bt
+from tools import apply_tyrano_translation as at
 
 SCENARIO = "scenario"
 

@@ -22,12 +22,10 @@ looks documented and tells you nothing).
 """
 import os
 import re
-import sys
 
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
 
 CONTRIBUTING = os.path.join(REPO_ROOT, "docs", "CONTRIBUTING.md")
 
@@ -86,7 +84,6 @@ class TestEveryContributionPathIsDocumented:
 class TestTheTemplatesPointAtTheRealRegistry:
     def test_the_engine_template_names_a_real_inventory_status(self):
         """Registering an engine means picking one of the documented statuses."""
-        sys.path.insert(0, REPO_ROOT)
         from rpgmaker import inventory
 
         body = _section(_read(CONTRIBUTING), "新增引擎")

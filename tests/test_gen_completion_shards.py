@@ -19,16 +19,12 @@ Contract under test (docs/translation.md + the chunk contract in AGENTS.md):
 """
 import json
 import os
-import sys
 
 import pytest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
-
-import gen_completion_shards as gcs  # noqa: E402
-import gen_translation_shards as gts  # noqa: E402
-import plain_io  # noqa: E402
+from tools import gen_completion_shards as gcs
+from tools import gen_translation_shards as gts
+from tools import plain_io
 
 WHERE = "Map001.json#ev0#pg0#c1"
 NEUTRAL_MARKER = "## Tone (from the game owner)"

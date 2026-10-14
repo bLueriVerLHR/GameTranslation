@@ -3,8 +3,8 @@
 import json
 import random
 
-import merge_plain_chunks as mpc
-import plain_io
+from tools import merge_plain_chunks as mpc
+from tools import plain_io
 
 
 class TestKanaLeft:

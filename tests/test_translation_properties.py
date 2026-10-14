@@ -25,18 +25,14 @@ value round-trips byte for byte.
 
 import json
 import os
-import sys
 import tempfile
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-
-from rpgmaker import settings  # noqa: E402
-from translation import codes, rawlib  # noqa: E402
+from rpgmaker import settings
+from translation import codes, rawlib
 
 #: Ids are opaque to the library, but '@@@' inside one is rejected by
 #: ``append_block`` (it would forge a header), so the generator keeps it out.

@@ -18,15 +18,11 @@ from __future__ import annotations
 import importlib.util
 import os
 import subprocess
-import sys
 
 import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
-
-from tools import mypy_check  # noqa: E402
+from tools import mypy_check
 
 
 class TestTheBudgetsComeFromPyproject:

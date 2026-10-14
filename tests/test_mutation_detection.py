@@ -20,15 +20,11 @@ shape is cheap to check and the proof is not.
 """
 import os
 import shutil
-import sys
 
 import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
-
-from tools import mutation_check as mc  # noqa: E402
+from tools import mutation_check as mc
 
 #: The six risk sites PLAN.md Phase 5 task 6 names, and the mutation that
 #: covers each.  Kept as an explicit list so deleting a mutation is a

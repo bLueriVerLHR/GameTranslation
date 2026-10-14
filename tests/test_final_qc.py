@@ -6,17 +6,12 @@ CLI path (argv -> stdout report), so the human-facing report cannot drift from
 the findings it is supposed to show.
 """
 import json
-import os
 import re
 import sys
 
 import pytest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO_ROOT)
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
-
-import final_qc  # noqa: E402
+from tools import final_qc
 
 
 def findings(p, exemptions=()):

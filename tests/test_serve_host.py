@@ -9,14 +9,11 @@ Both pipelines now share one implementation (`rpgmaker.cli._serve`), so the
 plumbing is asserted once, through the Typer command functions (calling a
 Typer-decorated function directly passes Python values through).
 """
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import pytest
 
-import pytest  # noqa: E402
-
-from rpgmaker import cli  # noqa: E402
+from rpgmaker import cli
 
 
 def test_smoke_test_receives_the_host(monkeypatch):

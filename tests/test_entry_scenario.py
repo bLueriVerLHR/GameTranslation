@@ -12,13 +12,10 @@ These tests pin the entry resolution, the index.html wiring and the new gate.
 """
 
 import os
-import sys
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from kirikiri import pipeline  # noqa: E402
-from kirikiri.kag import cli as kag_cli  # noqa: E402
+from kirikiri import pipeline
+from kirikiri.kag import cli as kag_cli
 
 
 class TestResolveFirstScenario:

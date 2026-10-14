@@ -16,7 +16,7 @@ import textwrap
 
 import pytest
 
-import check_docs
+from tools import check_docs
 
 ROOT = "GameTranslation/"
 

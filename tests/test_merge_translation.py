@@ -16,11 +16,7 @@ import os
 
 import pytest
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-import sys  # noqa: E402
-sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
-
-import merge_translation as mt  # noqa: E402
+from tools import merge_translation as mt
 
 
 def write_json(path, data):

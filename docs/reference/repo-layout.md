@@ -182,12 +182,15 @@ GameTranslation/
 │   ├── check_coverage.py        # 覆盖率下限门禁（区域/高风险模块/总量，只平只升）
 │   ├── mypy_check.py            # 类型门禁：全仓错误数只降不升 + strict 模块层零错误
 │   ├── mutation_check.py        # 变异表：翻译门禁/归档校验/同侧拒绝/解密标志必须被检出
+│   ├── mtool_keymap.py          # Wolf RPG：运行时字典键 → 静态字段映射 + 分批翻译/门禁/导出
 │   ├── benchmark.py             # 固定合成语料的 build/verify 性能采样与趋势比较
 │   └── ...（旧版：translate_rpgmaker、plain_to_translated、
 │           qc_translation_chunks、CSV 流程工具 — 旧块格式）
 ├── tests/                # 单元 + 集成测试（pytest，fake 工具，全流程无外部依赖）
 │   ├── README.md         #   分层契约：marker 语义、各层运行命令与环境要求
-│   ├── conftest.py       #   合成游戏/假 ffmpeg 注入 + 真媒体固件生成
+│   ├── __init__.py       #   测试包身份（不进入 wheel）
+│   ├── helpers.py        #   合成游戏/真媒体构造器与假工具启动器
+│   ├── conftest.py       #   pytest fixture 注册与隔离环境（无路径注入）
 │   ├── fixtures/         #   真容器固件（Ogg Vorbis 带 LOOP 标签、asar 包、TLG 样本）
 │   │   └── MANIFEST.json #   固件清单：来源/用途/许可/sha256（test_fixture_manifest.py 守卫）
 │   ├── coverage_floor.json # 覆盖率下限基线（tools/check_coverage.py 的输入）
@@ -199,6 +202,7 @@ GameTranslation/
 │   ├── test_text_io_portability.py # 文本 I/O 不得依赖本机 locale 编码（含 BOM 检查）
 │   ├── test_lockfile.py     # 锁文件门禁：uv.lock 必须与 pyproject.toml 同步
 │   ├── test_package_boundaries.py # core 不得 import 引擎、引擎间不得互相 import
+│   ├── test_import_contracts.py # 测试包导入、子进程无路径补丁、安装态隔离验证
 │   ├── test_config_facade.py # 已退休的 config 兼容层：谁也不能 import 它
 │   ├── test_fixture_manifest.py # 固件必须有清单且字节未变（防“重生成固件让测试变绿”）
 │   ├── test_test_layers.py  # 测试分层门禁：marker 注册、每层都有地方跑、skip 预算

@@ -3,6 +3,17 @@
 本目录的测试契约（PLAN Phase 5）。**不要用测试总数判断质量**：质量看风险矩阵、
 branch coverage、mutation score 与真实验收记录。
 
+### 正规包导入
+
+先按 `uv.lock` 安装项目与所需 extra，再用 `uv run --no-sync python -m pytest`
+运行测试。pytest 默认 `--import-mode=importlib`，不会把测试目录临时前插到
+模块搜索路径。测试共享构造器从 `tests.helpers` 导入，工具从 `tools` 导入；
+`conftest.py` 只注册 fixture 与隔离环境，不再配置导入路径。
+
+`tests/test_import_contracts.py` 检查测试中的路径修改、子进程代码字面量和裸
+模块导入，并从仓库外用 `-I` 验证已安装包。为隔离 wheel 安装目标而设置的
+路径与对应负例保留；它们验证产物完整性，不是普通测试的导入回退。
+
 ## 1. 两个层，一句话区分
 
 一个 marker 表示「PR runner 可能没有这个能力」**——所以「文件放在哪个目录」不是分层，

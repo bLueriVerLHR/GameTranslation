@@ -12,7 +12,7 @@ import sys
 
 import pytest
 
-from conftest import free_port, make_game
+from tests.helpers import free_port, make_game
 
 from rpgmaker import build, clean, compress, decrypt, deliverables, serve, tool_registry, verify
 
@@ -25,7 +25,7 @@ class TestFullPipeline:
 
         # encrypted asset to decrypt (plaintext is a real PNG so verify
         # passes after decryption)
-        from conftest import make_png_bytes
+        from tests.helpers import make_png_bytes
         plain = make_png_bytes(16, 16)
         from rpgmaker import constants as cfg
         enc = bytearray(cfg.RPGMV_HEADER + plain)

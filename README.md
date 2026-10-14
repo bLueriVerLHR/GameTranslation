@@ -63,10 +63,10 @@ python $tk\pipeline.py deliver $out            # 压缩 → 复制压缩包 → 
 
 **跨系统铁律（CRITICAL）**：处理文件必须用**文件所在系统**的原生应用。
 Windows 侧文件（`/mnt/*`）一律用 Windows 的 `7z.exe`/PowerShell，从 WSL 经
-`powershell.exe` 调用；WSL 内 7zz/python 直接操作 Windows 侧文件被禁止
-（曾导致电脑花屏）。跨系统只搬运**单个压缩包**；`deliver` 已内置自动桥接。
-原版游戏目录**绝不修改**。背景与后果见
-[docs/reference/adr/0002-cross-system-file-ownership.md](docs/reference/adr/0002-cross-system-file-ownership.md)。
+`powershell.exe` 调用；WSL 内 7zz/python 直接操作 Windows 侧文件被禁止。
+跨系统只搬运**单个压缩包**；`deliver` 已内置自动桥接。原版游戏目录**绝不
+修改**。背景与后果见
+[docs/reference/adr/cross-system-file-ownership.md](docs/reference/adr/cross-system-file-ownership.md)。
 
 ## 翻译（JP → ZH）
 

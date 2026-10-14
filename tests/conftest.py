@@ -1,15 +1,15 @@
-"""Shared pytest fixtures and hermetic fake-tool environment wiring.
+"""Shared pytest fixtures: synthetic games and launcher helpers.
 
-Synthetic builders live in tests.helpers and are imported normally. The only
-fake executable is ffmpeg: Vorbis encoding still needs its CLI because PyAV
-wheels lack libvorbis. Media probes use genuine generated/committed containers.
+Synthetic builders live in tests.helpers and are imported normally. Path and
+tool resolution is pinned to the checkout so a run cannot depend on the host
+machine's applications or private data.
 """
 
 import os
 
 import pytest
 
-from tests.helpers import fake_launcher, make_game, make_launcher
+from tests.helpers import make_game, make_launcher
 
 
 @pytest.fixture
@@ -21,17 +21,12 @@ def game_dir(tmp_path):
 
 
 @pytest.fixture
-def fake_tools(monkeypatch, tmp_path_factory):
-    """Point FFMPEG at its fake launcher; return script names and workdir."""
+def fake_tools(tmp_path_factory):
+    """Neutral environment for tests that must not read the host's tools."""
     workdir = str(tmp_path_factory.mktemp("fake-tools"))
-    mapping = {}
-    for name, script in (("FFMPEG", "ffmpeg.py"),):
-        launcher = fake_launcher(script, workdir)
-        monkeypatch.setenv(name, launcher)
-        mapping[os.path.splitext(script)[0]] = launcher
-    mapping["dir"] = workdir
-    for var in ("FAKE_HIGH_BITRATE", "FAKE_SMALL_OUTPUT", "GT_WORKERS"):
-        monkeypatch.delenv(var, raising=False)
+    mapping = {"dir": workdir}
+    for var in ("GT_WORKERS",):
+        os.environ.pop(var, None)
     return mapping
 
 

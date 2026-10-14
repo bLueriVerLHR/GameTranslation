@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Property tests for the translation data contract and the config schema.
 
-PLAN Phase 5 task 5 asks for properties over *control-code parse/render*,
-*translation raw library atomic I/O* and *profile/schema*.  These three are
+These properties cover *control-code parse/render*, *translation raw library
+atomic I/O* and *profile/schema*.  These three are
 the places where a single wrong character silently destroys work:
 
   * the control-code helpers decide what a translator may and may not change,
@@ -39,11 +39,11 @@ from translation import codes, rawlib
 IDS = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789._-", min_size=1,
               max_size=8)
 #: Characters that carry meaning for the block format, and which a plain
-#: ``st.text()`` finds only by luck.  Phase 5 proved the luck is not enough:
-#: reverting the CR fix left the property test GREEN because Hypothesis never
-#: generated an interior ``\r`` in that run - only the two explicit example
-#: tests in ``TestBareCarriageReturn`` failed.  Mixing these in makes the
-#: generator produce the interesting shapes on (almost) every run, so the
+#: ``st.text()`` finds only by luck.  Measurement proved the luck is not
+#: enough: reverting the CR fix left the property test GREEN because Hypothesis
+#: never generated an interior ``\r`` in that run - only the two explicit
+#: example tests in ``TestBareCarriageReturn`` failed.  Mixing these in makes
+#: the generator produce the interesting shapes on (almost) every run, so the
 #: property keeps working as a regression test rather than a formality.
 #: ``@@@`` is deliberately absent: a header-looking line is a format limit, not
 #: data, and that is filtered out below.
@@ -56,7 +56,7 @@ MEANINGFUL = "\\[]\n\r<>"
 #:   * a value *ending* in a bare ``\r``: the last line's CR is
 #:     indistinguishable from a CRLF ending, so ``rstrip("\r")`` eats it.
 #:
-#: ``\r`` as a whole was also filtered here until Phase 5, described as "the
+#: ``\r`` as a whole was also filtered here at first, described as "the
 #: reader normalises CRLF to LF on purpose" - but only the CR of an *interior*
 #: CRLF was intended.  A bare CR is data: ``append_block`` stored it verbatim
 #: while the reader (default universal newlines) folded it into a line break, so
@@ -198,7 +198,7 @@ class TestLibraryRoundTrip:
 
 
 class TestBareCarriageReturn:
-    """A lone CR is data, not a line ending (Phase 5 defect fix).
+    """A lone CR is data, not a line ending.
 
     ``append_block`` writes the value verbatim, so a bare CR reached the disk,
     but ``read_library`` used the default universal-newline mode, which folds

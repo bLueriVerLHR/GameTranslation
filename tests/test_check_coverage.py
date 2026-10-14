@@ -2,8 +2,8 @@
 
 Why this file exists
 --------------------
-`tools/check_coverage.py` is the gate that stops coverage from quietly sliding
-(PLAN.md Phase 5 task 4).  A gate that cannot fail is worse than no gate, so
+`tools/check_coverage.py` is the gate that stops coverage from quietly
+sliding.  A gate that cannot fail is worse than no gate, so
 each rule here is exercised from both sides: a clean measurement passes, a
 dropped measurement fails, and the waiver path is proven to be the only way a
 drop can be accepted.

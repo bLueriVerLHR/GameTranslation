@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Registered font resolution.
 
-Split out of tests/test_config.py when rpgmaker/assets.py was split
-(PLAN Phase 4): patching a name on the facade no longer reaches the code
-that reads it, so each test now patches the module that owns the name.
+Split out of tests/test_config.py when rpgmaker/assets.py was split:
+patching a name on the facade no longer reaches the code that reads it, so
+each test now patches the module that owns the name.
 """
 
 

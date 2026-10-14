@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Layer contract for the test suite (PLAN Phase 5 tasks 2, 3 and 9).
+"""Layer contract for the test suite.
 
 Three jobs, all of them about *what a test needs* rather than what it asserts:
 
@@ -84,11 +84,9 @@ GUARD_SKIP_REASONS = (
      "optional dev tool (uv manages the lockfile), not a test layer"),
     ("setuptools is unavailable",
      "build backend is missing, so no wheel can be produced at all"),
-    ("no tlg fixtures present",
-     "tests/fixtures/tlg/ is tracked, so absence means an incomplete "
+    ("no sample fixtures present",
+     "tests/fixtures/ is tracked, so absence means an incomplete "
      "checkout rather than a missing capability"),
-    ("no real tlg files present",
-     "same fixture set as above"),
 )
 
 # `pytest.importorskip("X")` proves only that X is an optional package.  Which
@@ -122,11 +120,11 @@ BUILTIN_MARKS = frozenset({
 # same inventory with each site's capability, and CI runs it so the number is
 # never the only thing anyone sees.
 #
-# 25 -> 27: `tests/test_kag_shim_runtime.py` (Phase 5 task 7) puts the shim's
-# pure functions under a real Node.js binary, so it carries the same "Node.js
-# is required" guard as the audio runtime test, twice (helpers and test body).
-# 27 -> 28: `tests/test_lint.py` gained the burn-down budget gate (Phase 6
-# task 1), which needs ruff just like the two lint gates already there.
+# 25 -> 27: `tests/test_kag_shim_runtime.py` put the shim's pure functions
+# under a real Node.js binary, so it carried the same "Node.js is required"
+# guard as the audio runtime test, twice (helpers and test body).
+# 27 -> 28: `tests/test_lint.py` gained the burn-down budget gate, which needs
+# ruff just like the two lint gates already there.
 # 28 -> 11: the mobile build chain and the KAG converter left the toolkit, so
 # every skip that guarded a codec, a Node binary or an engine source went with
 # them.  What is left is the dev-tool / host-filesystem / incomplete-checkout
@@ -678,8 +676,8 @@ def test_ci_prints_the_skip_inventory():
     """A skip budget alone reports a number, not a reason.
 
     `tests/test_test_layers.py` fails when the count moves or a reason names no
-    layer, but a green run still hides the shape of the hole.  Task 9 requires
-    CI to report WHAT is missing, so the reporting step has to be in the
+    layer, but a green run still hides the shape of the hole.  CI must report
+    WHAT is missing, so the reporting step has to be in the
     workflow - a tool nobody runs answers nothing.
     """
     workflow = _workflow()

@@ -76,7 +76,7 @@ class TestCollectChecks:
     def test_only_required_tools_block_a_build(self, monkeypatch, healthy,
                                                key):
         """A missing tool is a MISS only when a build cannot proceed without
-        it; everything else is a WARN (PLAN Phase 4 task 8)."""
+        it; everything else is a WARN."""
         tool = tool_registry.TOOLS_BY_KEY[key]
         monkeypatch.setattr(tool_registry, tool.resolver, lambda: None)
         expected = doctor._is_fatal(key)

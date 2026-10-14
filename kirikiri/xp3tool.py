@@ -176,7 +176,7 @@ def parse_index(buf, block_ofs):
         # No `segm_size < 0` check here on purpose: `find_chunk` rejects a
         # non-positive declared size before it can be returned, and `_need`
         # below rejects a negative one anyway, so such a branch is unreachable
-        # by construction.  (It was added defensively in Phase 5 and measured
+        # by construction.  (A defensive check was tried here and measured
         # never to fire; a guard that cannot run is untested code, so it is
         # gone rather than covered by a fake test.)
         _need(buf, segm_start, segm_size, "the segment table")

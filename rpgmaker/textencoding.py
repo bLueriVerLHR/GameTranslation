@@ -17,12 +17,11 @@ Two rules make the contract:
   `raw.decode(detect_encoding(raw))`.
 
 It lives in core (not in one engine) because two engines call it: a copy each
-would be the thing that drifts, and `tyrano` must not import `kirikiri`
-(PLAN Phase 3 task 7).
+would be the thing that drifts, and `tyrano` must not import `kirikiri`.
 
-The BOM-less byte-order inference was inverted until Phase 5; see the comment
-on that branch - it is the one behaviour here that a move-and-deduplicate could
-have silently preserved, so it is pinned by tests rather than trusted.
+The BOM-less byte-order inference used to be inverted; see the comment on that
+branch - it is the one behaviour here that a move-and-deduplicate could have
+silently preserved, so it is pinned by tests rather than trusted.
 """
 
 __all__ = ["detect_encoding", "decode_text", "load_text_file",

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """assets.py - where the registered fonts live, and how one is chosen.
 
-Split out of the former god-module ``rpgmaker/config.py`` (PLAN Phase 4).
+Split out of the former god-module ``rpgmaker/config.py``.
 This module owns exactly one responsibility: resolving the font a translated
 build must use.
 

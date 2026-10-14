@@ -316,8 +316,7 @@ class TestIsExcluded:
     def test_documented_exclusions(self):
         for p in ("docs/table/glossary.json", ".venv/bin/python",
                   "work/x", "tmp/y", ".tools/engine.js", ".tmp/s.py",
-                  "tests/fake_tools/ffmpeg.py",
-                  "tests/fixtures/tlg/a.tlg", "x.pyc", "__pycache__/m.pyc",
+                                    "tests/fixtures/sample.tlg", "x.pyc", "__pycache__/m.pyc",
                   ".pytest_cache/v/cache/nodeids",
                   "AGENTS.md", "LICENSE", "pyproject.toml",
                   "rpgmaker/__init__.py", ".git/config"):

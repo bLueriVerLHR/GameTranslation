@@ -3,7 +3,7 @@
 no longer depend on it.
 
 `rpgmaker/config.py` was split into `platform`, `constants`, `settings`,
-`tool_registry`, `workspace`, `deliverables` and `assets` (PLAN Phase 4).
+`tool_registry`, `workspace`, `deliverables` and `assets`.
 The old module is kept as a *deprecation shim* for one compatibility cycle so
 an out-of-tree `from rpgmaker import config` keeps working - but nothing in
 the repo may import it any more, because a name read through the facade is

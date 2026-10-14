@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """platform.py - which platform we run on, and how a path is spelled there.
 
-Split out of the former god-module ``rpgmaker/config.py`` (PLAN Phase 4).
+Split out of the former god-module ``rpgmaker/config.py``.
 This module owns exactly one responsibility: the platform axis.
 
 Every path in the project is stored ONCE, in the native form of the platform
@@ -241,8 +241,8 @@ def check_same_side(paths) -> SideReport:
     `paths` is a mapping of role -> path (``{"archive": a, "dest": d}``), so
     a diagnostic can name the role rather than a bare value.  Called at the
     ENTRANCE of every write operation: a handler about to run a WSL-native
-    tool over a Windows-side file must fail *before* doing any work, which is
-    the acceptance criterion of PLAN Phase 4.
+    tool over a Windows-side file must fail *before* doing any work, so the
+    refusal is a gate on the way in rather than a traceback on the way out.
 
     A role whose side cannot be derived (a relative path, or anything
     classified :class:`StorageSide.NATIVE`) is ignored rather than guessed:

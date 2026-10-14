@@ -1,7 +1,7 @@
 """Type-check the repo with the mypy configuration, in two tiers.
 
-Phase 6 task 2 (PLAN.md).  The plan forbids maintaining mypy *and* pyright at
-the same time, so mypy is the one checker; this module is the gate around it.
+Maintaining mypy *and* pyright at the same time is forbidden, so mypy is the
+one checker; this module is the gate around it.
 
 Why a wrapper instead of a bare ``mypy`` invocation:
 

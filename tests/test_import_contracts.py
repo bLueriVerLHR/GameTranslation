@@ -141,7 +141,7 @@ def test_bare_import_detector(source, expected):
 def test_all_test_modules_use_package_imports_without_bootstrap():
     tools = {p.stem for p in (ROOT / "tools").glob("*.py")}
     files = sorted((ROOT / "tests").rglob("*.py"))
-    assert len(files) > 100, "the test-source inventory unexpectedly shrank"
+    assert len(files) > 90, "the test-source inventory unexpectedly shrank"
     failures = []
     for path in files:
         source = path.read_text(encoding="utf-8")

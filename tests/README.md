@@ -1,6 +1,6 @@
 # tests/ — 测试体系说明
 
-本目录的测试契约（PLAN Phase 5）。**不要用测试总数判断质量**：质量看风险矩阵、
+本目录的测试契约。**不要用测试总数判断质量**：质量看风险矩阵、
 branch coverage、mutation score 与真实验收记录。
 
 ### 正规包导入
@@ -17,59 +17,55 @@ branch coverage、mutation score 与真实验收记录。
 ## 1. 两个层，一句话区分
 
 一个 marker 表示「PR runner 可能没有这个能力」**——所以「文件放在哪个目录」不是分层，
-「这个测试需要什么」才是。** 113 个测试文件里只有 9 个带层 marker（其余 104 个完全不
-依赖本机能力），这正是分层的意义：把少数需要外部能力的标出来，而不是把 104 个文件
+「这个测试需要什么」才是。** 97 个测试模块里只有 3 个带层 marker（其余 94 个完全不
+依赖本机能力），这正是分层的意义：把少数需要外部能力的标出来，而不是把 94 个文件
 搬进新目录。
 
-PLAN Phase 5 task 1 写的是「按 unit / contract / integration / e2e 重组」，**本仓没有按
-目录重组**，理由有两层：
+**本仓不按 unit / contract / integration / e2e 重组目录**，理由有两层：
 
-1. PLAN §7 明禁「全仓一次性目录重排」，而且目录重组会让 153 处测试路径引用
-   （源码注释、`tools/mutation_check.py` 的 selector、CI、文档）全部失效，换来的是零行为改变。
-2. 实测**task 1 命名的问题在本仓不存在**：113 个文件里 83 个的命名直接对应一个生产模块
-   （`test_archive_wrapper.py` ↔ `rpgmaker/archive.py`），另外 30 个是刻意的跨模块门禁
+1. 全仓一次性目录重排会让源码注释、`tools/mutation_check.py` 的 selector、CI 与文档
+   里的测试路径引用全部失效，换来的是零行为改变。
+2. 实测**命名的问题在本仓不存在**：绝大多数测试模块的命名直接对应一个生产模块
+   （`test_archive_wrapper.py` ↔ `rpgmaker/archive.py`），其余是刻意的跨模块门禁
    （`test_package_boundaries.py`、`test_test_layers.py`、`test_fixture_manifest.py` …）。
    没有「一个事故一个文件」无限增长的尾巴。
 
 分层的**实质要求**由 marker + `tests/test_test_layers.py` + CI 的 `nightly` 任务满足。
-将来真要做物理拆分，先满足两个条件：路径引用的自动改写（包括变异表 selector）
+物理拆分需要先满足两个条件：路径引用的自动改写（包括变异表 selector）
 与一次可回滚的提交。
 
 | 层 | 命令 | 外部依赖 | 本机耗时（参考） |
 |---|---|---|---|
-| 快速（默认门禁） | `pytest tests -m "not slow and not media and not node and not engine_runtime and not wsl and not browser and not device"` | 无（venv 内即可） | ~45 s（`-n auto`；实测全量 47.6 s） |
-| 夜间 / 手动 | `pytest tests -m "slow"`、`-m media`、`-m node`、`-m engine_runtime` | 见下表 | 分钟级 |
+| 快速（默认门禁） | `pytest tests -m "not slow and not wsl and not browser and not device"` | 无（venv 内即可） | 几十秒（`-n auto`） |
+| 夜间 / 手动 | `pytest tests -m "slow"`，外加乱序重放快速层（见 §8） | 见下表 | 分钟级 |
 | 实机 | `-m wsl` / `-m browser` / `-m device` | WSL / 浏览器自动化 / Android JoiPlay | CI 永不跑 |
 
 | marker | 含义 | 缺能力时 |
 |---|---|---|
 | `slow` | 单测 >~5 s，或要构建/安装产物 | 不跑，或按 CI 分层跑 |
-| `media` | 需要真实编解码器（PyAV libvpx-vp9/libvorbis、ffmpeg 二进制） | skip，并说明缺什么 |
-| `node` | 需要外部 Node.js（`rpgmaker.tool_registry.find_node`） | skip |
-| `engine_runtime` | 需要本机真实引擎安装/游戏树 | skip |
-| `wsl` | 只在 WSL 内有意义 | 非 WSL 跳过 |
+| `wsl` | 只在 WSL 内有意义（Windows/WSL 桥接或 `/mnt` 路径） | 非 WSL 跳过 |
 | `browser` | 需要浏览器/页面自动化 | 不跑 |
-| `device` | 需要 Android 实机 | 永不跑 |
+| `device` | 需要 Android/JoiPlay 实机 | 永不跑 |
 
-`slow` 与 `engine_runtime` 由 CI 的 `nightly` 任务执行
+`slow` 层与快速层的乱序重放由 CI 的 `nightly` 任务执行
 （`.github/workflows/ci.yml`）。**不要把浏览器冒烟当成实机验收**——两者是
 不同层。
 
 ## 2. skip 预算
 
 `pytest.skip` 分四类，**不允许 silent 降级**：缺 dev 工具（ruff/uv/setuptools）、
-缺可选 extra（PIL/av/asar/numba）、平台/环境（git、大小写不敏感文件系统）、
-本地私有或缺失的 fixture（TLG 样本、引擎源码）。
+缺可选包（asar）、平台/环境（git、大小写不敏感文件系统）、
+不完整检出（TLG 样本缺失——是检出问题，不是缺能力）。
 
 `tests/test_test_layers.py` 强制：
 
 - 每个 skip 的**原因必须能对应到一个层**（或属于已知的「marker 也修不了」清单）；
-- `SKIP_BUDGET = 27`，**skip 数增长即失败**（要么修，要么显式提高预算并说明）；
+- `SKIP_BUDGET = 11`，**skip 数增长即失败**（要么修，要么显式提高预算并说明）；
 - 新增 `importorskip` 的包名必须在 `OPTIONAL_IMPORTS` 里，否则失败。
 
 预算数字只说明“少了几块能力”，**说不了少的是哪块**——所以 CI 还跑
-`python -m tools.skip_report --verbose`，把每个 skip 归到具体能力（`node` /
-`media` / `guard` / `optional-import` / …），**归不了类的直接失败**
+`python -m tools.skip_report --verbose`，把每个 skip 归到具体能力（marker 名 /
+`guard` / `optional-import`），**归不了类的直接失败**
 （`tests/test_test_layers.py::test_ci_prints_the_skip_inventory` 钉住 CI 真的在跑它）。
 
 ## 3. 覆盖率门槛
@@ -108,12 +104,12 @@ python -m tools.check_coverage coverage.json --update # 抬高/记录基线
 
 **看新增未覆盖行要用 diff 相交，不能比 `missing_lines` 集合差**：插入代码后
 后续行号全部平移，集合差会满屏假差异。做法是取 `git diff -U0` 的**新增行**与
-`missing_lines` 求交（本阶段实测：13 行）。
+`missing_lines` 求交（实测 13 行）。
 
 ### 工具自己也要被量：子进程里跑的代码覆盖不到
 
 `coverage.py` **不测量子进程**，除非子进程是用 `coverage run -m` /
-`COVERAGE_PROCESS_START` 起的。本阶段的三个维护工具一开始正是用
+`COVERAGE_PROCESS_START` 起的。三个维护工具一开始正是用
 `subprocess.run([sys.executable, TOOL, ...])` 测的（那是对的 argv/退出码契约
 测试），结果 `tools/check_coverage.py` 的 `cmd()` 与 `tools/mutation_check.py`
 的 `check()/cmd()` 对覆盖率门禁**完全不可见**——抓覆盖率的那个工具，恰恰是
@@ -131,20 +127,6 @@ python -m tools.check_coverage coverage.json --update # 抬高/记录基线
 要么显式写出 `as_json=False`；另外**细节在 `log.error` 里而不是 stderr**，
 所以断言要用 `caplog`，`capsys` 只能看到 `error: ...` 那一行。
 
-### `@njit(cache=True)` 的函数体永远量不到（2026-09 实测）
-
-本机 `kirikiri/tlg.py` 的 numba 块（`if _USE_NUMBA:` 起，第 800 行起）实测只有
-装饰器/`def` 行算作“已执行”，**函数体整块缺失**——冷缓存（`NUMBA_CACHE_DIR`
-指向空目录）与热缓存结果完全一样。最小复现：一个 `@njit(cache=False)` 模块
-里 `fast()` 执行到 `def` 行，其函数体 3 行全在 `missing_lines`；
-**换成 `@njit(cache=True)` 连 `def` 行都不执行**。经验规则：
-
-- 看到 `module kirikiri/tlg.py` 这类模块的覆盖率下降，先看变化的是**行号**还是
-  **是否执行**（把旧行号按 diff 映射到新行号再比，别直接比 `missing_lines` 集合）。
-- 不要为了把 numba 块纳入分母而改 `cache=True`/加 `# pragma: no cover`：会改变
-  运行时行为或把遗漏藏起来。正确做法是判断该历史上下限（这里是 47.9）只能靠
-  waiver 说明维持，并把“待慢层被测量后重记”写进 waiver 理由。
-
 ## 4. mutation testing（定向）
 
 ```bash
@@ -159,10 +141,9 @@ python -m tools.mutation_check --only coverage-gate
 
 - **不用 `mutmut`**：它拒绝在 Windows 运行（提示要用 WSL），而 `docs/reference/adr/cross-system-file-ownership.md` 禁止
   WSL 原生工具处理 `/mnt/*` 树。
-- 任意变异农场会产生大量等价变异（比如舍入方向），存活也没有意义；PLAN 点名的
-  风险点比一个分数值钱（当前 **10 个，10/10 KILLED**：翻译的覆盖/控制码/假名残留/
-  换行四道门禁 + 批量全有或全无、档案完整性、跨系统同侧拒绝、解密标志、verify 的
-  残留标志与 `--source` 基线）。
+- 任意变异农场会产生大量等价变异（比如舍入方向），存活也没有意义；点名维护的
+  风险点比一个分数值钱（当前 **7 个，7/7 KILLED**：翻译的覆盖/控制码/假名残留/
+  换行四道门禁 + 批量全有或全无、档案完整性、跨系统同侧拒绝）。
 - 「存活的变异」= 守卫是装饰。`tests/test_mutation_detection.py` 既证明表里的
   变异都被杀掉，也证明**探测器本身能报出存活变异**（否则 harness 永远返回
   「已杀」也能过）。
@@ -194,7 +175,7 @@ python -m tools.mutation_check --only coverage-gate
 `tests/test_perf_smoke.py` 的原则：**不设会因机器慢而闪红的硬时限**。主要断言是
 行为性的（walk 必须触达每个文件），放宽的 60 s 上限只用来抓 O(n²) 回归。
 
-## 7. 删除一个测试的条件（PLAN Phase 5 task 10）
+## 7. 删除一个测试的条件
 
 不是「看起来重复」，而是**同时**满足：
 
@@ -204,7 +185,7 @@ python -m tools.mutation_check --only coverage-gate
 
 不满足就保留。覆盖率门槛会拦住第三条，mutation 表会拦住第二条。
 
-## 8. 顺序无关性（PLAN Phase 5 验收「随机顺序下稳定」）
+## 8. 顺序无关性
 
 测试必须与执行顺序无关。`-p randomly` 用本机已装的 `pytest-randomly` 做乱序验证：
 
@@ -227,19 +208,18 @@ python -m tools.mutation_check --only coverage-gate
 
 ### 非 hermetic 是缺陷，不是 flake
 
-乱序/并发下才红的测试，根因通常是**拿实时资源当期望值**。Phase 5 修过一个实例：
-`tests/test_kag_assets.py::TestParallelEqualsSerial::test_default_worker_count_comes_from_runtime`
-断言 `seen["tlg"] == assets.runtime.physical_cpu_count()`，但 worker 数实际经
+乱序/并发下才红的测试，根因通常是**拿实时资源当期望值**。本仓修过一个实例：
+一个测试断言 worker 数等于 `physical_cpu_count()`，但 worker 数实际经
 `rpgmaker/runtime.py` 的 `_ram_bounded()` 用**实时空闲内存**夹紧，于是单跑绿、
 并发跑红（`assert 7 == 8`）。修法是钉住输入（`physical_cpu_count` /
 `memory_available_bytes` / `disk_is_rotational`，模式见
 `tests/test_runtime.py::TestAutoWorkersPhysicalBase::_pin`），不是把阈值放宽。
 真正的稳定性保障是：每个测试自己造数据（`tests/conftest.py` 的 `hermetic_resolution`
 autouse fixture 强制 `GT_NO_PROBE=1` 并重置 `deliverables._noted_defaults`），不靠
-执行顺序传递状态（Phase 5 已修过一个实例：`test_kag_assets.py` 的 worker 数测试
-原本依赖真实空闲内存，见 `docs/experience-misc.md`）。
+执行顺序传递状态（本仓已修过一个实例：worker 数测试原本依赖真实空闲内存，见
+`docs/experience-misc.md`）。
 
-#### 「只在满载下红」也可能是真缺陷——先拿到完整诊断再判 flake（2026-09 实测）
+#### 「只在满载下红」也可能是真缺陷——先拿到完整诊断再判 flake
 
 `tests/test_mutation_detection.py::test_the_harness_reports_a_surviving_mutation`
 在 `-n auto` 全量跑时红、单独跑和五个文件一起跑都绿。当时判为「拥挤下的 flaky」，
@@ -262,8 +242,8 @@ autouse fixture 强制 `GT_NO_PROBE=1` 并重置 `deliverables._noted_defaults`�
    打印/捕获路径上的截断（`tail(..., lines=N)`、`[-N:]`）会藏根因。
 2. 抛错概率低的缺陷要靠**随机输入**才能撞到，那更要把反例信息完整报出，
    否则每次复现都得到不同的无用信息。
-3. **枚举值定义了却没有分支返回它**＝「文档比代码宽」的信号：`EXOTIC` 从阶段 4
-   写在那里到本轮才第一次真正被返回。
+3. **枚举值定义了却没有分支返回它**＝「文档比代码宽」的信号：`EXOTIC` 定义了很久
+   都无人返回，本轮才第一次真正被返回。
 4. 假设检验的示例库（`.hypothesis`）是**每台机器的状态**，已从两组源码拷贝
    （`tools/mutation_check.py::COPY_IGNORE`、`tests/test_wheel_contents.py::_copy_tree_to`）
    中排除，否则拷贝树的输入空间会被本机缓存的反例左右。

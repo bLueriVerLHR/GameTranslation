@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gate: every entry in the mutation table is really detected (PLAN 5 task 6).
+"""Gate: every entry in the mutation table is really detected.
 
 `tools/mutation_check.py` holds a small, hand-picked table of deliberate
 guard removals.  Two things can make that table lie, and this file guards both:
@@ -26,9 +26,9 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from tools import mutation_check as mc
 
-#: The six risk sites PLAN.md Phase 5 task 6 names, and the mutation that
-#: covers each.  Kept as an explicit list so deleting a mutation is a
-#: deliberate edit to this file rather than a silent shrink of the table.
+#: The risk sites the table must cover, and the mutation that covers each.
+#: Kept as an explicit list so deleting a mutation is a deliberate edit to
+#: this file rather than a silent shrink of the table.
 REQUIRED_SITES = {
     "translation control codes": "control-code-gate",
     "translation line breaks": "line-break-gate",
@@ -48,8 +48,8 @@ class TestTableShape:
         missing = {site: mid for site, mid in REQUIRED_SITES.items()
                    if mid not in have}
         assert not missing, (
-            "PLAN Phase 5 task 6 names these risk sites and the table no "
-            f"longer covers them: {missing}")
+            "the mutation table must cover these risk sites and no longer "
+            f"does: {missing}")
 
     def test_every_mutation_says_why_it_matters(self):
         thin = [m.mid for m in mc.MUTATIONS if len(m.why) < 40]

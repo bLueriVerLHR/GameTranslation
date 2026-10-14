@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Boundary-input contract for the binary format parsers (PLAN Phase 5 task 5).
+"""Boundary-input contract for the binary format parsers.
 
 The archive/image formats come from third-party games, so every parser in
 this repository is reading *attacker-controlled* input.  The contract that

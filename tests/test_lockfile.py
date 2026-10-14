@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Lockfile gate: `uv.lock` must match `pyproject.toml`.
 
-`uv.lock` is committed (PLAN Phase 1) so that a clean environment resolves the
-same dependency set the tests were verified against.  Nothing enforced that
-until this test: the lock was verified green in Phase 1, then Phase 4 added
-`hypothesis>=6` to `[project.optional-dependencies].dev` and the lock silently
-went stale. CI now consumes that lock for regression jobs, and the contract
+`uv.lock` is committed so that a clean environment resolves the same
+dependency set the tests were verified against.  Nothing enforced that until
+this test: the lock was verified green by hand, then `hypothesis>=6` was added
+to `[project.optional-dependencies].dev` and the lock silently went stale. CI
+now consumes that lock for regression jobs, and the contract
 below rejects floating installs and mismatched Python baselines.
 
 Skipped when `uv` is not installed (`pip install uv`), matching the ruff gate in

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """workspace.py - where per-game working state lives.
 
-Split out of the former god-module ``rpgmaker/config.py`` (PLAN Phase 4).
+Split out of the former god-module ``rpgmaker/config.py``.
 This module owns exactly one responsibility: resolving the directory that
 holds a game's in-progress work.
 

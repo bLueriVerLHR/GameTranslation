@@ -152,10 +152,9 @@ GameTranslation/
 │   ├── __init__.py       #   测试包身份（不进入 wheel）
 │   ├── helpers.py        #   合成游戏/真媒体构造器与假工具启动器
 │   ├── conftest.py       #   pytest fixture 注册与隔离环境（无路径注入）
-│   ├── fixtures/         #   真容器固件（Ogg Vorbis 带 LOOP 标签、asar 包）
+│   ├── fixtures/         #   真容器固件（asar 包）
 │   │   └── MANIFEST.json #   固件清单：来源/用途/许可/sha256（test_fixture_manifest.py 守卫）
 │   ├── coverage_floor.json # 覆盖率下限基线（tools/check_coverage.py 的输入）
-│   ├── fake_tools/       #   测试用假工具脚本（环境变量注入）
 │   ├── test_*.py         #   各模块单元测试 + 打包/交付集成测试
 │   ├── test_integration.py  # clean→compress→extract→deliver + CLI 冒烟
 │   ├── test_inventory.py    # 模块清单守卫（无未分类文件、无幽灵条目、wheel 边界）

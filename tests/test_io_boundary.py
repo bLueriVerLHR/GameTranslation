@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The shared I/O boundary (PLAN Phase 6 task 4).
+"""The shared I/O boundary.
 
 `rpgmaker/io_boundary.py` is judged by three properties that a plain
 `open(path, "w")` does **not** have, so each gets a test that fails without it:
@@ -358,7 +358,7 @@ class TestTheBoundaryIsActuallyUsed:
         assert "io_boundary" in body
 
     def test_it_does_not_import_an_engine(self):
-        """Core must not depend on an engine (PLAN Phase 3 task 7)."""
+        """Core must not depend on an engine."""
         source = (os.path.join(REPO_ROOT, "rpgmaker", "io_boundary.py"))
         body = open(source, encoding="utf-8").read()
         for engine in ("kirikiri", "tyrano", "wolfrpg", "unity"):

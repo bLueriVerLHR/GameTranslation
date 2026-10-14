@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """check_all.py - run every local gate in one command.
 
-Why this exists (PLAN.md Phase 6 task 7)
-----------------------------------------
+Why this exists
+--------------
 The pre-merge checklist is written down in three places (``AGENTS.md``,
 ``docs/CONTRIBUTING.md``, ``README.md``) and executed by hand.  Two things go
 wrong with a hand-run checklist, and both were observed in this repo:

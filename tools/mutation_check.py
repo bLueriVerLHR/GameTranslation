@@ -1,7 +1,7 @@
 """mutation_check.py - targeted mutation testing for the gates that must not rot.
 
-Why this exists (PLAN.md Phase 5 task 6)
-----------------------------------------
+Why this exists
+--------------
 Coverage says a line ran; it does not say the line's *decision* was ever
 observed to matter.  A gate can be 100% covered and still be useless: the
 assertion may sit on the wrong field, the failing branch may never be taken,
@@ -30,7 +30,7 @@ tests collected" as an error rather than a pass.
 
 The table is deliberately small and hand-picked.  Random mutation farms
 generate thousands of equivalent mutants ("is this percentage rounded up or
-down") whose survival means nothing; the six risk sites PLAN.md names are worth
+down") whose survival means nothing; the risk sites named below are worth
 more than a score.  Each entry records *why* that single change is the one that
 matters, and which test is responsible for noticing it.
 

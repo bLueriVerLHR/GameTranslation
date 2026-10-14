@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """deliverables.py - where finished builds and archives are written.
 
-Split out of the former god-module ``rpgmaker/config.py`` (PLAN Phase 4).
+Split out of the former god-module ``rpgmaker/config.py``.
 This module owns exactly one responsibility: resolving the deliverable and
 temp folders.
 

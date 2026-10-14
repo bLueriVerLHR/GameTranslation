@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """tool_registry.py - the one table of external applications, and its resolver.
 
-Split out of the former god-module ``rpgmaker/config.py`` (PLAN Phase 4).
+Split out of the former god-module ``rpgmaker/config.py``.
 This module owns exactly one responsibility: which external programs the
 toolkit may shell out to, and how a usable path is found for each.
 

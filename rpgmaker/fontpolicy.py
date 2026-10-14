@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """fontpolicy.py - whether the project font is applied, and on what evidence.
 
-Split out of the former god-module ``rpgmaker/config.py`` (PLAN Phase 4).
+Split out of the former god-module ``rpgmaker/config.py``.
 
 :mod:`rpgmaker.assets` answers "which file".  This module answers the two
 questions that must not be answered silently:
@@ -30,8 +30,8 @@ questions that must not be answered silently:
 
 Validation is hand-written rather than delegated to ``jsonschema``: the shape
 is small and fixed, and a new runtime dependency to check six string fields
-would be a poor trade (PLAN Phase 4 task 5 says the same about the machine
-config).  The JSON schema stays the published contract for the file's author;
+would be a poor trade (the machine config is validated the same way, by
+hand).  The JSON schema stays the published contract for the file's author;
 this module is what actually enforces it.
 
 Implementation detail that matters: a font name is never a filename in the
